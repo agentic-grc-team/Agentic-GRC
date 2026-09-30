@@ -29,10 +29,17 @@ It is **not** the model's private chain-of-thought, the chat transcript, or tech
 | `evidence_extracted` | Evidence was extracted from a document or Microsoft 365 configuration |
 | `evidence_validated` | Evidence was judged `provided_sufficient`, `provided_insufficient`, `documented_absence` or `not_requested` |
 | `mapping_assigned` | Evidence or a finding was mapped to one or more NIST CSF 2.0 subcategories, with a justification |
-| `status_assessed` | A control status was set: Implemented, Partially or Not Implemented |
+| `status_assessed` | A control status was set: Implemented, Partially, Not Implemented, or Not assessed (with the reason in `rationale`) |
+| `maturity_assessed` | A maturity level was set for a subcategory: current and target, 1 Performed to 5 Optimizing (industry convention, not defined by NIST) |
 | `contradiction_detected` | Two sources disagree (for example policy vs. tenant configuration) |
 | `finding_generated` | A finding (gap) was created, with priority and risks |
 | `human_review` | A person accepted, modified or rejected an earlier decision |
+
+Rules that follow from Aligo's evidence rubric and classification guide:
+
+- Evidence judged `provided_insufficient` always sets `requires_human_review = true`, because insufficient evidence and non-compliance are different findings.
+- `Not assessed` is a recorded decision, not a missing value: partial completeness is normal, and the report must state which subcategories could not be assessed and why.
+- Control status, maturity level and remediation status are separate scales and are never derived from each other.
 
 ## 4. Fields
 
@@ -168,7 +175,7 @@ Subject to the stack decision (E0-04) and the main DB schema (E0-02).
 CREATE TYPE decision_type AS ENUM (
   'answer_interpreted', 'evidence_extracted', 'evidence_validated',
   'mapping_assigned', 'status_assessed', 'contradiction_detected',
-  'finding_generated', 'human_review'
+  'finding_generated', 'maturity_assessed', 'human_review'
 );
 CREATE TYPE actor_type AS ENUM ('agent', 'assessed_org_representative', 'aligo_consultant');
 CREATE TYPE evidence_nature AS ENUM ('intent', 'implementation', 'attestation');
