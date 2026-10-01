@@ -3,19 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Agentic GRC Assessment</title>
+
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <main>
-        <section>
+        <header>
+            <h1>Agentic GRC Assessment</h1>
+
+            <p>
+                Complete the assessment by reviewing the applicable
+                security modules.
+            </p>
+        </header>
+
+        <section id="organization-section">
             <h2>Organization</h2>
+
             <label for="organization-name">Organization name</label>
-            <input type="text" id="organization-name" placeholder="Enter organization name..">
+
+            <input
+                type="text"
+                id="organization-name"
+                placeholder="Enter organization name..."
+            >
         </section>
 
-        <section>
-            <p>Control: DEMO-ACCESS-01</p>
+        <section id="module-dashboard">
+            <h2>Assessment modules</h2>
+
+            <p>
+                Select a module to start or continue the assessment.
+            </p>
+
+            <div id="module-list">
+                <button
+                    type="button"
+                    class="module-card"
+                    data-module="Identity and Access"
+                >
+                    <strong>Identity and Access</strong>
+                    <span>IT / Infrastructure</span>
+                    <span class="module-status">Not started</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="module-card"
+                    data-module="Asset Management"
+                >
+                    <strong>Asset Management</strong>
+                    <span>IT / Operations</span>
+                    <span class="module-status">Not started</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="module-card"
+                    data-module="Continuous Monitoring"
+                >
+                    <strong>Continuous Monitoring</strong>
+                    <span>IT / Security</span>
+                    <span class="module-status">Not started</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="module-card"
+                    data-module="Policy"
+                >
+                    <strong>Policy</strong>
+                    <span>Management / Compliance</span>
+                    <span class="module-status">Not started</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="module-card"
+                    data-module="Incident Management"
+                >
+                    <strong>Incident Management</strong>
+                    <span>IT / Security</span>
+                    <span class="module-status">Not started</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="module-card"
+                    data-module="Data Security"
+                >
+                    <strong>Data Security</strong>
+                    <span>IT / Privacy</span>
+                    <span class="module-status">Not started</span>
+                </button>
+            </div>
+        </section>
+
+        <section id="assessment-workspace" hidden>
+            <button type="button" id="back-button">
+                Back to modules
+            </button>
+
+            <p id="selected-module-name">Module</p>
+
+            <p>Question: DEMO-ACCESS-01</p>
 
             <h2>
                 Does your organization enforce multi-factor authentication
@@ -26,43 +120,68 @@
                 <input type="radio" id="yes" name="answer" value="yes">
                 <label for="yes">Yes</label>
             </div>
+
             <div>
                 <input type="radio" id="no" name="answer" value="no">
                 <label for="no">No</label>
             </div>
+
             <div>
-                <input type="radio" id="partial" name="answer" value="partial">
+                <input
+                    type="radio"
+                    id="partial"
+                    name="answer"
+                    value="partial"
+                >
                 <label for="partial">Partially</label>
             </div>
+
             <div>
-                <input type="radio" id="unsure" name="answer" value="unsure">
+                <input
+                    type="radio"
+                    id="unsure"
+                    name="answer"
+                    value="unsure"
+                >
                 <label for="unsure">Unsure</label>
             </div>
-        </section>
 
-        <section>
             <h2>Supporting evidence</h2>
 
             <label for="evidence-file">
                 Upload a policy, configuration export or evidence document
             </label>
 
-            <input type="file" id="evidence-file" accept=".pdf">
-            <label for="evidence-description">Evidence description</label>
+            <input
+                type="file"
+                id="evidence-file"
+                accept=".pdf,.docx,.xlsx"
+            >
 
-            <textarea id="evidence-description" rows="5" placeholder="Please describe the available evidence"></textarea>
+            <label for="evidence-description">
+                Evidence description
+            </label>
+
+            <textarea
+                id="evidence-description"
+                rows="5"
+                placeholder="Please describe the available evidence"
+            ></textarea>
+
+            <button type="button" id="analyze-button">
+                Generate preliminary finding
+            </button>
+
+            <section id="finding-section">
+                <h2>Preliminary finding</h2>
+
+                <p id="finding-message">
+                    No assessment has been generated yet.
+                </p>
+            </section>
         </section>
-
-        <button type="submit" id="analyze-button">Generate preliminary finding</button>
-
-        <section id="finding-section">
-            <h2>Preliminary finding</h2>
-
-            <p id="finding-message">No assessment has been generated yet.</p>
-        </section>
-
     </main>
-    <script src="app.js"></script>
 
+    <script src="app.js"></script>
 </body>
 </html>
