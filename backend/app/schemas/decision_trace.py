@@ -1,12 +1,11 @@
-from dataclasses import dataclass
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class DecisionTrace:
+class DecisionTrace(BaseModel):
     decision_type: str
     actor_type: str
     sources: list
     rationale: str
     model_name: str | None = None
     prompt_version: str | None = None
-    confidence: float | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
