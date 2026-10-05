@@ -1,4 +1,4 @@
-from decision_trace.models import DecisionTrace
+from app.schemas.decision_trace import DecisionTrace
 
 def test_valid_agent_decision_is_created():
     # Arrange
