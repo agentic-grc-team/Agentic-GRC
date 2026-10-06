@@ -24,6 +24,8 @@ There is no public sign-up. Provision the first platform administrator once with
 
 `POST /api/v1/auth/login` accepts an email and password and returns a short-lived HS256 bearer token. `GET /api/v1/auth/me` returns the current account. Set `JWT_SECRET` to a unique random value of at least 32 bytes; do not reuse the example value. Login failures are rate-limited in-process as a basic MVP safeguard.
 
+To smoke-test the provisioned administrator against the running local API without saving the password or token, run `python .\scripts\smoke_test_admin_login.py` from `backend/`. The script prompts for the email and password, then verifies both login and the authenticated `/api/v1/auth/me` response. `JWT_SECRET` must be configured and the backend restarted first. An alternate API URL can be supplied through `API_BASE_URL`.
+
 ## Organizations and invitations
 
 - The organization creator becomes its first administrator. Organization membership and organization creation are committed together.
