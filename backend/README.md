@@ -10,42 +10,49 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-# Set the PostgreSQL and JWT values. Configure SMTP to test email invitations.
+# Set the Supabase, PostgreSQL, and SMTP values described below.
 alembic upgrade head
-python -m app.cli bootstrap-admin
+python -m app.cli bootstrap-admin --user-id <SUPABASE_AUTH_UUID> --email <ADMIN_EMAIL>
 uvicorn app.main:app --reload
 ```
 
 The health check is at `http://127.0.0.1:8000/api/v1/health` and interactive API docs are at `http://127.0.0.1:8000/docs`.
 
-## Authentication and accounts
+## Authentication setup
 
-There is no public sign-up. Provision the first platform administrator once with `python -m app.cli bootstrap-admin`; the password is prompted, hashed, and never passed as a command-line argument. New consultant and representative accounts are created when they accept an invitation. Acceptance verifies the invited email and activates the organization membership.
+Supabase Auth is the identity provider. Enable Email in the Supabase Auth providers and disable public sign-ups; the backend creates new Auth identities only after validating an organization invitation. Create the initial platform administrator in Supabase Auth with a confirmed email. Use that Auth user's UUID and email with the CLI command above to create the application profile and grant platform-admin access. The CLI never creates or stores a password.
 
-`POST /api/v1/auth/login` accepts an email and password and returns a short-lived HS256 bearer token. `GET /api/v1/auth/me` returns the current account. Set `JWT_SECRET` to a unique random value of at least 32 bytes; do not reuse the example value. Login failures are rate-limited in-process as a basic MVP safeguard.
+The frontend supports email/password sign-in and optional Google OAuth through the same Supabase project. To enable Google, configure the Google provider in Supabase with a Google OAuth client ID and secret, then add the Supabase callback URL shown in that provider's settings to the Google OAuth client's authorized redirect URIs. Add `http://127.0.0.1:4178/auth/callback` to Supabase's allowed redirect URLs for local development. Google sign-in must resolve to the invited/registered email; a Supabase identity without an organization membership receives no organization data.
 
-To smoke-test the provisioned administrator against the running local API without saving the password or token, run `python .\scripts\smoke_test_admin_login.py` from `backend/`. The script prompts for the email and password, then verifies both login and the authenticated `/api/v1/auth/me` response. `JWT_SECRET` must be configured and the backend restarted first. An alternate API URL can be supplied through `API_BASE_URL`.
+FastAPI validates each bearer token with Supabase Auth's user endpoint and uses its verified user ID and email to resolve the application profile. It does not issue its own JWTs. `GET /api/v1/auth/me` returns the current application account.
 
 ## Organizations and invitations
 
 - The organization creator becomes its first administrator. Organization membership and organization creation are committed together.
-- Sector and size are foreign keys into lookup tables. The migration preserves existing labels and adds only fallback choices (`Other / not specified`, `Not specified`) so a fresh database is usable; replace or extend these when the client-approved catalog is available.
-- Organization-name duplicates require an explicit confirmation that records the matching organization and confirmer. Data is logically scoped by organization in the shared `agentic_grc` database.
-- Administrators can invite consultants or representatives. SMTP must be configured; a failed email delivery leaves no pending invitation. The one-use activation token is stored only as a SHA-256 hash and expires after seven days.
-- New invitees set a password at `POST /api/v1/auth/accept-invitation`. Existing users sign in and accept their pending invitation at `POST /api/v1/organizations/invitations/{id}/accept`.
+- Sector and size are foreign keys into lookup tables. The current fallback choices (`Other / not specified`, `Not specified`) are temporary until approved client catalogs are available.
+- Organization-name duplicates require explicit confirmation, recorded with the matching organization and confirmer.
+- Administrators can invite consultants or representatives. The invitation token is random, single-use, stored only as a SHA-256 hash, and expires after seven days.
+- FastAPI continues to send organization invitations through its configured SMTP server. Following the invite link, a new invitee chooses a password; the backend verifies the invitation before creating a confirmed Supabase Auth user and committing the profile and membership.
+- If the email already has a Supabase account, the invitee signs in first and accepts the invitation from the workspace. The invitation's email must match the authenticated account.
 
-See [DATABASE.md](DATABASE.md) for the provisional schema and boundaries. Reset-password flows, invitation resend/revocation, and invitations to additional administrators are outside this first implementation.
+## Environment variables
 
-## Configuration and migrations
+`backend/.env` is read by the backend and Alembic. Configure:
 
-Database settings are read from `backend/.env` or the process environment: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SSLMODE`. The database defaults to `agentic_grc`. `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_ACCESS_TOKEN_MINUTES`, and `APP_BASE_URL` configure local authentication and invitation links.
+- PostgreSQL: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSLMODE`.
+- Supabase Auth: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`. The publishable key may also be the project's legacy anon key. The secret key (or legacy service-role key) is server-only and must never be put in a `VITE_*` variable or committed.
+- Invitation links: `APP_BASE_URL`.
+- Outbound organization email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`.
+- Runtime mode: `APP_ENVIRONMENT`.
 
-Email delivery uses `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`. Do not commit `.env` or real credentials. Apply schema changes with `alembic upgrade head`.
+The old `JWT_SECRET` and local password-hash settings are no longer used. Remove the temporary JWT secret from your local environment once this branch is adopted. Supabase email/password sign-in and Google OAuth are authenticated by Supabase; the current app SMTP server only sends organization invitations.
 
-Run the tests with:
+## Tests
+
+Run unit tests with:
 
 ```powershell
 python -m unittest discover -v
 ```
 
-The authentication/password tests do not require PostgreSQL. Organization/invitation integration tests are skipped when PostgreSQL cannot be reached and require the migrations to have been applied.
+Auth service and configuration tests do not require network access. Organization workflow integration tests require a reachable Supabase PostgreSQL database with the migrations applied; they are skipped if PostgreSQL is unavailable.
