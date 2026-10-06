@@ -1,17 +1,28 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../api/client.js";
-import { getCurrentAccount, signInWithPassword } from "./api.js";
-import { clearSession, readSession, saveSession } from "./session.js";
+import { getCurrentAccount } from "./api.js";
+import { getSupabaseClient, isSupabaseConfigured } from "./supabase.js";
 
 const AuthContext = createContext(null);
 
-function accountFromLogin(response) {
+function accountFromSession(account, session) {
+  const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
   return {
-    ...response.user,
-    accessToken: response.access_token,
-    expiresAt: response.expires_at,
+    ...account,
+    accessToken: session.access_token,
+    expiresAt: new Date(expirySeconds * 1000).toISOString(),
   };
+}
+
+function messageForAuthError(error) {
+  if (error instanceof ApiError && error.status === 429) {
+    return "Too many sign-in attempts. Please wait before trying again.";
+  }
+  if (error?.code === "invalid_credentials" || error?.code === "user_not_found") {
+    return "Email or password is incorrect.";
+  }
+  return error?.message || "Sign-in could not be completed. Please try again.";
 }
 
 export function AuthProvider({ children }) {
@@ -20,92 +31,142 @@ export function AuthProvider({ children }) {
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
-    let isMounted = true;
-    const storedSession = readSession();
-    if (!storedSession) {
+    if (!isSupabaseConfigured()) {
+      setAuthError("Supabase Auth is not configured. Add the frontend environment values and restart Vite.");
       setIsLoading(false);
-      return () => {
-        isMounted = false;
-      };
+      return undefined;
     }
 
-    setUser({ ...storedSession.user, accessToken: storedSession.accessToken, expiresAt: storedSession.expiresAt });
-    getCurrentAccount(storedSession.accessToken)
-      .then((account) => {
+    const supabase = getSupabaseClient();
+    let isMounted = true;
+    let latestRequest = 0;
+
+    async function loadSession(session) {
+      const requestId = ++latestRequest;
+      if (!session?.access_token) {
         if (isMounted) {
-          const refreshedUser = { ...account, accessToken: storedSession.accessToken, expiresAt: storedSession.expiresAt };
-          setUser(refreshedUser);
-          saveSession({ ...storedSession, user: account });
-        }
-      })
-      .catch((error) => {
-        if (isMounted && error instanceof ApiError && error.status === 401) {
-          clearSession();
           setUser(null);
+          setIsLoading(false);
         }
+        return;
+      }
+
+      try {
+        const account = await getCurrentAccount(session.access_token);
+        if (isMounted && requestId === latestRequest) {
+          setUser(accountFromSession(account, session));
+          setAuthError("");
+        }
+      } catch (error) {
+        if (isMounted && requestId === latestRequest) {
+          if (error instanceof ApiError && error.status === 401) {
+            setUser(null);
+            void supabase.auth.signOut({ scope: "local" });
+          } else {
+            setAuthError(error?.message || "Could not verify the active session with the API.");
+          }
+        }
+      } finally {
+        if (isMounted && requestId === latestRequest) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      queueMicrotask(() => void loadSession(session));
+    });
+
+    const callbackError = new URLSearchParams(window.location.search).get("error_description");
+    if (callbackError) {
+      setAuthError("Google sign-in could not be completed. Please try again.");
+    }
+
+    void supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (!isMounted) {
+          return;
+        }
+        if (error) {
+          setAuthError("Could not restore your Supabase session. Please sign in again.");
+          setIsLoading(false);
+          return;
+        }
+        void loadSession(data.session);
       })
-      .finally(() => {
+      .catch(() => {
         if (isMounted) {
+          setAuthError("Could not restore your Supabase session. Please sign in again.");
           setIsLoading(false);
         }
       });
 
     return () => {
       isMounted = false;
+      subscription.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    if (!user?.expiresAt) {
-      return undefined;
-    }
-    const millisecondsUntilExpiry = Date.parse(user.expiresAt) - Date.now();
-    if (millisecondsUntilExpiry <= 0) {
-      clearSession();
-      setUser(null);
-      setAuthError("Your session expired. Sign in again to continue.");
-      return undefined;
-    }
-    const timeout = window.setTimeout(() => {
-      clearSession();
-      setUser(null);
-      setAuthError("Your session expired. Sign in again to continue.");
-    }, millisecondsUntilExpiry);
-    return () => window.clearTimeout(timeout);
-  }, [user?.expiresAt]);
 
   const signIn = useCallback(async (email, password) => {
     setAuthError("");
     try {
-      const response = await signInWithPassword(email.trim(), password);
-      const nextUser = accountFromLogin(response);
-      saveSession({
-        accessToken: response.access_token,
-        expiresAt: response.expires_at,
-        user: response.user,
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
       });
+      if (error) {
+        throw error;
+      }
+      if (!data.session) {
+        throw new Error("Supabase did not return an authenticated session.");
+      }
+      const account = await getCurrentAccount(data.session.access_token);
+      const nextUser = accountFromSession(account, data.session);
       setUser(nextUser);
       return nextUser;
     } catch (error) {
-      const message = error?.status === 401
-        ? "Email or password is incorrect."
-        : error?.status === 429
-          ? "Too many sign-in attempts. Please wait before trying again."
-          : error?.message || "Sign-in could not be completed. Please try again.";
-      setAuthError(message);
+      setAuthError(messageForAuthError(error));
       throw error;
     }
   }, []);
 
-  const signOut = useCallback(() => {
-    clearSession();
-    setUser(null);
+  const signInWithGoogle = useCallback(async () => {
     setAuthError("");
+    try {
+      const { error } = await getSupabaseClient().auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      setAuthError(messageForAuthError(error));
+      throw error;
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    setAuthError("");
+    setUser(null);
+    if (isSupabaseConfigured()) {
+      await getSupabaseClient().auth.signOut();
+    }
   }, []);
 
   const value = useMemo(
-    () => ({ user, isLoading, authError, signIn, signOut, clearAuthError: () => setAuthError("") }),
-    [authError, isLoading, signIn, signOut, user],
+    () => ({
+      user,
+      isLoading,
+      authError,
+      signIn,
+      signInWithGoogle,
+      signOut,
+      clearAuthError: () => setAuthError(""),
+      isSupabaseConfigured: isSupabaseConfigured(),
+    }),
+    [authError, isLoading, signIn, signInWithGoogle, signOut, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -34,8 +34,10 @@ export default function InvitationActivation() {
     }
 
     setIsSubmitting(true);
+    let invitationAccepted = false;
     try {
       const accepted = await acceptInvitationProfile(token, password);
+      invitationAccepted = true;
       await signIn(accepted.email, password);
       setAcceptedEmail(accepted.email);
       setIsAccepted(true);
@@ -48,6 +50,8 @@ export default function InvitationActivation() {
         setError("This invitation link is invalid or has already been used.");
       } else if (acceptError?.status === 401) {
         setError("Your account was created, but automatic sign-in failed. Please sign in from the home page.");
+      } else if (invitationAccepted) {
+        setError("The invitation was accepted, but automatic sign-in failed. Please sign in from the home page.");
       } else {
         setError(acceptError?.message || "The invitation could not be accepted. Please try again.");
       }
@@ -107,7 +111,7 @@ export default function InvitationActivation() {
                 {!isSubmitting && <span aria-hidden="true">→</span>}
               </button>
             </form>
-            {error.includes("already exists") && <a className="text-button activation-signin-link" href="/">Go to sign in</a>}
+            {(error.includes("already exists") || error.includes("Please sign in")) && <a className="text-button activation-signin-link" href="/">Go to sign in</a>}
           </>
         )}
       </div>

@@ -2,20 +2,24 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../api/client.js";
-import { AuthProvider } from "./AuthProvider.jsx";
-import { acceptInvitationProfile, signInWithPassword } from "./api.js";
+import { acceptInvitationProfile } from "./api.js";
 import InvitationActivation from "./InvitationActivation.jsx";
+
+const { signInMock } = vi.hoisted(() => ({ signInMock: vi.fn() }));
 
 vi.mock("./api.js", () => ({
   acceptInvitationProfile: vi.fn(),
-  getCurrentAccount: vi.fn(),
-  signInWithPassword: vi.fn(),
+}));
+
+vi.mock("./AuthProvider.jsx", () => ({
+  useAuth: () => ({ signIn: signInMock }),
 }));
 
 describe("InvitationActivation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    signInMock.mockResolvedValue({ id: "invitee-1" });
     window.history.replaceState({}, "", "/invite/accept#token=single-use-invitation-token-123456");
   });
 
@@ -25,13 +29,7 @@ describe("InvitationActivation", () => {
 
   it("accepts the email token, creates the profile, and signs the invitee in", async () => {
     acceptInvitationProfile.mockResolvedValue({ email: "invitee@example.com" });
-    signInWithPassword.mockResolvedValue({
-      access_token: "new-user-token",
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
-      user: { id: "invitee-1", email: "invitee@example.com", is_platform_admin: false },
-    });
-
-    render(<AuthProvider><InvitationActivation /></AuthProvider>);
+    render(<InvitationActivation />);
     fireEvent.change(screen.getByLabelText(/Create a password/), {
       target: { value: "a-secure-password-12" },
     });
@@ -45,12 +43,12 @@ describe("InvitationActivation", () => {
       "single-use-invitation-token-123456",
       "a-secure-password-12",
     );
-    expect(signInWithPassword).toHaveBeenCalledWith("invitee@example.com", "a-secure-password-12");
+    expect(signInMock).toHaveBeenCalledWith("invitee@example.com", "a-secure-password-12");
   });
 
   it("directs an existing account to sign in and accept from its workspace", async () => {
     acceptInvitationProfile.mockRejectedValue(new ApiError(409, { detail: "Account already exists." }));
-    render(<AuthProvider><InvitationActivation /></AuthProvider>);
+    render(<InvitationActivation />);
     fireEvent.change(screen.getByLabelText(/Create a password/), {
       target: { value: "a-secure-password-12" },
     });

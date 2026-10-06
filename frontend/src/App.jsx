@@ -25,10 +25,11 @@ function ApiStatus({ status, onRetry }) {
   );
 }
 
-function LoginPanel({ authError, onSignIn, apiStatus, onRetryApi }) {
+function LoginPanel({ authError, onSignIn, onGoogleSignIn, isSupabaseConfigured, apiStatus, onRetryApi }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
@@ -39,6 +40,17 @@ function LoginPanel({ authError, onSignIn, apiStatus, onRetryApi }) {
       setPassword("");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function startGoogleSignIn() {
+    setIsGoogleSubmitting(true);
+    try {
+      await onGoogleSignIn();
+    } catch {
+      // AuthProvider exposes a safe error message to the form.
+    } finally {
+      setIsGoogleSubmitting(false);
     }
   }
 
@@ -65,6 +77,7 @@ function LoginPanel({ authError, onSignIn, apiStatus, onRetryApi }) {
             autoComplete="email"
             maxLength={320}
             required
+            disabled={!isSupabaseConfigured}
           />
         </label>
         <label>
@@ -76,13 +89,24 @@ function LoginPanel({ authError, onSignIn, apiStatus, onRetryApi }) {
             autoComplete="current-password"
             maxLength={128}
             required
+            disabled={!isSupabaseConfigured}
           />
         </label>
-        <button className="primary-button sign-in-button" type="submit" disabled={isSubmitting}>
+        <button className="primary-button sign-in-button" type="submit" disabled={isSubmitting || !isSupabaseConfigured}>
           {isSubmitting ? "Signing in…" : "Sign in"}
           {!isSubmitting && <span aria-hidden="true">→</span>}
         </button>
       </form>
+      <div className="login-divider"><span>OR</span></div>
+      <button
+        className="secondary-button google-sign-in-button"
+        type="button"
+        onClick={startGoogleSignIn}
+        disabled={isGoogleSubmitting || !isSupabaseConfigured}
+      >
+        <span className="google-mark" aria-hidden="true">G</span>
+        {isGoogleSubmitting ? "Connecting to Google…" : "Continue with Google"}
+      </button>
       <p className="login-help">New here? Ask your organization administrator for an invitation.</p>
       <div className="login-api-state">
         <ApiStatus status={apiStatus} onRetry={onRetryApi} />
@@ -94,7 +118,15 @@ function LoginPanel({ authError, onSignIn, apiStatus, onRetryApi }) {
 }
 
 function App() {
-  const { user, isLoading, authError, signIn, signOut } = useAuth();
+  const {
+    user,
+    isLoading,
+    authError,
+    signIn,
+    signInWithGoogle,
+    signOut,
+    isSupabaseConfigured,
+  } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
 
   async function refreshApiStatus() {
@@ -111,12 +143,22 @@ function App() {
     void refreshApiStatus();
   }, []);
 
+  useEffect(() => {
+    if (window.location.pathname === "/auth/callback" && !isLoading && user) {
+      window.history.replaceState({}, document.title, "/");
+    }
+  }, [isLoading, user]);
+
   function handleSignOut() {
     signOut();
   }
 
   if (window.location.pathname === "/invite/accept") {
     return <InvitationActivation />;
+  }
+
+  if (window.location.pathname === "/auth/callback" && isLoading) {
+    return <div className="loading-screen" role="status"><span className="loading-orb" />Completing secure sign-in…</div>;
   }
 
   return (
@@ -174,6 +216,8 @@ function App() {
           <LoginPanel
             authError={authError}
             onSignIn={signIn}
+            onGoogleSignIn={signInWithGoogle}
+            isSupabaseConfigured={isSupabaseConfigured}
             apiStatus={apiStatus}
             onRetryApi={refreshApiStatus}
           />

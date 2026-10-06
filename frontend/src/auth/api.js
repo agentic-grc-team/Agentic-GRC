@@ -1,12 +1,5 @@
 import { apiRequest } from "../api/client.js";
 
-export function signInWithPassword(email, password) {
-  return apiRequest("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
 export function getCurrentAccount(accessToken) {
   return apiRequest("/auth/me", { accessToken });
 }
