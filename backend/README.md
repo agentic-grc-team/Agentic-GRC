@@ -1,6 +1,6 @@
 # Agentic GRC API
 
-Initial FastAPI service scaffold. API routes live under `/api/v1`.
+FastAPI service for the first organization, login, and invitation workflows. API routes live under `/api/v1`.
 
 ## Run locally (PowerShell)
 
@@ -10,16 +10,40 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-# Edit .env with the PostgreSQL connection details before running migrations.
+# Set the PostgreSQL and JWT values. Configure SMTP to test email invitations.
 alembic upgrade head
+python -m app.cli bootstrap-admin
 uvicorn app.main:app --reload
 ```
 
-The API health check is available at `http://127.0.0.1:8000/api/v1/health`.
-Interactive API docs are available at `http://127.0.0.1:8000/docs`.
+The health check is at `http://127.0.0.1:8000/api/v1/health` and interactive API docs are at `http://127.0.0.1:8000/docs`.
 
-The provisional database model, endpoint behavior, and assumptions are documented in [DATABASE.md](DATABASE.md). Organization and invitation endpoints require a verified JWT from the configured OIDC provider. Set `AUTH_ISSUER`, `AUTH_AUDIENCE`, and `AUTH_JWKS_URL` in `.env`; issuer and JWKS URLs must use HTTPS. Until these are configured, protected routes return `503` by design. Invitations are stored but not emailed yet; the API supports discovery by the invitee's verified email and acceptance.
+## Authentication and accounts
 
-The SQLAlchemy connection URL is assembled from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SSLMODE`. These values are read from `backend/.env` (or the process environment) by both FastAPI's database session helper and Alembic. The database name defaults to `agentic_grc`; use the actual host, username, password, and TLS settings supplied for the PostgreSQL connection. Never commit `.env`.
+There is no public sign-up. Provision the first platform administrator once with `python -m app.cli bootstrap-admin`; the password is prompted, hashed, and never passed as a command-line argument. New consultant and representative accounts are created when they accept an invitation. Acceptance verifies the invited email and activates the organization membership.
 
-The organization API requires a bearer access token with `iss`, `aud`, `exp`, `sub`, `email`, and boolean `email_verified: true` claims. Only RS256 and ES256 signing keys published by the configured JWKS endpoint are accepted. The API never trusts a user ID or email passed in request headers or bodies to establish identity.
+`POST /api/v1/auth/login` accepts an email and password and returns a short-lived HS256 bearer token. `GET /api/v1/auth/me` returns the current account. Set `JWT_SECRET` to a unique random value of at least 32 bytes; do not reuse the example value. Login failures are rate-limited in-process as a basic MVP safeguard.
+
+## Organizations and invitations
+
+- The organization creator becomes its first administrator. Organization membership and organization creation are committed together.
+- Sector and size are foreign keys into lookup tables. The migration preserves existing labels and adds only fallback choices (`Other / not specified`, `Not specified`) so a fresh database is usable; replace or extend these when the client-approved catalog is available.
+- Organization-name duplicates require an explicit confirmation that records the matching organization and confirmer. Data is logically scoped by organization in the shared `agentic_grc` database.
+- Administrators can invite consultants or representatives. SMTP must be configured; a failed email delivery leaves no pending invitation. The one-use activation token is stored only as a SHA-256 hash and expires after seven days.
+- New invitees set a password at `POST /api/v1/auth/accept-invitation`. Existing users sign in and accept their pending invitation at `POST /api/v1/organizations/invitations/{id}/accept`.
+
+See [DATABASE.md](DATABASE.md) for the provisional schema and boundaries. Reset-password flows, invitation resend/revocation, and invitations to additional administrators are outside this first implementation.
+
+## Configuration and migrations
+
+Database settings are read from `backend/.env` or the process environment: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SSLMODE`. The database defaults to `agentic_grc`. `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_ACCESS_TOKEN_MINUTES`, and `APP_BASE_URL` configure local authentication and invitation links.
+
+Email delivery uses `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`. Do not commit `.env` or real credentials. Apply schema changes with `alembic upgrade head`.
+
+Run the tests with:
+
+```powershell
+python -m unittest discover -v
+```
+
+The authentication/password tests do not require PostgreSQL. Organization/invitation integration tests are skipped when PostgreSQL cannot be reached and require the migrations to have been applied.

@@ -1,80 +1,129 @@
 import unittest
-from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock
+from uuid import uuid4
 
-import jwt
 from fastapi import HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from pydantic import ValidationError
+from starlette.requests import Request
+from app.schemas.auth import LoginRequest
 
+from app.api.v1.endpoints import auth as auth_endpoint
 from app.core.config import Settings
-from app.security.auth import get_authenticated_identity
+from app.security.invitations import create_invitation_token, hash_invitation_token
+from app.security.passwords import hash_password, verify_password
 
 
-class JwtAuthenticationTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        cls.public_key = cls.private_key.public_key()
-        cls.private_pem = cls.private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
+class PasswordSecurityTests(unittest.TestCase):
+    def test_authentication_settings_reject_weak_jwt_secrets(self) -> None:
+        with self.assertRaises(ValidationError):
+            Settings(jwt_secret="too-short")
 
+    def test_hash_verifies_password_without_storing_plaintext(self) -> None:
+        password = "correct horse battery staple 9"
+        password_hash = hash_password(password)
+
+        self.assertTrue(password_hash.startswith("scrypt$"))
+        self.assertNotIn(password, password_hash)
+        self.assertTrue(verify_password(password, password_hash))
+        self.assertFalse(verify_password("incorrect password", password_hash))
+
+    def test_password_length_is_bounded(self) -> None:
+        with self.assertRaises(ValueError):
+            hash_password("short")
+        with self.assertRaises(ValueError):
+            hash_password("x" * 129)
+
+    def test_invitation_tokens_are_random_and_stored_as_hashes(self) -> None:
+        token, token_hash = create_invitation_token()
+
+        self.assertGreaterEqual(len(token), 32)
+        self.assertEqual(hash_invitation_token(token), token_hash)
+        self.assertNotEqual(token, token_hash)
+
+
+class LoginApiTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.settings = Settings(
-            auth_issuer="https://issuer.example/tenant",
-            auth_audience="agentic-grc-api",
-            auth_jwks_url="https://issuer.example/tenant/keys",
+        auth_endpoint._attempts.clear()
+        self.user = SimpleNamespace(
+            id=uuid4(),
+            email="admin@example.com",
+            password_hash=hash_password("correct horse battery staple 9"),
+            email_verified_at=object(),
+            deactivated_at=None,
+            is_platform_admin=True,
+        )
+        self.db = Mock()
+        self.db.scalar.return_value = self.user
+        self.db.get.return_value = self.user
+
+        self.settings = Settings(jwt_secret="unit-test-secret-with-at-least-32-bytes")
+        self.request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/v1/auth/login",
+                "headers": [],
+                "client": ("127.0.0.1", 12345),
+            }
         )
 
-    def token(self, **overrides: object) -> str:
-        now = datetime.now(timezone.utc)
-        claims = {
-            "iss": self.settings.auth_issuer,
-            "aud": self.settings.auth_audience,
-            "sub": "subject-123",
-            "email": "person@example.com",
-            "email_verified": True,
-            "iat": now,
-            "exp": now + timedelta(minutes=5),
-        }
-        claims.update(overrides)
-        return jwt.encode(claims, self.private_pem, algorithm="RS256", headers={"kid": "test-key"})
+    def tearDown(self) -> None:
+        auth_endpoint._attempts.clear()
 
-    def authenticate(self, token: str, settings: Settings | None = None):
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        fake_client = SimpleNamespace(
-            get_signing_key_from_jwt=lambda _token: SimpleNamespace(key=self.public_key)
+    def test_login_returns_bearer_token_for_verified_active_user(self) -> None:
+        response = auth_endpoint.login(
+            LoginRequest(email="ADMIN@example.com", password="correct horse battery staple 9"),
+            self.request,
+            self.db,
+            self.settings,
         )
-        with patch("app.security.auth._jwks_client", return_value=fake_client):
-            return get_authenticated_identity(credentials, settings or self.settings)
 
-    def test_accepts_valid_signature_and_verified_email(self) -> None:
-        identity = self.authenticate(self.token())
-        self.assertEqual(identity.issuer, self.settings.auth_issuer)
-        self.assertEqual(identity.subject, "subject-123")
-        self.assertEqual(identity.email, "person@example.com")
+        self.assertEqual(response.token_type, "bearer")
+        self.assertEqual(response.user.email, "admin@example.com")
+        self.assertTrue(response.access_token)
 
-    def test_rejects_unverified_email(self) -> None:
-        with self.assertRaises(HTTPException) as error:
-            self.authenticate(self.token(email_verified=False))
-        self.assertEqual(error.exception.status_code, 401)
+    def test_login_rejects_invalid_password_and_rate_limits_repeated_failures(self) -> None:
+        for _ in range(5):
+            with self.assertRaises(HTTPException) as response:
+                auth_endpoint.login(
+                    LoginRequest(email=self.user.email, password="incorrect password"),
+                    self.request,
+                    self.db,
+                    self.settings,
+                )
+            self.assertEqual(response.exception.status_code, 401)
 
-    def test_rejects_wrong_audience(self) -> None:
-        with self.assertRaises(HTTPException) as error:
-            self.authenticate(self.token(aud="another-api"))
-        self.assertEqual(error.exception.status_code, 401)
+        with self.assertRaises(HTTPException) as limited:
+            auth_endpoint.login(
+                LoginRequest(email=self.user.email, password="correct horse battery staple 9"),
+                self.request,
+                self.db,
+                self.settings,
+            )
+        self.assertEqual(limited.exception.status_code, 429)
 
-    def test_fails_closed_when_oidc_is_not_configured(self) -> None:
-        unconfigured = Settings(auth_issuer=None, auth_audience=None, auth_jwks_url=None)
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
-        with self.assertRaises(HTTPException) as error:
-            get_authenticated_identity(credentials, unconfigured)
-        self.assertEqual(error.exception.status_code, 503)
+    def test_login_rejects_unverified_or_deactivated_users(self) -> None:
+        self.user.email_verified_at = None
+        with self.assertRaises(HTTPException) as response:
+            auth_endpoint.login(
+                LoginRequest(email=self.user.email, password="correct horse battery staple 9"),
+                self.request,
+                self.db,
+                self.settings,
+            )
+        self.assertEqual(response.exception.status_code, 401)
+
+        self.user.email_verified_at = object()
+        self.user.deactivated_at = object()
+        with self.assertRaises(HTTPException) as response:
+            auth_endpoint.login(
+                LoginRequest(email=self.user.email, password="correct horse battery staple 9"),
+                self.request,
+                self.db,
+                self.settings,
+            )
+        self.assertEqual(response.exception.status_code, 401)
 
 
 if __name__ == "__main__":

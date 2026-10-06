@@ -32,8 +32,12 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     oidc_issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
     oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_platform_admin: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -66,6 +70,22 @@ Index(
 )
 
 
+class IndustrySector(Base):
+    __tablename__ = "industry_sectors"
+
+    code: Mapped[str] = mapped_column(String(50), primary_key=True)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    organizations: Mapped[list[Organization]] = relationship(back_populates="industry_sector")
+
+
+class OrganizationSize(Base):
+    __tablename__ = "organization_sizes"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    organizations: Mapped[list[Organization]] = relationship(back_populates="organization_size")
+
+
 class Organization(Base):
     __tablename__ = "organizations"
     __table_args__ = (
@@ -84,8 +104,12 @@ class Organization(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sector: Mapped[str] = mapped_column(String(100), nullable=False)
-    size: Mapped[str] = mapped_column(String(50), nullable=False)
+    sector_code: Mapped[str] = mapped_column(
+        String(50), ForeignKey("industry_sectors.code"), nullable=False
+    )
+    size_code: Mapped[str] = mapped_column(
+        String(30), ForeignKey("organization_sizes.code"), nullable=False
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -108,6 +132,8 @@ class Organization(Base):
     created_by: Mapped[User | None] = relationship(
         back_populates="created_organizations", foreign_keys=[created_by_user_id]
     )
+    industry_sector: Mapped[IndustrySector] = relationship(back_populates="organizations")
+    organization_size: Mapped[OrganizationSize] = relationship(back_populates="organizations")
     duplicate_name_confirmed_by: Mapped[User | None] = relationship(
         back_populates="confirmed_duplicate_organizations",
         foreign_keys=[duplicate_name_confirmed_by_user_id],
@@ -130,7 +156,9 @@ class OrganizationMembership(Base):
     __tablename__ = "organization_memberships"
     __table_args__ = (
         UniqueConstraint("organization_id", "user_id", name="uq_membership_organization_user"),
-        CheckConstraint("role IN ('administrator', 'consultant')", name="membership_role"),
+        CheckConstraint(
+            "role IN ('administrator', 'consultant', 'representative')", name="membership_role"
+        ),
         CheckConstraint("status IN ('active', 'suspended')", name="membership_status"),
     )
 
@@ -157,10 +185,20 @@ class OrganizationMembership(Base):
 class OrganizationInvitation(Base):
     __tablename__ = "organization_invitations"
     __table_args__ = (
-        CheckConstraint("role IN ('administrator', 'consultant')", name="invitation_role"),
+        CheckConstraint(
+            "role IN ('administrator', 'consultant', 'representative')", name="invitation_role"
+        ),
         CheckConstraint(
             "status IN ('pending', 'accepted', 'revoked', 'expired')", name="invitation_status"
         ),
+        CheckConstraint(
+            "status <> 'accepted' OR (accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL)",
+            name="invitation_accepted_complete",
+        ),
+        CheckConstraint(
+            "status <> 'revoked' OR revoked_at IS NOT NULL", name="invitation_revoked_complete"
+        ),
+        CheckConstraint("expires_at > created_at", name="invitation_expiry_after_creation"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)

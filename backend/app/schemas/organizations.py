@@ -5,13 +5,21 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
+InviteeRole = Literal["consultant", "representative"]
+
+
+class CatalogOption(BaseModel):
+    code: str
+    label: str
+
+
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    sector: str = Field(min_length=1, max_length=100)
-    size: str = Field(min_length=1, max_length=50)
+    sector_code: str = Field(min_length=1, max_length=50)
+    size_code: str = Field(min_length=1, max_length=30)
     confirm_duplicate_of: UUID | None = None
 
-    @field_validator("name", "sector", "size")
+    @field_validator("name", "sector_code", "size_code")
     @classmethod
     def strip_required_text(cls, value: str) -> str:
         value = value.strip()
@@ -20,30 +28,41 @@ class OrganizationCreate(BaseModel):
         return value
 
 
-class OrganizationSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class OrganizationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    sector_code: str | None = Field(default=None, min_length=1, max_length=50)
+    size_code: str | None = Field(default=None, min_length=1, max_length=30)
+    confirm_duplicate_of: UUID | None = None
 
+    @field_validator("name", "sector_code", "size_code")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+
+class OrganizationSummary(BaseModel):
     id: UUID
     name: str
+    sector_code: str
     sector: str
+    size_code: str
     size: str
     created_at: datetime
     role: str
 
 
-class OrganizationCreated(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    name: str
-    sector: str
-    size: str
-    created_at: datetime
+class OrganizationCreated(OrganizationSummary):
     role: Literal["administrator"] = "administrator"
 
 
 class InvitationCreate(BaseModel):
     email: EmailStr
+    role: InviteeRole = "consultant"
 
     @field_validator("email", mode="after")
     @classmethod
@@ -55,24 +74,29 @@ class InvitationCreated(BaseModel):
     id: UUID
     organization_id: UUID
     email: EmailStr
-    role: Literal["consultant"]
+    role: InviteeRole
     status: Literal["pending"]
     expires_at: datetime
-    delivery_status: Literal["not_sent"] = "not_sent"
-    message: str = "Invitation saved. Email delivery is not configured yet."
+    delivery_status: Literal["sent", "not_sent"]
 
 
 class InvitationSummary(BaseModel):
     id: UUID
     organization_id: UUID
     organization_name: str
-    role: Literal["consultant"]
+    role: InviteeRole
     expires_at: datetime
     created_at: datetime
+
+
+class InvitationAccept(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    password: str = Field(min_length=12, max_length=128)
 
 
 class InvitationAccepted(BaseModel):
     invitation_id: UUID
     organization_id: UUID
-    role: Literal["consultant"]
+    email: EmailStr
+    role: InviteeRole
     membership_status: Literal["active"]

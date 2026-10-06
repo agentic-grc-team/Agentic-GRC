@@ -1,50 +1,46 @@
-# Provisional database design
+# Provisional database and authentication design
 
-This is a first-pass schema for the organization-registration story, not an approved final data model. It is intentionally small and should be reviewed and adjusted by the teammate responsible for the database design.
+This is an implementation baseline for the login and organization-invitation phases, not the final project-wide schema. It applies only the relevant organization/account tables from the shared SQL design; assessment, evidence, report, and analysis tables remain out of scope for these phases.
 
 ## Tables
 
 | Table | Purpose | Key relationships |
 | --- | --- | --- |
-| `organizations` | Client name, sector, size, creator, and duplicate-name confirmation audit. | Optional creator and duplicate reference point to `users` / `organizations`. |
-| `users` | Platform-level identity identified by a verified email and the `(OIDC issuer, subject)` pair from the identity provider. The API stores no password or authentication token. | One user can have many memberships. |
-| `organization_memberships` | A user's role and status within one organization. | Many-to-many join between `users` and `organizations`, unique per pair. |
-| `organization_invitations` | Email invitation, intended role, sender, expiry/status, and a hash of the acceptance token. | Belongs to one organization; acceptance can link to a user. |
+| `users` | Global account keyed by normalized email; stores a password hash, verification time, platform-admin flag, and lifecycle fields. | One user can have memberships in many organizations. Legacy OIDC identity columns are retained for schema compatibility but are not used by local login. |
+| `organizations` | Client name, sector/size references, creator, and duplicate-name confirmation audit. | Sector/size refer to lookup tables; creator and duplicate references link to users/organizations. |
+| `industry_sectors`, `organization_sizes` | Editable catalogs used to validate and contextualize organization records. | Each organization references one row from each catalog. |
+| `organization_memberships` | User role and status within one organization. | Many-to-many join between users and organizations, unique per pair. Roles include administrator, consultant, and representative. |
+| `organization_invitations` | Invited email, intended role, token hash, sender, expiry, and acceptance/status audit. | Belongs to one organization and can link to the user created or matched at acceptance. |
 
-Organization sector and size are stored as bounded strings rather than database enums because the client's allowed values are not yet settled. They can be supplied to the agent later as interview context; the database itself does not call the agent.
+The migration keeps historic sector/size labels, if any, and adds two fallback catalog options for an empty database. Those are temporary minimum options, not the client's approved taxonomy. All organization data lives in one PostgreSQL database (`agentic_grc`) with logical tenant isolation. Every future organization-owned table must carry a non-null `organization_id`; service queries must check membership and scope records to that organization. PostgreSQL row-level security is not enabled in this MVP.
 
-## Tenant data space
+## Account and invitation flow
 
-The provisional choice is one shared PostgreSQL database (`agentic_grc`) with logical tenant isolation, not one physical database or schema per client. An organization row and UUID establish its empty scope. Every future organization-owned table (assessments, evidence, answers, and similar records) must carry a non-null `organization_id` foreign key, and service queries must authorize and filter by the caller's organization membership. This keeps a new organization's space empty until records are created without provisioning separate infrastructure.
+There is no public sign-up. A one-time CLI command provisions the initial platform administrator after migrations are applied. An administrator creates an organization and becomes its first organization administrator. That administrator can invite consultants and representatives by email; invitations expire after seven days.
 
-This MVP model does not enable PostgreSQL row-level security. Application authorization and tenant scoping will therefore be mandatory before adding organization-data endpoints; UUIDs alone are not access control.
+The API generates a high-entropy, single-use token, stores only its SHA-256 hash, and emails the raw token in the URL fragment of an activation link. A new invitee creates a profile by setting a password through that link. Successful acceptance verifies the invited email and creates the user and organization membership in one transaction. A user who already has an account signs in and accepts the pending invitation from the authenticated invitation list. Administrator invitations, password reset, resend, and revoke workflows are not part of this MVP.
 
-## Duplicate names
+Passwords are stored as scrypt hashes. Access tokens are short-lived HS256 JWTs signed with `JWT_SECRET`. SMTP delivery is performed before committing a pending invitation; a delivery failure rolls back the invitation. This avoids leaving an invitation that the API reports as sent when SMTP rejected it.
 
-For this first pass, names are compared globally, case-insensitively after trimming whitespace. A non-unique functional index supports that lookup while still allowing a confirmed duplicate. When a duplicate is explicitly accepted, the service should record `duplicate_of_organization_id`, `duplicate_name_confirmed_at`, and `duplicate_name_confirmed_by_user_id`. The reference and timestamp stay null for an ordinary name; the confirmer can later become null if that user is removed. The service must check duplicates transactionally; the non-unique index by itself does not prevent concurrent duplicate submissions.
+## API behavior
 
-## Invitation and membership flow
+- `POST /api/v1/auth/login`: verifies an active, email-verified account and returns a short-lived access token.
+- `GET /api/v1/auth/me`: returns the signed-in user.
+- `POST /api/v1/auth/accept-invitation`: consumes an emailed token and creates or activates the invitee's profile and membership.
+- `GET /api/v1/reference-data/industry-sectors` and `/organization-sizes`: return the available catalogs to authenticated clients.
+- `POST /api/v1/organizations`: creates an organization and its first administrator membership in one transaction. Duplicate names return matching organizations and require explicit confirmation on retry.
+- `GET /api/v1/organizations` and `GET /api/v1/organizations/{id}`: return organizations available to the current user (platform administrators can see all).
+- `PATCH /api/v1/organizations/{id}`: updates organization data for an administrator.
+- `POST /api/v1/organizations/{id}/invitations`: administrator-only invite by email, limited to consultant or representative.
+- `GET /api/v1/organizations/me/invitations` and `POST /api/v1/organizations/invitations/{id}/accept`: list and accept pending invitations for the signed-in email.
 
-Assumption for review: the user who creates an organization becomes its first administrator. Organization creation and that initial membership are saved in one transaction. An active administrator creates a consultant invitation scoped to their organization. Email delivery is deliberately deferred; the invitation is persisted as pending, and a verified user whose email matches can discover it at `GET /api/v1/organizations/me/invitations` and accept it through the API. Acceptance creates the organization membership and updates the invitation in one transaction. The user's identity is global, while role and membership status are per organization, so one user can belong to multiple clients with separate roles. The invitation UUID is not an authentication secret: acceptance also requires a valid provider JWT with the same verified email. Raw invite tokens must never be stored. Enforcing that only an active administrator can invite is an API authorization rule, not a database constraint.
+The application enforces role authorization. UUIDs are not treated as access control, and clients cannot choose their own user ID, email, or membership role. A representative can view organization details and results when those future endpoints are implemented; this phase does not add assessment/report endpoints.
 
-## API behavior (initial HU implementation)
+## Decisions deferred
 
-- `POST /api/v1/organizations`: requires a verified provider JWT; creates the organization and first administrator membership atomically. Names are compared globally, case-insensitively after trimming. If a match exists, the API returns `409` and matching IDs; a retry must set `confirm_duplicate_of` to one of those IDs to record explicit confirmation.
-- `GET /api/v1/organizations` and `GET /api/v1/organizations/{id}`: return only organizations with an active membership for the authenticated user.
-- `POST /api/v1/organizations/{id}/invitations`: active administrators only. It creates a pending consultant invitation, expires after seven days (provisional), and reports `delivery_status: not_sent`. It rejects an existing membership or unexpired pending invitation for that organization/email.
-- `GET /api/v1/organizations/me/invitations` and `POST /api/v1/organizations/invitations/{id}/accept`: a verified email can discover and accept only its own pending invitation. Acceptance adds a separate membership row.
+- Replace or extend the temporary sector/size fallback options with the client-approved catalog.
+- Add reset-password and invitation resend/revocation flows if needed.
+- Decide whether additional administrators can be invited and how platform-admin management works after bootstrap.
+- Revisit row-level security/deployment TLS requirements before production use.
 
-All non-health API routes use OIDC bearer JWT verification. Configure `AUTH_ISSUER`, `AUTH_AUDIENCE`, and `AUTH_JWKS_URL`; issuer and JWKS URLs must use HTTPS. The verifier checks the signing key from JWKS, issuer, audience, expiration, subject, and a strictly boolean `email_verified: true` claim. The accepted signing algorithms are RS256 and ES256. The API fails closed when authentication is not configured. No email-sending provider is configured yet.
-
-## Provisional choices to review
-
-- Confirm whether duplicate-name matching should be global or scoped to a client/workspace.
-- The accepted sector/size values and their maximum lengths.
-- Confirm that the creator becomes the first administrator.
-- Invitation expiry, re-invitation, and role-assignment rules.
-- Confirm the provider-specific JWT claims/algorithms and whether invitations should later be sent by SMTP, Microsoft Graph, or another mailer.
-- Whether the final deployment needs PostgreSQL row-level security or separate schemas.
-
-`DB_SSLMODE=prefer` is intended only as a convenient local-development default. A deployed environment should use the TLS mode and CA-verification policy specified by the PostgreSQL administrator (typically `verify-full` with the correct certificate configuration).
-
-No real database credentials are included. Put the connection values in an ignored local `backend/.env` file and apply migrations with `alembic upgrade head`.
+Database connection values belong in the ignored local `backend/.env` file. Never commit actual credentials or JWT/SMTP secrets.

@@ -1,124 +1,117 @@
 import unittest
+from datetime import datetime, timezone
+from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.v1.dependencies import get_db_session
-from app.main import app
-from app.security.auth import AuthenticatedIdentity, get_authenticated_identity
+from app.api.v1.endpoints import auth as auth_endpoint
+from app.api.v1.endpoints import organizations as organization_endpoints
+from app.core.config import Settings
+from app.db.models import IndustrySector, OrganizationSize, User
 from app.db.session import get_engine
+from app.schemas.organizations import InvitationAccept, InvitationCreate, OrganizationCreate
+from app.security.invitations import hash_invitation_token
 
 
-class OrganizationStoryApiTests(unittest.TestCase):
+class OrganizationInvitationFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.engine = get_engine()
+        try:
+            with cls.engine.connect() as connection:
+                connection.exec_driver_sql("SELECT 1")
+        except (OSError, SQLAlchemyError) as exc:
+            raise unittest.SkipTest("PostgreSQL is unavailable for integration tests.") from exc
 
     def setUp(self) -> None:
         self.connection = self.engine.connect()
         self.transaction = self.connection.begin()
-        self.identity = AuthenticatedIdentity(
-            issuer="https://test-idp.example/tenant",
-            subject=f"test-{uuid4()}",
+        self.session = Session(bind=self.connection, join_transaction_mode="create_savepoint")
+        self.admin = User(
             email=f"admin-{uuid4()}@example.com",
+            email_verified_at=datetime.now(timezone.utc),
+            is_platform_admin=True,
         )
-
-        def override_db():
-            with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
-                yield session
-
-        def override_identity():
-            return self.identity
-
-        app.dependency_overrides[get_db_session] = override_db
-        app.dependency_overrides[get_authenticated_identity] = override_identity
-        self.client = TestClient(app)
+        self.session.add(self.admin)
+        if self.session.get(IndustrySector, "other") is None:
+            self.session.add(IndustrySector(code="other", label="Other / not specified"))
+        if self.session.get(OrganizationSize, "unknown") is None:
+            self.session.add(OrganizationSize(code="unknown", label="Not specified"))
+        self.session.flush()
+        self.session.commit()
 
     def tearDown(self) -> None:
-        self.client.close()
-        app.dependency_overrides.clear()
+        self.session.close()
         self.transaction.rollback()
         self.connection.close()
 
-    def test_create_organization_is_scoped_and_creator_is_admin(self) -> None:
-        response = self.client.post(
-            "/api/v1/organizations",
-            json={"name": f"Client {uuid4()}", "sector": "Technology", "size": "Small"},
+    def _create_organization(self, name: str):
+        return organization_endpoints.create_organization(
+            OrganizationCreate(name=name, sector_code="other", size_code="unknown"),
+            self.session,
+            self.admin,
         )
-        self.assertEqual(response.status_code, 201, response.text)
-        organization = response.json()
-        self.assertEqual(organization["role"], "administrator")
 
-        listed = self.client.get("/api/v1/organizations")
-        self.assertEqual(listed.status_code, 200, listed.text)
-        self.assertEqual([item["id"] for item in listed.json()], [organization["id"]])
+    def test_duplicate_organization_name_requires_explicit_confirmation(self) -> None:
+        name = f"Client {uuid4()}"
+        original = self._create_organization(name)
 
-    def test_duplicate_requires_confirmation_of_a_matching_organization(self) -> None:
-        name = f"Duplicate {uuid4()}"
-        payload = {"name": name, "sector": "Technology", "size": "Small"}
-        original = self.client.post("/api/v1/organizations", json=payload)
-        self.assertEqual(original.status_code, 201, original.text)
+        with self.assertRaises(HTTPException) as duplicate:
+            self._create_organization(name)
+        self.assertEqual(duplicate.exception.status_code, 409)
+        duplicate_id = duplicate.exception.detail["matches"][0]["id"]
 
-        duplicate = self.client.post("/api/v1/organizations", json=payload)
-        self.assertEqual(duplicate.status_code, 409, duplicate.text)
-        match_id = duplicate.json()["detail"]["matches"][0]["id"]
-        payload["confirm_duplicate_of"] = match_id
-        confirmed = self.client.post("/api/v1/organizations", json=payload)
-        self.assertEqual(confirmed.status_code, 201, confirmed.text)
-        memberships = self.client.get("/api/v1/organizations")
-        self.assertEqual(memberships.status_code, 200, memberships.text)
-        self.assertEqual(len(memberships.json()), 2)
-
-    def test_invitation_is_persisted_and_matching_verified_user_can_accept(self) -> None:
-        created = self.client.post(
-            "/api/v1/organizations",
-            json={"name": f"Inviter {uuid4()}", "sector": "Services", "size": "Medium"},
+        confirmed = organization_endpoints.create_organization(
+            OrganizationCreate(
+                name=name,
+                sector_code="other",
+                size_code="unknown",
+                confirm_duplicate_of=duplicate_id,
+            ),
+            self.session,
+            self.admin,
         )
-        self.assertEqual(created.status_code, 201, created.text)
-        organization_id = created.json()["id"]
-        invitee_email = f"invitee-{uuid4()}@example.com"
+        self.assertEqual(confirmed.role, "administrator")
 
-        invitation = self.client.post(
-            f"/api/v1/organizations/{organization_id}/invitations",
-            json={"email": invitee_email},
-        )
-        self.assertEqual(invitation.status_code, 201, invitation.text)
-        self.assertEqual(invitation.json()["delivery_status"], "not_sent")
-        invitation_id = invitation.json()["id"]
+    def test_invitation_email_creates_verified_user_and_membership(self) -> None:
+        organization = self._create_organization(f"Client {uuid4()}")
+        raw_token = f"test-token-{uuid4()}-long-enough-for-activation"
+        token_hash = hash_invitation_token(raw_token)
+        with (
+            patch.object(organization_endpoints, "create_invitation_token", return_value=(raw_token, token_hash)),
+            patch.object(organization_endpoints, "send_invitation_email") as send_email,
+        ):
+            invitation = organization_endpoints.create_invitation(
+                organization.id,
+                InvitationCreate(email=f"representative-{uuid4()}@example.com", role="representative"),
+                self.session,
+                self.admin,
+                Settings(),
+            )
 
-        wrong_identity = AuthenticatedIdentity(
-            issuer="https://test-idp.example/tenant",
-            subject=f"wrong-user-{uuid4()}",
-            email=f"wrong-{uuid4()}@example.com",
+        self.assertEqual(invitation.delivery_status, "sent")
+        send_email.assert_called_once()
+        accept = auth_endpoint.accept_invitation_and_create_profile(
+            InvitationAccept(token=raw_token, password="a-secure-test-password-12"),
+            self.session,
         )
-        self.identity = wrong_identity
-        forbidden_acceptance = self.client.post(
-            f"/api/v1/organizations/invitations/{invitation_id}/accept"
-        )
-        self.assertEqual(forbidden_acceptance.status_code, 404)
+        self.assertEqual(accept.role, "representative")
 
-        self.identity = AuthenticatedIdentity(
-            issuer="https://test-idp.example/tenant",
-            subject=f"invitee-{uuid4()}",
-            email=invitee_email,
-        )
-        inbox = self.client.get("/api/v1/organizations/me/invitations")
-        self.assertEqual(inbox.status_code, 200, inbox.text)
-        self.assertEqual(inbox.json()[0]["id"], invitation_id)
+        user = self.session.scalar(select(User).where(User.email == invitation.email))
+        self.assertIsNotNone(user)
+        self.assertIsNotNone(user.email_verified_at)
+        self.assertTrue(user.password_hash.startswith("scrypt$"))
 
-        accepted = self.client.post(f"/api/v1/organizations/invitations/{invitation_id}/accept")
-        self.assertEqual(accepted.status_code, 200, accepted.text)
-        memberships = self.client.get("/api/v1/organizations")
-        self.assertEqual(memberships.status_code, 200, memberships.text)
-        self.assertEqual(memberships.json()[0]["id"], organization_id)
-        self.assertEqual(memberships.json()[0]["role"], "consultant")
-
-        forbidden = self.client.post(
-            f"/api/v1/organizations/{organization_id}/invitations",
-            json={"email": f"another-{uuid4()}@example.com"},
-        )
-        self.assertEqual(forbidden.status_code, 403)
+        with self.assertRaises(HTTPException) as replay:
+            auth_endpoint.accept_invitation_and_create_profile(
+                InvitationAccept(token=raw_token, password="another-secure-password-12"),
+                self.session,
+            )
+        self.assertIn(replay.exception.status_code, (404, 410))
 
 
 if __name__ == "__main__":
