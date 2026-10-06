@@ -1,10 +1,7 @@
-import hashlib
-import threading
-import time
-from collections import deque
+import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,101 +9,24 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_db_session
 from app.core.config import Settings, get_settings
 from app.db.models import OrganizationInvitation, OrganizationMembership, User
-from app.schemas.auth import AuthenticatedUser, CurrentUserResponse, LoginRequest, LoginResponse
+from app.schemas.auth import AuthenticatedUser, CurrentUserResponse
 from app.schemas.organizations import InvitationAccept, InvitationAccepted
-from app.security.auth import create_access_token, get_current_user
+from app.security.auth import get_current_user
 from app.security.invitations import hash_invitation_token
-from app.security.passwords import hash_password, verify_password
+from app.security.supabase import (
+    SupabaseUnavailable,
+    SupabaseUserAlreadyExists,
+    create_invited_identity,
+    delete_auth_identity,
+)
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
-_DUMMY_PASSWORD_HASH = hash_password("not-a-real-account-password")
-_ATTEMPT_WINDOW_SECONDS = 15 * 60
-_ATTEMPT_LIMIT = 5
-_attempts: dict[str, deque[float]] = {}
-_attempts_lock = threading.Lock()
-
-
-def _rate_limit_key(request: Request, email: str) -> str:
-    remote_host = request.client.host if request.client else "unknown"
-    return hashlib.sha256(f"{remote_host}:{email}".encode("utf-8")).hexdigest()
-
-
-def _is_rate_limited(key: str, now: float) -> bool:
-    with _attempts_lock:
-        attempts = _attempts.get(key)
-        if attempts is None:
-            return False
-        while attempts and attempts[0] <= now - _ATTEMPT_WINDOW_SECONDS:
-            attempts.popleft()
-        if not attempts:
-            _attempts.pop(key, None)
-        return len(attempts) >= _ATTEMPT_LIMIT
-
-
-def _record_failed_attempt(key: str, now: float) -> None:
-    with _attempts_lock:
-        attempts = _attempts.get(key)
-        if attempts is None:
-            if len(_attempts) >= 10_000:
-                _attempts.pop(next(iter(_attempts)))
-            attempts = _attempts.setdefault(key, deque())
-        while attempts and attempts[0] <= now - _ATTEMPT_WINDOW_SECONDS:
-            attempts.popleft()
-        attempts.append(now)
-
-
-def _clear_attempts(key: str) -> None:
-    with _attempts_lock:
-        _attempts.pop(key, None)
 
 
 def _public_user(user: User) -> AuthenticatedUser:
     return AuthenticatedUser(id=user.id, email=user.email, is_platform_admin=user.is_platform_admin)
-
-
-@router.post("/login", response_model=LoginResponse)
-def login(
-    payload: LoginRequest,
-    request: Request,
-    db: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-) -> LoginResponse:
-    normalized_email = str(payload.email).strip().lower()
-    key = _rate_limit_key(request, normalized_email)
-    now_monotonic = time.monotonic()
-    if _is_rate_limited(key, now_monotonic):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many sign-in attempts. Try again later.",
-            headers={"Retry-After": str(_ATTEMPT_WINDOW_SECONDS)},
-        )
-
-    user = db.scalar(
-        select(User).where(func.lower(func.btrim(User.email)) == normalized_email)
-    )
-    stored_hash = user.password_hash if user and user.password_hash else _DUMMY_PASSWORD_HASH
-    password_valid = verify_password(payload.password, stored_hash)
-    if (
-        user is None
-        or user.deactivated_at is not None
-        or user.email_verified_at is None
-        or not password_valid
-    ):
-        _record_failed_attempt(key, now_monotonic)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email or password is incorrect.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    _clear_attempts(key)
-    access_token, expires_at = create_access_token(user, settings)
-    return LoginResponse(
-        access_token=access_token,
-        expires_at=expires_at,
-        user=_public_user(user),
-    )
 
 
 @router.get("/me", response_model=CurrentUserResponse)
@@ -122,8 +42,10 @@ def current_user(user: User = Depends(get_current_user)) -> CurrentUserResponse:
 def accept_invitation_and_create_profile(
     payload: InvitationAccept,
     db: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
 ) -> InvitationAccepted:
     now = datetime.now(timezone.utc)
+    created_auth_user_id = None
     try:
         invitation = db.scalar(
             select(OrganizationInvitation)
@@ -137,27 +59,32 @@ def accept_invitation_and_create_profile(
                 invitation.status = "expired"
                 invitation.token_hash = None
                 db.commit()
-            raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invitation is no longer active.")
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="This invitation is no longer active.",
+            )
 
         normalized_email = invitation.email.strip().lower()
-        user = db.scalar(
-            select(User)
-            .where(func.lower(func.btrim(User.email)) == normalized_email)
-            .with_for_update()
+        existing_profile = db.scalar(
+            select(User).where(func.lower(func.btrim(User.email)) == normalized_email)
         )
-        if user is not None and user.password_hash is not None:
+        if existing_profile is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account already exists for this email. Sign in and accept the invitation from your account.",
             )
 
-        if user is None:
-            user = User(email=normalized_email)
-            db.add(user)
-            db.flush()
-        user.password_hash = hash_password(payload.password)
-        user.email_verified_at = now
+        identity = create_invited_identity(normalized_email, payload.password, settings)
+        created_auth_user_id = identity.id
+        if identity.email != normalized_email or not identity.email_verified:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase did not confirm the invited account as expected.",
+            )
 
+        user = User(id=identity.id, email=identity.email)
+        db.add(user)
+        db.flush()
         existing_membership = db.scalar(
             select(OrganizationMembership).where(
                 OrganizationMembership.organization_id == invitation.organization_id,
@@ -165,7 +92,10 @@ def accept_invitation_and_create_profile(
             )
         )
         if existing_membership is not None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This user already belongs to the organization.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This user already belongs to the organization.",
+            )
 
         db.add(
             OrganizationMembership(
@@ -187,12 +117,38 @@ def accept_invitation_and_create_profile(
             role=invitation.role,
             membership_status="active",
         )
+    except SupabaseUserAlreadyExists as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account already exists for this email. Sign in and accept the invitation from your account.",
+        ) from exc
+    except SupabaseUnavailable as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase Auth is temporarily unavailable. Please try again.",
+        ) from exc
     except HTTPException:
         db.rollback()
+        if created_auth_user_id is not None:
+            _remove_orphan_auth_user(created_auth_user_id, settings)
         raise
     except IntegrityError as exc:
         db.rollback()
+        if created_auth_user_id is not None:
+            _remove_orphan_auth_user(created_auth_user_id, settings)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The invitation could not be accepted because the account or membership already exists.",
         ) from exc
+    except Exception:
+        db.rollback()
+        if created_auth_user_id is not None:
+            _remove_orphan_auth_user(created_auth_user_id, settings)
+        raise
+
+
+def _remove_orphan_auth_user(user_id, settings: Settings) -> None:
+    if not delete_auth_identity(user_id, settings):
+        logger.error("Could not clean up an Auth identity after invitation acceptance failed.")

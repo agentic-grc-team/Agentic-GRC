@@ -21,21 +21,11 @@ from app.db.base import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_users_oidc_identity"),
-        CheckConstraint(
-            "(oidc_issuer IS NULL AND oidc_subject IS NULL) OR "
-            "(oidc_issuer IS NOT NULL AND oidc_subject IS NOT NULL)",
-            name="oidc_identity_complete",
-        ),
-    )
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"), primary_key=True
+    )
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    oidc_issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_platform_admin: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

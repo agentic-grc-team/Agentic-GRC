@@ -1,79 +1,83 @@
-from datetime import datetime, timedelta, timezone
-from uuid import UUID
-
-import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWTError
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_db_session
 from app.core.config import Settings, get_settings
 from app.db.models import User
+from app.security.supabase import (
+    SupabaseIdentity,
+    SupabaseInvalidToken,
+    SupabaseUnavailable,
+    get_verified_identity,
+)
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
-_ALLOWED_ALGORITHMS = ["HS256"]
 
 
 def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="A valid email and password session is required.",
+        detail="A valid Supabase session is required.",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
 
-def _jwt_secret(settings: Settings) -> str:
-    if settings.jwt_secret is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Email authentication is not configured. Set JWT_SECRET.",
+def _profile_for_identity(identity: SupabaseIdentity, db: Session) -> User:
+    if not identity.email_verified:
+        raise _unauthorized()
+
+    user = db.get(User, identity.id)
+    if user is None:
+        conflicting_user = db.scalar(
+            select(User.id).where(func.lower(func.btrim(User.email)) == identity.email)
         )
-    return settings.jwt_secret.get_secret_value()
+        if conflicting_user is not None:
+            raise _unauthorized()
+        user = User(id=identity.id, email=identity.email)
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError as exc:
+            db.rollback()
+            user = db.get(User, identity.id)
+            if user is None:
+                raise _unauthorized() from exc
+    elif user.deactivated_at is not None:
+        raise _unauthorized()
+    elif user.email != identity.email:
+        user.email = identity.email
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError as exc:
+            db.rollback()
+            raise _unauthorized() from exc
 
-
-def create_access_token(user: User, settings: Settings) -> tuple[str, datetime]:
-    now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(minutes=settings.jwt_access_token_minutes)
-    claims = {
-        "sub": str(user.id),
-        "iss": settings.jwt_issuer,
-        "aud": settings.jwt_audience,
-        "iat": now,
-        "exp": expires_at,
-        "token_type": "access",
-    }
-    token = jwt.encode(claims, _jwt_secret(settings), algorithm="HS256")
-    return token, expires_at
+    if user.deactivated_at is not None:
+        raise _unauthorized()
+    return user
 
 
 def _load_user_from_token(
-    credentials: HTTPAuthorizationCredentials,
+    access_token: str,
     db: Session,
     settings: Settings,
 ) -> User:
     try:
-        claims = jwt.decode(
-            credentials.credentials,
-            _jwt_secret(settings),
-            algorithms=_ALLOWED_ALGORITHMS,
-            issuer=settings.jwt_issuer,
-            audience=settings.jwt_audience,
-            options={"require": ["iss", "aud", "exp", "iat", "sub", "token_type"]},
-        )
-        if claims.get("token_type") != "access":
-            raise _unauthorized()
-        user_id = UUID(claims["sub"])
-    except HTTPException:
-        raise
-    except (PyJWTError, KeyError, TypeError, ValueError) as exc:
+        identity = get_verified_identity(access_token, settings)
+    except SupabaseInvalidToken as exc:
         raise _unauthorized() from exc
-
-    user = db.get(User, user_id)
-    if user is None or user.deactivated_at is not None or user.email_verified_at is None:
-        raise _unauthorized()
-    return user
+    except SupabaseUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase Auth is temporarily unavailable.",
+        ) from exc
+    return _profile_for_identity(identity, db)
 
 
 def get_current_user(
@@ -83,7 +87,7 @@ def get_current_user(
 ) -> User:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
-    return _load_user_from_token(credentials, db, settings)
+    return _load_user_from_token(credentials.credentials, db, settings)
 
 
 def get_optional_current_user(
@@ -95,4 +99,4 @@ def get_optional_current_user(
         return None
     if credentials.scheme.lower() != "bearer":
         raise _unauthorized()
-    return _load_user_from_token(credentials, db, settings)
+    return _load_user_from_token(credentials.credentials, db, settings)

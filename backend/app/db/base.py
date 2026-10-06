@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData
+from sqlalchemy import Column, MetaData, Table, Uuid
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -13,3 +13,12 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+Table(
+    "users",
+    Base.metadata,
+    Column("id", Uuid(as_uuid=True), primary_key=True),
+    schema="auth",
+    info={"supabase_managed": True},
+)

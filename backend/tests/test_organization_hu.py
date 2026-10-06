@@ -4,7 +4,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.db.models import IndustrySector, OrganizationSize, User
 from app.db.session import get_engine
 from app.schemas.organizations import InvitationAccept, InvitationCreate, OrganizationCreate
 from app.security.invitations import hash_invitation_token
+from app.security.supabase import SupabaseIdentity
 
 
 class OrganizationInvitationFlowTests(unittest.TestCase):
@@ -31,9 +32,12 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
         self.connection = self.engine.connect()
         self.transaction = self.connection.begin()
         self.session = Session(bind=self.connection, join_transaction_mode="create_savepoint")
+        admin_id = uuid4()
+        admin_email = f"admin-{uuid4()}@example.com"
+        self._insert_auth_user(admin_id, admin_email)
         self.admin = User(
-            email=f"admin-{uuid4()}@example.com",
-            email_verified_at=datetime.now(timezone.utc),
+            id=admin_id,
+            email=admin_email,
             is_platform_admin=True,
         )
         self.session.add(self.admin)
@@ -48,6 +52,25 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
         self.session.close()
         self.transaction.rollback()
         self.connection.close()
+
+    def _insert_auth_user(self, user_id, email: str) -> None:
+        now = datetime.now(timezone.utc)
+        self.connection.execute(
+            text(
+                "INSERT INTO auth.users "
+                "(id, aud, role, email, encrypted_password, email_confirmed_at, "
+                "raw_app_meta_data, raw_user_meta_data, created_at, updated_at) "
+                "VALUES (:id, 'authenticated', 'authenticated', :email, '', :confirmed_at, "
+                "'{}'::jsonb, '{}'::jsonb, :created_at, :updated_at)"
+            ),
+            {
+                "id": user_id,
+                "email": email,
+                "confirmed_at": now,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
 
     def _create_organization(self, name: str):
         return organization_endpoints.create_organization(
@@ -79,15 +102,23 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
 
     def test_invitation_email_creates_verified_user_and_membership(self) -> None:
         organization = self._create_organization(f"Client {uuid4()}")
+        invitee_email = f"representative-{uuid4()}@example.com"
+        invitee_id = uuid4()
         raw_token = f"test-token-{uuid4()}-long-enough-for-activation"
         token_hash = hash_invitation_token(raw_token)
         with (
             patch.object(organization_endpoints, "create_invitation_token", return_value=(raw_token, token_hash)),
             patch.object(organization_endpoints, "send_invitation_email") as send_email,
+            patch.object(
+                auth_endpoint,
+                "create_invited_identity",
+                return_value=SupabaseIdentity(invitee_id, invitee_email, True),
+            ),
         ):
+            self._insert_auth_user(invitee_id, invitee_email)
             invitation = organization_endpoints.create_invitation(
                 organization.id,
-                InvitationCreate(email=f"representative-{uuid4()}@example.com", role="representative"),
+                InvitationCreate(email=invitee_email, role="representative"),
                 self.session,
                 self.admin,
                 Settings(),
@@ -103,8 +134,7 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
 
         user = self.session.scalar(select(User).where(User.email == invitation.email))
         self.assertIsNotNone(user)
-        self.assertIsNotNone(user.email_verified_at)
-        self.assertTrue(user.password_hash.startswith("scrypt$"))
+        self.assertEqual(user.id, invitee_id)
 
         with self.assertRaises(HTTPException) as replay:
             auth_endpoint.accept_invitation_and_create_profile(
