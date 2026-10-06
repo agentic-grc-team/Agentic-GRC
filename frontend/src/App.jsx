@@ -25,11 +25,10 @@ function ApiStatus({ status, onRetry }) {
   );
 }
 
-function LoginPanel({ authError, onSignIn, onGoogleSignIn, isSupabaseConfigured, apiStatus, onRetryApi }) {
+function LoginPanel({ authError, onSignIn, isSupabaseConfigured, apiStatus, onRetryApi }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
@@ -40,17 +39,6 @@ function LoginPanel({ authError, onSignIn, onGoogleSignIn, isSupabaseConfigured,
       setPassword("");
     } finally {
       setIsSubmitting(false);
-    }
-  }
-
-  async function startGoogleSignIn() {
-    setIsGoogleSubmitting(true);
-    try {
-      await onGoogleSignIn();
-    } catch {
-      // AuthProvider exposes a safe error message to the form.
-    } finally {
-      setIsGoogleSubmitting(false);
     }
   }
 
@@ -101,11 +89,12 @@ function LoginPanel({ authError, onSignIn, onGoogleSignIn, isSupabaseConfigured,
       <button
         className="secondary-button google-sign-in-button"
         type="button"
-        onClick={startGoogleSignIn}
-        disabled={isGoogleSubmitting || !isSupabaseConfigured}
+        disabled
+        aria-label="Continue with Google, pending configuration"
       >
         <span className="google-mark" aria-hidden="true">G</span>
-        {isGoogleSubmitting ? "Connecting to Google…" : "Continue with Google"}
+        <span>Continue with Google</span>
+        <span className="google-pending-tag">Pending</span>
       </button>
       <p className="login-help">New here? Ask your organization administrator for an invitation.</p>
       <div className="login-api-state">
@@ -123,7 +112,6 @@ function App() {
     isLoading,
     authError,
     signIn,
-    signInWithGoogle,
     signOut,
     isSupabaseConfigured,
   } = useAuth();
@@ -216,7 +204,6 @@ function App() {
           <LoginPanel
             authError={authError}
             onSignIn={signIn}
-            onGoogleSignIn={signInWithGoogle}
             isSupabaseConfigured={isSupabaseConfigured}
             apiStatus={apiStatus}
             onRetryApi={refreshApiStatus}

@@ -221,7 +221,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .login-divider::before, .login-divider::after { height: 1px; flex: 1; background: #273039; content: ""; }
 .google-sign-in-button { width: min(390px, 100%); min-height: 42px; border-color: #35404b; background: #121820; color: #d8dfe3; }
 .google-sign-in-button:hover:not(:disabled) { border-color: #657482; background: #19212a; }
+.google-sign-in-button:disabled { cursor: not-allowed; opacity: .5; }
 .google-mark { display: grid; width: 19px; height: 19px; place-items: center; border-radius: 50%; background: #f4f5f6; color: #4285f4; font-size: 13px; font-weight: 700; }
+.google-pending-tag { margin-left: auto; border: 1px solid #35404b; border-radius: 999px; padding: 4px 7px; color: #89939e; font: 9px var(--mono); letter-spacing: .04em; }
 .login-help { margin: 16px 0 0; color: #77828e; font-size: 10px; }
 .field-hint { color: #77828e; font-size: 9px; }
 .activation-page { display: grid; min-height: 100vh; place-items: center; padding: 24px; }
