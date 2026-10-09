@@ -1,0 +1,128 @@
+# Interpretation test set. Each case = one question + the dialogue so far.
+# `expected.action` is what the rules should decide with 0 follow-ups used.
+# Labels are the team's judgement: review them with Aligo when possible.
+# Quote "yes" / "no": unquoted, YAML loads them as booleans.
+cases:
+  - id: mfa-yes-detailed
+    question: IAM-01
+    dialogue:
+      - participant: "Yes, every administrator account in Microsoft 365 and on the servers has mandatory MFA with Microsoft Authenticator, enforced through a conditional access policy."
+    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+
+  - id: mfa-yes-vague
+    question: IAM-01
+    dialogue:
+      - participant: "Yes, of course."
+    expected: {intent: answer, category: "yes", specificity: vague, action: follow_up}
+
+  - id: mfa-yes-scope-no-detail
+    question: IAM-01
+    dialogue:
+      - participant: "Yes, I think most of them have it turned on."
+    expected: {intent: answer, category: partial, specificity: vague, action: follow_up}
+
+  - id: mfa-no
+    question: IAM-01
+    dialogue:
+      - participant: "No, administrators sign in with just a username and password."
+    expected: {intent: answer, category: "no", action: close}
+
+  - id: mfa-no-short
+    question: IAM-01
+    dialogue:
+      - participant: "We don't have that."
+    expected: {intent: answer, category: "no", action: close}
+
+  - id: mfa-partial-detailed
+    question: IAM-01
+    dialogue:
+      - participant: "In Microsoft 365 yes, but the admins of the on-premises servers and the firewall still sign in with only a password."
+    expected: {intent: answer, category: partial, specificity: detailed, action: close}
+
+  - id: mfa-partial-vague
+    question: IAM-01
+    dialogue:
+      - participant: "Sort of, on some systems."
+    expected: {intent: answer, category: partial, specificity: vague, action: follow_up}
+
+  - id: mfa-in-progress
+    question: IAM-01
+    dialogue:
+      - participant: "We're rolling it out, we started last month."
+    expected: {intent: answer, category: partial, specificity: vague, action: follow_up}
+
+  - id: mfa-unsure
+    question: IAM-01
+    dialogue:
+      - participant: "Honestly I don't know, our IT provider handles that."
+    expected: {intent: answer, category: unsure, action: follow_up}
+
+  - id: mfa-clarification
+    question: IAM-01
+    dialogue:
+      - participant: "What is a second factor?"
+    expected: {intent: clarification_request, action: clarify}
+
+  - id: mfa-clarification-indirect
+    question: IAM-01
+    dialogue:
+      - participant: "I'm not sure which accounts you mean by privileged."
+    expected: {intent: clarification_request, action: clarify}
+
+  - id: mfa-off-topic
+    question: IAM-01
+    dialogue:
+      - participant: "By the way, how much does this assessment service cost?"
+    expected: {intent: off_topic, action: follow_up}
+
+  - id: mfa-na-vague
+    question: IAM-01
+    dialogue:
+      - participant: "That doesn't apply to us."
+    expected: {intent: answer, category: not_applicable, specificity: vague, action: follow_up}
+
+  - id: mfa-followup-resolves-to-detailed
+    question: IAM-01
+    dialogue:
+      - participant: "Yes."
+      - agent: "You said yes. Which accounts does it apply to exactly? Does it include Microsoft 365?"
+      - participant: "All accounts with the Global Administrator and Exchange Administrator roles in 365, using the Authenticator app."
+    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+
+  - id: mfa-followup-reveals-gap
+    question: IAM-01
+    dialogue:
+      - participant: "Yes, we have MFA."
+      - agent: "Does it apply to all administrative accounts, including the cloud ones?"
+      - participant: "Well, the email ones yes. The domain admin account doesn't, because it's used for scripts."
+    expected: {intent: answer, category: partial, specificity: detailed, action: close}
+
+  - id: mfa-sms-only
+    question: IAM-01
+    dialogue:
+      - participant: "Yes, every administrator gets an SMS code when signing in to 365 and the VPN."
+    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+
+  - id: review-yes-detailed
+    question: IAM-02
+    dialogue:
+      - participant: "Yes, every quarter the IT manager reviews access to the ERP and 365 with each department head, and unneeded access is removed."
+    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+
+  - id: review-only-when-asked
+    question: IAM-02
+    dialogue:
+      - participant: "Only when someone asks for it, there is no scheduled review."
+    expected: {intent: answer, category: partial, specificity: detailed, action: close}
+
+  - id: offboarding-vague
+    question: IAM-03
+    dialogue:
+      - participant: "Quickly, as soon as we're told."
+    expected: {intent: answer, category: "yes", specificity: vague, action: follow_up}
+
+  - id: offboarding-no-process
+    question: IAM-03
+    dialogue:
+      - participant: "No, accounts stay active until someone remembers to close them."
+    expected: {intent: answer, category: "no", action: close}
