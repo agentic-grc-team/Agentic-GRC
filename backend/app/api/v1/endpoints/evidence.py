@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Header
 import shutil
 import os
 import uuid
@@ -11,8 +11,18 @@ router = APIRouter()
 UPLOAD_DIR = "uploaded_evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".csv", ".xlsx", ".xls"}
+ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".csv", ".xlsx"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  
+
+async def verify_auth(
+    authorization: str = Header(default=None), 
+    x_organization_id: str = Header(default=None)
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized: Missing token")
+    if not x_organization_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Organization context required")
+    return {"org_id": x_organization_id}
 
 def extract_text(file_path: str, extension: str) -> str:
     text = ""
@@ -33,7 +43,7 @@ def extract_text(file_path: str, extension: str) -> str:
         elif extension == ".csv":
             df = pd.read_csv(file_path)
             text = df.to_string()
-        elif extension in {".xlsx", ".xls"}:
+        elif extension == ".xlsx":
             df = pd.read_excel(file_path, engine="openpyxl")
             text = df.to_string()
     except Exception as e:
@@ -45,19 +55,19 @@ def extract_text(file_path: str, extension: str) -> str:
     return text.strip()
 
 @router.post("/")
-async def upload_evidence(file: UploadFile = File(...)):
+async def upload_evidence(
+    file: UploadFile = File(...),
+    auth_context: dict = Depends(verify_auth)
+):
     if file.size and file.size > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10MB limit.")
 
     file_extension = os.path.splitext(file.filename)[1].lower()
     
     if file_extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Format not allowed: {file_extension}."
-        )
+        raise HTTPException(status_code=400, detail=f"Format not allowed: {file_extension}.")
 
-    safe_filename = f"{uuid.uuid4()}{file_extension}"
+    safe_filename = f"{auth_context['org_id']}_{uuid.uuid4()}{file_extension}"
     file_location = os.path.join(UPLOAD_DIR, safe_filename)
 
     try:
@@ -79,5 +89,6 @@ async def upload_evidence(file: UploadFile = File(...)):
         "info": "File uploaded and parsed successfully.", 
         "original_filename": file.filename,
         "stored_filename": safe_filename,
+        "organization_id": auth_context['org_id'],
         "extracted_content_preview": extracted_text[:500]
     }
