@@ -1,68 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agentic GRC Assessment</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <main>
-        <section>
-            <h2>Organization</h2>
-            <label for="organization-name">Organization name</label>
-            <input type="text" id="organization-name" placeholder="Enter organization name..">
-        </section>
-
-        <section>
-            <p>Control: DEMO-ACCESS-01</p>
-
-            <h2>
-                Does your organization enforce multi-factor authentication
-                for all administrator accounts?
-            </h2>
-
-            <div>
-                <input type="radio" id="yes" name="answer" value="yes">
-                <label for="yes">Yes</label>
-            </div>
-            <div>
-                <input type="radio" id="no" name="answer" value="no">
-                <label for="no">No</label>
-            </div>
-            <div>
-                <input type="radio" id="partial" name="answer" value="partial">
-                <label for="partial">Partially</label>
-            </div>
-            <div>
-                <input type="radio" id="unsure" name="answer" value="unsure">
-                <label for="unsure">Unsure</label>
-            </div>
-        </section>
-
-        <section>
-            <h2>Supporting evidence</h2>
-
-            <label for="evidence-file">
-                Upload a policy, configuration export or evidence document
-            </label>
-
-            <input type="file" id="evidence-file" accept=".pdf">
-            <label for="evidence-description">Evidence description</label>
-
-            <textarea id="evidence-description" rows="5" placeholder="Please describe the available evidence"></textarea>
-        </section>
-
-        <button type="submit" id="analyze-button">Generate preliminary finding</button>
-
-        <section id="finding-section">
-            <h2>Preliminary finding</h2>
-
-            <p id="finding-message">No assessment has been generated yet.</p>
-        </section>
-
-    </main>
-    <script src="app.js"></script>
-
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0d12" />
+    <meta
+      name="description"
+      content="Set up client organizations for Agentic GRC assessments."
+    />
+    <title>Agentic GRC — Client setup</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
