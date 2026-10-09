@@ -77,14 +77,16 @@
             statusMessage.className = "status";
             extractedContent.style.display = "none";
 
-            const formData = new FormData();
+           const formData = new FormData();
             formData.append("file", file);
+            // TODO: Change this ID with real ID given from UI when feature is developed :D
             formData.append("organization_id", "123e4567-e89b-12d3-a456-426614174000"); 
 
             try {
                 const response = await fetch("http://127.0.0.1:8000/api/v1/evidence/", {
                     method: "POST",
                     headers: {
+                        // TODO: Insert real JWT token when Login page is implemented :p
                         "Authorization": "Bearer temporary_token"
                     },
                     body: formData
