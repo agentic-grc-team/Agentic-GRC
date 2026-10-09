@@ -1,7 +1,9 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
 import shutil
 import os
+import uuid
 import pdfplumber
+import pandas as pd
 from docx import Document
 
 router = APIRouter()
@@ -10,6 +12,7 @@ UPLOAD_DIR = "uploaded_evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".csv", ".xlsx", ".xls"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  
 
 def extract_text(file_path: str, extension: str) -> str:
     text = ""
@@ -27,36 +30,54 @@ def extract_text(file_path: str, extension: str) -> str:
             doc = Document(file_path)
             for para in doc.paragraphs:
                 text += para.text + "\n"
-        else:
-            text = f"[Text extraction for {extension} not implemented yet]"
+        elif extension == ".csv":
+            df = pd.read_csv(file_path)
+            text = df.to_string()
+        elif extension in {".xlsx", ".xls"}:
+            df = pd.read_excel(file_path, engine="openpyxl")
+            text = df.to_string()
     except Exception as e:
-        text = f"[Error reading text: {str(e)}]"
+        raise ValueError(f"Extraction failed: {str(e)}")
     
+    if not text.strip():
+        raise ValueError("Document contains no readable text.")
+        
     return text.strip()
 
 @router.post("/")
 async def upload_evidence(file: UploadFile = File(...)):
+    if file.size and file.size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File exceeds 10MB limit.")
+
     file_extension = os.path.splitext(file.filename)[1].lower()
     
     if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400, 
-            detail=f"Format not allowed: {file_extension}. Allowed formats are: {', '.join(ALLOWED_EXTENSIONS)}"
+            detail=f"Format not allowed: {file_extension}."
         )
 
+    safe_filename = f"{uuid.uuid4()}{file_extension}"
+    file_location = os.path.join(UPLOAD_DIR, safe_filename)
+
     try:
-        file_location = f"{UPLOAD_DIR}/{file.filename}"
-        
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
         extracted_text = extract_text(file_location, file_extension)
             
+    except ValueError as ve:
+        if os.path.exists(file_location):
+            os.remove(file_location)
+        raise HTTPException(status_code=422, detail=str(ve))
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+        if os.path.exists(file_location):
+            os.remove(file_location)
+        raise HTTPException(status_code=500, detail="Internal server error during processing.")
 
     return {
-        "info": f"File '{file.filename}' processed successfully.", 
-        "path": file_location,
-        "extracted_content_preview": extracted_text[:500] + ("..." if len(extracted_text) > 500 else "")
+        "info": "File uploaded and parsed successfully.", 
+        "original_filename": file.filename,
+        "stored_filename": safe_filename,
+        "extracted_content_preview": extracted_text[:500]
     }
