@@ -135,11 +135,11 @@ This gives the explainability chain: subcategory → finding → evidence → so
 
 | Role | Can view and export | Can change |
 | --- | --- | --- |
-| Organization representative | Traces of assessments of their own organization they can access | Nothing |
-| Aligo consultant | Traces of assessments they work on | Nothing; adds `human_review` records |
+| Organization representative | Nothing (HU-03: the representative answers the interview but does not see the agent's internal traces) | Nothing |
+| Organization administrator, Aligo consultant | All traces of their organization's assessments | Nothing; adds `human_review` records |
 | Platform administrator | All traces, for diagnostics | Nothing |
 
-The application database role has only `INSERT` and `SELECT` on this table. Every query filters by `organization_id` at the data layer. The export format (JSON or CSV) is decided when the export endpoint is implemented.
+A user who is not a member of the organization gets `404`, so the API does not reveal whether the organization exists. Append-only is enforced by a database trigger that rejects `UPDATE` and `DELETE` for every database role. Every query filters by `organization_id`. The export is a JSON file (`GET .../traces/export`) with `schema_version`, `exported_at`, `trace_count` and the traces.
 
 ## 8. Example
 
@@ -188,7 +188,7 @@ CREATE TABLE decision_traces (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id       UUID NOT NULL REFERENCES organizations(id),
   assessment_id         UUID NOT NULL,  -- foreign key added when the assessments table exists
-  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),  -- keeps order within one transaction
   decision_type         decision_type NOT NULL,
   control_ids           TEXT[] NOT NULL DEFAULT '{}',
   module                TEXT,
@@ -233,7 +233,7 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 
 1. **Retention:** how long traces are kept after an assessment closes. Decision gate before real data is processed.
 2. **Redaction:** whether `excerpt` must be shortened or masked for sensitive data. Decision gate before real data is processed.
-3. Whether organization representatives see consultant review records or only agent decisions.
+3. Resolved: organization representatives do not see traces (HU-03, section 7).
 4. How the agent computes `confidence` (agent developers).
 5. Add the foreign key on `assessment_id` once the `assessments` table exists. Enforce that the assessment belongs to the same organization with a composite foreign key `(organization_id, assessment_id)` → `assessments(organization_id, id)`.
 6. Normalizing `sources` and `control_ids` into separate tables (as in the team schema v0.3) is deferred until the tables they would reference (`interview_turns`, `document_chunks`, `configuration_items`, `framework_nodes`) exist. Until then they stay as JSONB and `TEXT[]` columns.
@@ -244,4 +244,4 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 | Version | Date | Change |
 | --- | --- | --- |
 | 0.1 | 2026-09-30 | First draft |
-| 0.2 | 2026-10-10 | Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
+| 0.2 | 2026-10-10 | Access rules aligned with HU-03 (representatives have no access), append-only enforced by trigger, JSON export, `created_at` uses `clock_timestamp()`. Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
