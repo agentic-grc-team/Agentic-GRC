@@ -1,9 +1,10 @@
 """Reasoning trace record (AGRC-15). Fields and rules follow docs/design/trace-schema.md v0.2."""
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 DecisionType = Literal[
@@ -108,3 +109,21 @@ class DecisionTrace(BaseModel):
         if insufficient and not self.requires_human_review:
             raise ValueError("Insufficient evidence must require human review.")
         return self
+
+
+class DecisionTraceRead(DecisionTrace):
+    """A stored trace, as returned by the API. id and created_at come from the database."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    created_at: datetime
+
+
+class DecisionTraceExport(BaseModel):
+    schema_version: str = "0.2"
+    organization_id: UUID
+    assessment_id: UUID
+    exported_at: datetime
+    trace_count: int
+    traces: list[DecisionTraceRead]
