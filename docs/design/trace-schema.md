@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Jira | AGRC-15 (E0-06) |
+| Jira | AGRC-15 (E0-06), AGRC-24 |
 | Author | Abedin Orahovac |
-| Date | 2026-09-30 |
-| Status | Draft, for review by the DB schema owner (Juan) and the agent developers (Natalia, Juan) |
+| Version | 0.2 (2026-10-10) |
+| Status | Draft v0.2, aligned with the agent proof of concept (PR #6). Review by the agent developers (Natalia, Juan) |
 
 ## 1. Purpose
 
@@ -26,6 +26,7 @@ It is **not** the model's private chain-of-thought, the chat transcript, or tech
 | decision_type | Meaning |
 | --- | --- |
 | `answer_interpreted` | A fact was derived from an interview answer |
+| `evidence_requested` | The agent asked the participant for evidence (an artifact, a screenshot, a configuration export) |
 | `evidence_extracted` | Evidence was extracted from a document or Microsoft 365 configuration |
 | `evidence_validated` | Evidence was judged `provided_sufficient`, `provided_insufficient`, `documented_absence` or `not_requested` |
 | `mapping_assigned` | Evidence or a finding was mapped to one or more NIST CSF 2.0 subcategories, with a justification |
@@ -69,7 +70,7 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 | --- | --- | --- | --- |
 | `actor_type` | enum: `agent`, `assessed_org_representative`, `aligo_consultant` | yes | The organization confirms facts; the consultant validates judgment |
 | `actor_user_id` | UUID | no | Set for human actors |
-| `model_name` | text | for agent | LLM used |
+| `model_name` | text | for LLM decisions | LLM used. Empty when the decision was made by a deterministic rule (`prompt_id` starts with `rule:`) |
 | `prompt_id`, `prompt_version` | text | for agent | Prompt or deterministic rule applied (a rule uses the prefix `rule:`, e.g. `rule:risk-classification`) |
 | `kb_version` | text | yes | Knowledge base version used |
 
@@ -80,6 +81,8 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 | `rationale` | text | yes | Short human-readable justification that cites the sources |
 | `confidence` | number 0–1 | no | Agent confidence; empty for human decisions |
 | `requires_human_review` | boolean | yes | True for uncertain or critical decisions |
+| `latency_ms` | integer ≥ 0 | no | Time the LLM call took, for the 10 s turn NFR and the model benchmark (E0-04) |
+| `fallback_used` | boolean | yes, default false | True when the LLM failed or timed out and a deterministic fallback was used. Such decisions also set `requires_human_review` |
 
 ### F. Review and history
 | Field | Type | Required | Description |
@@ -100,7 +103,7 @@ erDiagram
     DECISION_TRACE ||--o{ DECISION_TRACE : "reviewed or superseded by"
 ```
 
-Table names `organization` and `assessment` are placeholders until the main DB schema (E0-02) is available.
+The trace references the existing `organizations` table. The `assessments` table does not exist yet, so `assessment_id` is stored without a foreign key until it does (see section 10).
 
 `control_ids` stores NIST CSF 2.0 codes rather than foreign keys, because codes are stable and readable. They are validated against the knowledge base.
 
@@ -108,7 +111,7 @@ Format of `sources[].ref`:
 
 | Source type | Format |
 | --- | --- |
-| Interview answer | `interview_turn:<id>` |
+| Interview answer | `interview_turn:<id>` (the agent PoC currently writes `turn:<seq>`; it switches to this format when it moves into the backend) |
 | Document | `document_span:<document_id>#page=<n>` |
 | Microsoft 365 configuration | `tenant_configuration:<snapshot_id>/<path>` |
 | Prior technical phase | `prior_phase_evidence:<id>` |
@@ -173,7 +176,7 @@ Subject to the stack decision (E0-04) and the main DB schema (E0-02).
 
 ```sql
 CREATE TYPE decision_type AS ENUM (
-  'answer_interpreted', 'evidence_extracted', 'evidence_validated',
+  'answer_interpreted', 'evidence_requested', 'evidence_extracted', 'evidence_validated',
   'mapping_assigned', 'status_assessed', 'contradiction_detected',
   'finding_generated', 'maturity_assessed', 'human_review'
 );
@@ -181,10 +184,10 @@ CREATE TYPE actor_type AS ENUM ('agent', 'assessed_org_representative', 'aligo_c
 CREATE TYPE evidence_nature AS ENUM ('intent', 'implementation', 'attestation');
 CREATE TYPE review_outcome AS ENUM ('accepted', 'modified', 'rejected');
 
-CREATE TABLE decision_trace (
+CREATE TABLE decision_traces (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id       UUID NOT NULL REFERENCES organization(id),
-  assessment_id         UUID NOT NULL REFERENCES assessment(id),
+  organization_id       UUID NOT NULL REFERENCES organizations(id),
+  assessment_id         UUID NOT NULL,  -- foreign key added when the assessments table exists
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   decision_type         decision_type NOT NULL,
   control_ids           TEXT[] NOT NULL DEFAULT '{}',
@@ -201,16 +204,20 @@ CREATE TABLE decision_trace (
   rationale             TEXT NOT NULL,
   confidence            NUMERIC(3,2) CHECK (confidence BETWEEN 0 AND 1),
   requires_human_review BOOLEAN NOT NULL DEFAULT false,
-  reviews_trace_id      UUID REFERENCES decision_trace(id),
+  latency_ms            INTEGER CHECK (latency_ms >= 0),
+  fallback_used         BOOLEAN NOT NULL DEFAULT false,
+  reviews_trace_id      UUID REFERENCES decision_traces(id),
   review_outcome        review_outcome,
-  supersedes_trace_id   UUID REFERENCES decision_trace(id),
+  supersedes_trace_id   UUID REFERENCES decision_traces(id),
 
   -- sources must always be a JSON array
   CHECK (jsonb_typeof(sources) = 'array'),
-  -- agent decisions must record model and prompt, and cite at least one source
+  -- agent decisions must record the prompt or rule applied, and cite at least one source
   CHECK (actor_type <> 'agent'
-         OR (model_name IS NOT NULL AND prompt_version IS NOT NULL
+         OR (prompt_id IS NOT NULL AND prompt_version IS NOT NULL
              AND jsonb_array_length(sources) >= 1)),
+  -- LLM decisions must record the model; rule decisions (prompt_id 'rule:...') need not
+  CHECK (actor_type <> 'agent' OR prompt_id LIKE 'rule:%' OR model_name IS NOT NULL),
   -- a review must say what it reviews and its outcome
   CHECK (decision_type <> 'human_review'
          OR (reviews_trace_id IS NOT NULL AND review_outcome IS NOT NULL)),
@@ -218,8 +225,8 @@ CREATE TABLE decision_trace (
   CHECK (decision_type <> 'human_review' OR actor_type <> 'agent')
 );
 
-CREATE INDEX idx_trace_org_assessment ON decision_trace (organization_id, assessment_id, created_at);
-CREATE INDEX idx_trace_controls ON decision_trace USING GIN (control_ids);
+CREATE INDEX idx_trace_org_assessment ON decision_traces (organization_id, assessment_id, created_at);
+CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 ```
 
 ## 10. Open questions
@@ -228,5 +235,13 @@ CREATE INDEX idx_trace_controls ON decision_trace USING GIN (control_ids);
 2. **Redaction:** whether `excerpt` must be shortened or masked for sensitive data. Decision gate before real data is processed.
 3. Whether organization representatives see consultant review records or only agent decisions.
 4. How the agent computes `confidence` (agent developers).
-5. Final table names and ID types from the main DB schema (E0-02).
-6. Enforce that `assessment_id` belongs to `organization_id` with a composite foreign key `(assessment_id, organization_id)` → `assessment(id, organization_id)`, once the main schema is available.
+5. Add the foreign key on `assessment_id` once the `assessments` table exists. Enforce that the assessment belongs to the same organization with a composite foreign key `(organization_id, assessment_id)` → `assessments(organization_id, id)`.
+6. Normalizing `sources` and `control_ids` into separate tables (as in the team schema v0.3) is deferred until the tables they would reference (`interview_turns`, `document_chunks`, `configuration_items`, `framework_nodes`) exist. Until then they stay as JSONB and `TEXT[]` columns.
+7. Agent integration: the backend `DecisionTrace` model is the single source of truth. When the agent moves into the backend, it replaces its JSONL `TraceRecorder` with the backend's `record_trace()` function.
+
+## 11. Changelog
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.1 | 2026-09-30 | First draft |
+| 0.2 | 2026-10-10 | Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
