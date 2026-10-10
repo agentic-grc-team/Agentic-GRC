@@ -24,7 +24,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Uuid(), server_default=sa.text('gen_random_uuid()'), nullable=False),
     sa.Column('organization_id', sa.Uuid(), nullable=False),
     sa.Column('assessment_id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('clock_timestamp()'), nullable=False),
     sa.Column('decision_type', sa.String(length=32), nullable=False),
     sa.Column('control_ids', postgresql.ARRAY(sa.Text()), server_default=sa.text("'{}'"), nullable=False),
     sa.Column('module', sa.String(length=100), nullable=True),

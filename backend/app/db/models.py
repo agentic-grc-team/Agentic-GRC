@@ -309,8 +309,10 @@ class DecisionTraceRecord(Base):
     )
     # No foreign key yet: the assessments table does not exist (trace-schema.md, section 10).
     assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    # clock_timestamp(), not now(): now() is the same for every row in one transaction,
+    # so several decisions saved together would lose their order.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )
 
     decision_type: Mapped[str] = mapped_column(String(32), nullable=False)
