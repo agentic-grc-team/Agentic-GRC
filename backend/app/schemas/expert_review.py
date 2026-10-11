@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class ReviewItem(BaseModel):
@@ -19,6 +19,20 @@ class ReviewItem(BaseModel):
 class ReviewDecision(BaseModel):
     outcome: Literal["accepted", "modified", "rejected"]
     comment: str = ""
+
+    @field_validator("comment")
+    @classmethod
+    def trim_comment(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_comment_for_modified_or_rejected(self):
+        if self.outcome in ("modified", "rejected") and not self.comment:
+            raise ValueError(
+                "A review comment is required when modifying or rejecting a result."
+            )
+
+        return self
 
 
 class ReviewDecisionResponse(BaseModel):
