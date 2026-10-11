@@ -1,17 +1,21 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.db.models import User
 from app.schemas.expert_review import (
     ReviewDecision,
     ReviewDecisionResponse,
     ReviewItem,
 )
+from app.security.auth import get_current_user
 
 
 router = APIRouter(prefix="/expert-reviews", tags=["expert reviews"])
 
 
 @router.get("/pending", response_model=list[ReviewItem])
-def get_pending_reviews():
+def get_pending_reviews(
+    _user: User = Depends(get_current_user),
+):
     return [
         ReviewItem(
             result_id="result-demo-001",
@@ -33,6 +37,7 @@ def get_pending_reviews():
         )
     ]
 
+
 @router.post(
     "/{result_id}/decision",
     response_model=ReviewDecisionResponse,
@@ -40,6 +45,7 @@ def get_pending_reviews():
 def submit_review_decision(
     result_id: str,
     decision: ReviewDecision,
+    _user: User = Depends(get_current_user),
 ):
     if result_id != "result-demo-001":
         raise HTTPException(
