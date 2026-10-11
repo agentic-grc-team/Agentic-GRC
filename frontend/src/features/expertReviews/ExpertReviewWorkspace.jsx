@@ -1,19 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   listPendingReviews,
   submitReviewDecision,
 } from "./api.js";
 
+
 function formatValue(value) {
   return value.replaceAll("_", " ");
 }
+
 
 const outcomeLabels = {
   accepted: "accepted",
   modified: "marked as modified",
   rejected: "rejected",
 };
+
 
 export default function ExpertReviewWorkspace({ accessToken }) {
   const [reviews, setReviews] = useState([]);
@@ -23,14 +26,20 @@ export default function ExpertReviewWorkspace({ accessToken }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const sessionRef = useRef(null);
+
   useEffect(() => {
     let isActive = true;
+
+    const session = {};
+    sessionRef.current = session;
 
     setReviews([]);
     setComment("");
     setError("");
     setNotice("");
     setIsLoading(true);
+    setIsSubmitting(false);
 
     async function loadReviews() {
       try {
@@ -56,49 +65,70 @@ export default function ExpertReviewWorkspace({ accessToken }) {
 
     return () => {
       isActive = false;
+
+      if (sessionRef.current === session) {
+        sessionRef.current = null;
+      }
     };
   }, [accessToken]);
 
   async function handleDecision(outcome) {
-  if (reviews.length === 0) {
-    return;
-  }
+    if (reviews.length === 0 || isSubmitting) {
+      return;
+    }
 
-  const trimmedComment = comment.trim();
+    const session = sessionRef.current;
+    const resultId = reviews[0].result_id;
+    const trimmedComment = comment.trim();
 
-  if (
-    (outcome === "modified" || outcome === "rejected") &&
-    trimmedComment === ""
-  ) {
-    setError("A review comment is required when modifying or rejecting a result.");
+    if (
+      (outcome === "modified" || outcome === "rejected") &&
+      trimmedComment === ""
+    ) {
+      setError(
+        "A review comment is required when modifying or rejecting a result.",
+      );
+      setNotice("");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError("");
     setNotice("");
-    return;
+
+    try {
+      const response = await submitReviewDecision(
+        resultId,
+        outcome,
+        trimmedComment,
+        accessToken,
+      );
+
+      if (sessionRef.current !== session) {
+        return;
+      }
+
+      setNotice(
+        `The result was successfully ${outcomeLabels[response.outcome]}.`,
+      );
+
+      setReviews((currentReviews) =>
+        currentReviews.filter((item) => item.result_id !== resultId),
+      );
+
+      setComment("");
+    } catch (requestError) {
+      if (sessionRef.current === session) {
+        setError(
+          requestError.message || "Unable to submit review.",
+        );
+      }
+    } finally {
+      if (sessionRef.current === session) {
+        setIsSubmitting(false);
+      }
+    }
   }
-
-  setIsSubmitting(true);
-  setError("");
-  setNotice("");
-
-  try {
-    const response = await submitReviewDecision(
-      reviews[0].result_id,
-      outcome,
-      trimmedComment,
-      accessToken,
-    );
-
-    setNotice(
-      `The result was successfully ${outcomeLabels[response.outcome]}.`,
-    );
-
-    setReviews((currentReviews) => currentReviews.slice(1));
-    setComment("");
-  } catch (requestError) {
-    setError(requestError.message);
-  } finally {
-    setIsSubmitting(false);
-  }
-}
 
   if (isLoading) {
     return <p>Loading pending reviews...</p>;
@@ -109,20 +139,23 @@ export default function ExpertReviewWorkspace({ accessToken }) {
   }
 
   if (reviews.length === 0) {
-  return (
-    <section className="expert-review-workspace">
-      <p className="eyebrow">EXPERT REVIEW</p>
-      <h1>Review queue complete</h1>
+    return (
+      <section className="expert-review-workspace">
+        <p className="eyebrow">EXPERT REVIEW</p>
+        <h1>Review queue complete</h1>
 
-      {notice && <p role="status">{notice}</p>}
+        {notice && <p role="status">{notice}</p>}
 
-      <div className="review-section">
-        <h3>No pending results</h3>
-        <p>There are currently no AI-generated results waiting for expert review.</p>
-      </div>
-    </section>
-  );
-}
+        <div className="review-section">
+          <h3>No pending results</h3>
+          <p>
+            There are currently no AI-generated results waiting for
+            expert review.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   const review = reviews[0];
 
@@ -164,8 +197,8 @@ export default function ExpertReviewWorkspace({ accessToken }) {
         <textarea
           value={comment}
           onChange={(event) => setComment(event.target.value)}
-          rows="5"
           disabled={isSubmitting}
+          rows="5"
           placeholder="Explain your review decision..."
         />
       </label>

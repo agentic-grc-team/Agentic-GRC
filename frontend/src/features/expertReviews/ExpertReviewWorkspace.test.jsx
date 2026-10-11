@@ -273,4 +273,68 @@ describe("ExpertReviewWorkspace", () => {
       screen.queryByRole("heading", { name: "PR.AA-03" }),
     ).not.toBeInTheDocument();
   });
+  it("ignores an old submission response after the token changes", async () => {
+    let resolveOldSubmission;
+
+    submitReviewDecision.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOldSubmission = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <ExpertReviewWorkspace accessToken="old-token" />,
+    );
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(submitReviewDecision).toHaveBeenCalledWith(
+      pendingReview.result_id,
+      "accepted",
+      "",
+      "old-token",
+    );
+
+    listPendingReviews.mockResolvedValueOnce([
+      {
+        ...pendingReview,
+        result_id: "result-new-session",
+        control_code: "PR.AA-05",
+      },
+    ]);
+
+    rerender(<ExpertReviewWorkspace accessToken="new-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-05" });
+
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "Comment for the new session." },
+    });
+
+    await act(async () => {
+      resolveOldSubmission({
+        result_id: pendingReview.result_id,
+        outcome: "accepted",
+        comment: "",
+        message: "Review decision received successfully.",
+      });
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "PR.AA-05" }),
+    ).toBeInTheDocument();
+
+    expect(screen.getByLabelText("Review comment")).toHaveValue(
+      "Comment for the new session.",
+    );
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "Accept" }),
+    ).toBeEnabled();
+  });
 });
