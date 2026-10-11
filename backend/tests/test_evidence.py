@@ -1,9 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from app.security.auth import get_authenticated_identity
+from app.security.auth import get_current_user
 from app.api.v1.dependencies import get_db_session
-from app.api.v1.endpoints.organizations import _resolve_user, _active_membership
 import uuid
 
 client = TestClient(app)
@@ -12,14 +11,7 @@ TEST_ORG_ID = str(uuid.uuid4())
 def mock_get_db_session():
     yield None
 
-def mock_get_authenticated_identity():
-    class MockIdentity:
-        email = "test@example.com"
-        issuer = "test_issuer"
-        subject = "test_subject"
-    return MockIdentity()
-
-def mock_resolve_user(*args, **kwargs):
+def mock_get_current_user():
     class MockUser:
         id = uuid.uuid4()
     return MockUser()
@@ -30,20 +22,19 @@ def mock_active_membership(db, org_id, user_id):
     return None 
 
 app.dependency_overrides[get_db_session] = mock_get_db_session
-app.dependency_overrides[get_authenticated_identity] = mock_get_authenticated_identity
+app.dependency_overrides[get_current_user] = mock_get_current_user
 
 @pytest.fixture(autouse=True)
 def patch_auth(monkeypatch):
-    monkeypatch.setattr("app.api.v1.endpoints.evidence._resolve_user", mock_resolve_user)
     monkeypatch.setattr("app.api.v1.endpoints.evidence._active_membership", mock_active_membership)
 
 def test_unauthorized_access():
-    app.dependency_overrides.pop(get_authenticated_identity, None)
+    app.dependency_overrides.pop(get_current_user, None)
     
     response = client.post("/api/v1/evidence/", data={"organization_id": TEST_ORG_ID}, files={"file": ("test.txt", b"test data", "text/plain")})
     assert response.status_code == 401
     
-    app.dependency_overrides[get_authenticated_identity] = mock_get_authenticated_identity
+    app.dependency_overrides[get_current_user] = mock_get_current_user
 
 def test_forbidden_organization():
     fake_org_id = str(uuid.uuid4())
