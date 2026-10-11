@@ -1,0 +1,47 @@
+# PROVISIONAL demo knowledge base. Three questions of one module, so the
+# interview shows a transition between questions. CSF mappings are drafts to be
+# replaced by the real KB (E0-03) and validated by Aligo.
+kb_version: demo-0.2
+is_provisional: true
+language_code: en
+questions:
+  - code: IAM-01
+    module: Identity and access management
+    text: "Do accounts with administrator privileges use a second authentication factor, in addition to the password, to sign in?"
+    intent: "Find out whether ALL administrative accounts (including cloud services such as Microsoft 365) require MFA, and how it is enforced."
+    detail_needed: "Which accounts or systems it covers (all admin accounts, cloud included) and how it is enforced (conditional access policy, authenticator app, hardware key)."
+    clarification: "We want to know whether, when someone signs in with an account that can change important settings, they are asked for something besides the password, such as a code on their phone or a physical key."
+    evidence_examples:
+      - Conditional access policy requiring MFA for administrative roles (Entra ID)
+      - Authentication methods registration report for administrators
+    mappings:
+      - node_code: PR.AA-03
+        justification: "MFA is the authentication mechanism for privileged users."
+        confidence: 0.9
+
+  - code: IAM-02
+    module: Identity and access management
+    text: "Do you periodically review who has access to important systems and remove permissions that are no longer needed?"
+    intent: "Find out whether there is an access review with a defined frequency, who performs it, and whether unneeded permissions are removed."
+    detail_needed: "How often the review happens, which systems it covers, and who performs or approves it."
+    clarification: "Over time people collect permissions they no longer use. The question is whether someone regularly goes through that list and removes what is not needed."
+    evidence_examples:
+      - Record of the last access review with its date and owner
+    mappings:
+      - node_code: PR.AA-05
+        justification: "Access permissions are managed and reviewed under least privilege."
+        confidence: 0.85
+
+  - code: IAM-03
+    module: Identity and access management
+    text: "When someone leaves the organization, how long does it take to disable their accounts and access?"
+    intent: "Find out whether there is an offboarding process that disables accounts within a defined time and across all systems."
+    detail_needed: "Approximate time frame, which systems it covers, and who does it (or whether it is automated from HR)."
+    clarification: "When an employee leaves, their accounts keep existing until someone closes them. We want to know whether that happens quickly and in every system."
+    evidence_examples:
+      - Offboarding procedure
+      - List of disabled accounts with each employee's leaving date
+    mappings:
+      - node_code: PR.AA-01
+        justification: "Identities and credentials are managed through their whole lifecycle, including removal."
+        confidence: 0.85
