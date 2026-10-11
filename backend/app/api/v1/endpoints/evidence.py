@@ -8,8 +8,9 @@ import pandas as pd
 from docx import Document
 
 from app.api.v1.dependencies import get_db_session
-from app.security.auth import AuthenticatedIdentity, get_authenticated_identity
-from app.api.v1.endpoints.organizations import _resolve_user, _active_membership
+from app.db.models import User
+from app.security.auth import get_current_user
+from app.api.v1.endpoints.organizations import _active_membership
 
 router = APIRouter()
 
@@ -54,11 +55,8 @@ async def upload_evidence(
     organization_id: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db_session),
-    identity: AuthenticatedIdentity = Depends(get_authenticated_identity)
+    user: User = Depends(get_current_user)
 ):
-    user = _resolve_user(db, identity, create=False)
-    if not user:
-        raise HTTPException(status_code=401, detail="Unauthorized.")
         
     try:
         org_uuid = uuid.UUID(organization_id)
