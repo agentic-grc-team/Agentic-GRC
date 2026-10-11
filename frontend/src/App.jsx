@@ -4,6 +4,7 @@ import { checkApiHealth } from "./api/client.js";
 import { useAuth } from "./auth/AuthProvider.jsx";
 import InvitationActivation from "./auth/InvitationActivation.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
+import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
 
 function ApiStatus({ status, onRetry }) {
   const labels = {
@@ -116,6 +117,7 @@ function App() {
     isSupabaseConfigured,
   } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
+  const [currentView, setCurrentView] = useState("organizations");
 
   async function refreshApiStatus() {
     setApiStatus("checking");
@@ -159,16 +161,38 @@ function App() {
 
         <div className="rail-divider" />
         <p className="rail-label">WORKSPACE</p>
-        <div className="rail-current">
+        <button 
+          className={`rail-navigation-item ${
+            currentView === "organizations" ? "is-active" : ""
+          }`}
+          type="button"
+          onClick={() => setCurrentView("organizations")}
+          disabled={!user?.accessToken}
+        >
           <span className="rail-current-icon" aria-hidden="true">⌂</span>
           <span>Client onboarding</span>
-          <span className="rail-active-dot" />
-        </div>
-        <div className="rail-disabled" aria-label="Assessment workspace coming soon">
-          <span aria-hidden="true">◌</span>
-          <span>Assessments</span>
-          <small>Later</small>
-        </div>
+
+          {currentView === "organizations" && (
+            <span className="rail-active-dot" />
+          )}
+        </button>
+        
+        <button
+          className={`rail-navigation-item ${
+            currentView === "expert-reviews" ? "is-active" : ""
+          }`}
+          type="button"
+          onClick={() => setCurrentView("expert-reviews")}
+          disabled={!user?.accessToken}
+        >
+          <span className="rail-current-icon" aria-hidden="true">✓</span>
+          <span>Expert reviews</span>
+
+          {currentView === "expert-reviews" && (
+            <span className="rail-active-dot" />
+          )}
+
+        </button>
 
         <div className="rail-bottom">
           <div className="rail-help-mark" aria-hidden="true">?</div>
@@ -178,7 +202,15 @@ function App() {
 
       <section className="app-main">
         <header className="topbar">
-          <div className="breadcrumb"><span>Platform</span><span aria-hidden="true">/</span><strong>Organization setup</strong></div>
+          <div className="breadcrumb">
+            <span>Platform</span>
+            <span aria-hidden="true">/</span>
+            <strong>
+              {currentView === "expert-reviews"
+                ? "Expert reviews"
+                : "Organization setup"}
+            </strong>
+          </div>
           <div className="topbar-actions">
             <ApiStatus status={apiStatus} onRetry={refreshApiStatus} />
             {user && (
@@ -196,10 +228,16 @@ function App() {
         {isLoading ? (
           <div className="loading-screen" role="status"><span className="loading-orb" />Loading secure workspace…</div>
         ) : user?.accessToken ? (
-          <OrganizationWorkspace
-            accessToken={user.accessToken}
-            isPlatformAdmin={user.is_platform_admin}
-          />
+          currentView === "expert-reviews" ? (
+            <ExpertReviewWorkspace
+              accessToken={user.accessToken}
+            />
+          ) : (
+            <OrganizationWorkspace
+              accessToken={user.accessToken}
+              isPlatformAdmin={user.is_platform_admin}
+            />
+          )
         ) : (
           <LoginPanel
             authError={authError}
