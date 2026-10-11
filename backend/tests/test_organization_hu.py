@@ -21,11 +21,11 @@ from app.security.supabase import SupabaseIdentity
 class OrganizationInvitationFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.engine = get_engine()
         try:
+            cls.engine = get_engine()
             with cls.engine.connect() as connection:
                 connection.exec_driver_sql("SELECT 1")
-        except (OSError, SQLAlchemyError) as exc:
+        except (OSError, SQLAlchemyError, RuntimeError) as exc:
             raise unittest.SkipTest("PostgreSQL is unavailable for integration tests.") from exc
 
     def setUp(self) -> None:

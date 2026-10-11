@@ -55,9 +55,8 @@ async def upload_evidence(
     organization_id: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db_session),
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ):
-        
     try:
         org_uuid = uuid.UUID(organization_id)
     except ValueError:

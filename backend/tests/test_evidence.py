@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.security.auth import get_current_user
 from app.api.v1.dependencies import get_db_session
-from app.api.v1.endpoints.organizations import _active_membership
 import uuid
 
 client = TestClient(app)
@@ -15,7 +14,6 @@ def mock_get_db_session():
 def mock_get_current_user():
     class MockUser:
         id = uuid.uuid4()
-
     return MockUser()
 
 def mock_active_membership(db, org_id, user_id):
@@ -27,22 +25,15 @@ app.dependency_overrides[get_db_session] = mock_get_db_session
 app.dependency_overrides[get_current_user] = mock_get_current_user
 
 @pytest.fixture(autouse=True)
-def patch_membership(monkeypatch):
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.evidence._active_membership",
-        mock_active_membership,
-    )
+def patch_auth(monkeypatch):
+    monkeypatch.setattr("app.api.v1.endpoints.evidence._active_membership", mock_active_membership)
+
 def test_unauthorized_access():
     app.dependency_overrides.pop(get_current_user, None)
-
-    response = client.post(
-        "/api/v1/evidence/",
-        data={"organization_id": TEST_ORG_ID},
-        files={"file": ("test.txt", b"test data", "text/plain")},
-    )
-
+    
+    response = client.post("/api/v1/evidence/", data={"organization_id": TEST_ORG_ID}, files={"file": ("test.txt", b"test data", "text/plain")})
     assert response.status_code == 401
-
+    
     app.dependency_overrides[get_current_user] = mock_get_current_user
 
 def test_forbidden_organization():
