@@ -1,5 +1,19 @@
-__pycache__/
-.DS_Store
+# Python
 .venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors
+.vscode/
+.idea/
+
+# Secrets
+.env
+
+# macOS
+.DS_Store
+
+# Agent outputs
 traces/
 evals/results/
