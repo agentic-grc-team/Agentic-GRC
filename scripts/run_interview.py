@@ -2,7 +2,7 @@
 
     python scripts/run_interview.py                 # all demo questions
     python scripts/run_interview.py --only IAM-01   # just the MFA control
-    AGRC_LLM_MODEL=llama3.1:8b python scripts/run_interview.py
+    AGRC_LLM_MODEL=qwen2.5:7b python scripts/run_interview.py
 
 Type /quit to stop. Traces are written to traces/<assessment_id>.jsonl.
 """

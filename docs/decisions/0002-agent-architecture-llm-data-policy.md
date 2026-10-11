@@ -174,4 +174,4 @@ Open questions for the team and Aligo:
 - Labels in the evaluation set need review by someone with GRC experience.
 - Demo hardware: which machine runs Ollama for the recorded demo (HU-27)?
 
-Next steps: switch the default model to `llama3.1:8b` and apply the latency levers, then re-run the benchmark on the demo machine; move `agent/` to `backend/app/agent/` once the backend is merged; then contradiction detection (HU-07).
+Next steps: apply the latency levers to `llama3.1:8b` (now the default in `config.py`), then re-run the benchmark on the demo machine; move `agent/` to `backend/app/agent/` once the backend is merged; then contradiction detection (HU-07).

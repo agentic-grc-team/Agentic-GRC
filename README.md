@@ -8,8 +8,8 @@ Runs entirely on a local Ollama model: no assessment data leaves the machine.
 ## Quick start
 
 ```bash
-# 1. Ollama (https://ollama.com) running locally, plus a model
-ollama pull qwen2.5:7b
+# 1. Ollama (https://ollama.com) running locally, plus the default model
+ollama pull llama3.1:8b
 
 # 2. Python 3.11+
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -22,11 +22,12 @@ pytest
 python scripts/run_interview.py --only IAM-01   # type /quit to stop
 
 # 5. Compare models on the labelled cases (accuracy + latency p50/p95)
-ollama pull llama3.1:8b
+ollama pull qwen2.5:7b
 python scripts/benchmark_models.py qwen2.5:7b llama3.1:8b
 ```
 
-Settings (env vars): `AGRC_LLM_MODEL`, `AGRC_OLLAMA_HOST`, `AGRC_LLM_TIMEOUT_S` (default 8),
+Settings (env vars): `AGRC_LLM_MODEL` (default `llama3.1:8b`, see the decision record),
+`AGRC_OLLAMA_HOST`, `AGRC_LLM_TIMEOUT_S` (default 8), `AGRC_LLM_RETRIES` (default 1, invalid output only),
 `AGRC_MAX_FOLLOW_UPS` (default 3), `AGRC_KB_PATH`, `AGRC_TRACE_DIR`.
 
 ## Design: the LLM interprets, code decides
