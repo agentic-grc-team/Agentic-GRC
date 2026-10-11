@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -41,6 +42,8 @@ const pendingReview = {
 
 describe("ExpertReviewWorkspace", () => {
   beforeEach(() => {
+    vi.resetAllMocks();
+
     listPendingReviews.mockResolvedValue([pendingReview]);
 
     submitReviewDecision.mockResolvedValue({
@@ -147,5 +150,127 @@ describe("ExpertReviewWorkspace", () => {
     ).toHaveTextContent(
       "The result was successfully accepted.",
     );
+  });
+  it("preserves the result and comment when submission fails", async () => {
+    submitReviewDecision.mockRejectedValueOnce(
+      new Error("Unable to submit review."),
+    );
+
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "Evidence needs another check." },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unable to submit review.",
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "PR.AA-03" }),
+    ).toBeInTheDocument();
+
+    expect(screen.getByLabelText("Review comment")).toHaveValue(
+      "Evidence needs another check.",
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Accept" }),
+    ).toBeEnabled();
+  });
+
+
+  it("disables the form while submitting a decision", async () => {
+    let resolveSubmission;
+
+    submitReviewDecision.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmission = resolve;
+        }),
+    );
+
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    const acceptButton = screen.getByRole("button", { name: "Accept" });
+
+    fireEvent.click(acceptButton);
+
+    expect(acceptButton).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Mark as modified" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Reject" }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText("Review comment")).toBeDisabled();
+
+    fireEvent.click(acceptButton);
+
+    expect(submitReviewDecision).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSubmission({
+        result_id: pendingReview.result_id,
+        outcome: "accepted",
+        comment: "",
+        message: "Review decision received successfully.",
+      });
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Review queue complete" }),
+    ).toBeInTheDocument();
+  });
+
+
+  it("ignores an old loading response after the token changes", async () => {
+    let resolveOldRequest;
+
+    listPendingReviews.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOldRequest = resolve;
+        }),
+    );
+
+    const newReview = {
+      ...pendingReview,
+      result_id: "result-new-session",
+      control_code: "PR.AA-05",
+    };
+
+    listPendingReviews.mockResolvedValueOnce([newReview]);
+
+    const { rerender } = render(
+      <ExpertReviewWorkspace accessToken="old-token" />,
+    );
+
+    rerender(<ExpertReviewWorkspace accessToken="new-token" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "PR.AA-05" }),
+    ).toBeInTheDocument();
+
+    expect(listPendingReviews).toHaveBeenNthCalledWith(1, "old-token");
+    expect(listPendingReviews).toHaveBeenNthCalledWith(2, "new-token");
+
+    await act(async () => {
+      resolveOldRequest([pendingReview]);
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "PR.AA-05" }),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByRole("heading", { name: "PR.AA-03" }),
+    ).not.toBeInTheDocument();
   });
 });

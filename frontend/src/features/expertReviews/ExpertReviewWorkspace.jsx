@@ -24,18 +24,39 @@ export default function ExpertReviewWorkspace({ accessToken }) {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
+    let isActive = true;
+
+    setReviews([]);
+    setComment("");
+    setError("");
+    setNotice("");
+    setIsLoading(true);
+
     async function loadReviews() {
       try {
         const pendingReviews = await listPendingReviews(accessToken);
-        setReviews(pendingReviews);
+
+        if (isActive) {
+          setReviews(pendingReviews);
+        }
       } catch (requestError) {
-        setError(requestError.message);
+        if (isActive) {
+          setError(
+            requestError.message || "Unable to load pending reviews.",
+          );
+        }
       } finally {
-        setIsLoading(false);
+        if (isActive) {
+          setIsLoading(false);
+        }
       }
     }
 
     loadReviews();
+
+    return () => {
+      isActive = false;
+    };
   }, [accessToken]);
 
   async function handleDecision(outcome) {
@@ -144,6 +165,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
           value={comment}
           onChange={(event) => setComment(event.target.value)}
           rows="5"
+          disabled={isSubmitting}
           placeholder="Explain your review decision..."
         />
       </label>
