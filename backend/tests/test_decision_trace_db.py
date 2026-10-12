@@ -5,13 +5,14 @@ backend/.env points to a database with the migrations applied.
 """
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.models import DecisionTraceRecord, Organization
+from app.db.models import DecisionTraceRecord, Organization, User
 from app.db.session import get_engine
 from app.schemas.decision_trace import DecisionTrace
 from app.services.decision_traces import list_traces, record_trace
@@ -38,6 +39,25 @@ def make_organization(db: Session) -> Organization:
     db.add(organization)
     db.commit()
     return organization
+
+
+def make_user(db: Session) -> User:
+    """A consultant profile. Every profile needs a Supabase auth.users row (stubbed in CI)."""
+    user_id = uuid.uuid4()
+    email = f"consultant-{user_id}@example.com"
+    now = datetime.now(timezone.utc)
+    db.execute(
+        text(
+            "INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, "
+            "raw_app_meta_data, raw_user_meta_data, created_at, updated_at) "
+            "VALUES (:id, 'authenticated', 'authenticated', :email, '', :now, '{}'::jsonb, '{}'::jsonb, :now, :now)"
+        ),
+        {"id": user_id, "email": email, "now": now},
+    )
+    user = User(id=user_id, email=email)
+    db.add(user)
+    db.commit()
+    return user
 
 
 def make_trace(organization_id, assessment_id, **changes) -> DecisionTrace:
@@ -138,6 +158,14 @@ def test_delete_of_a_trace_is_rejected(db):
         db.execute(text("DELETE FROM decision_traces WHERE id = :id"), {"id": record.id})
 
 
+def test_truncate_of_traces_is_rejected(db):
+    organization = make_organization(db)
+    record_trace(db, make_trace(organization.id, uuid.uuid4()))
+
+    with pytest.raises(DBAPIError, match="append-only"):
+        db.execute(text("TRUNCATE decision_traces"))
+
+
 # --- transactions -------------------------------------------------------------
 
 def test_record_trace_leaves_commit_to_caller(db):
@@ -152,10 +180,10 @@ def test_record_trace_leaves_commit_to_caller(db):
 
 # --- references between traces (reviews and replacements) ---------------------
 
-def make_review(organization_id, assessment_id, reviewed_trace_id) -> DecisionTrace:
+def make_review(organization_id, assessment_id, reviewed_trace_id, reviewer: User) -> DecisionTrace:
     return make_trace(
         organization_id, assessment_id,
-        decision_type="human_review", actor_type="aligo_consultant",
+        decision_type="human_review", actor_type="aligo_consultant", actor_user_id=reviewer.id,
         sources=[], prompt_id=None, prompt_version=None, model_name=None, confidence=None,
         reviews_trace_id=reviewed_trace_id, review_outcome="accepted",
         output={}, rationale="Agrees with the agent.",
@@ -167,7 +195,7 @@ def test_review_of_trace_in_same_assessment_is_accepted(db):
     assessment_id = uuid.uuid4()
     reviewed = record_trace(db, make_trace(organization.id, assessment_id))
 
-    review = record_trace(db, make_review(organization.id, assessment_id, reviewed.id))
+    review = record_trace(db, make_review(organization.id, assessment_id, reviewed.id, make_user(db)))
 
     assert review.reviews_trace_id == reviewed.id
 
@@ -179,7 +207,7 @@ def test_review_of_trace_from_another_organization_is_rejected(db):
     reviewed = record_trace(db, make_trace(organization_a.id, assessment_id))
 
     with pytest.raises(IntegrityError, match="reviews_same_assessment"):
-        record_trace(db, make_review(organization_b.id, assessment_id, reviewed.id))
+        record_trace(db, make_review(organization_b.id, assessment_id, reviewed.id, make_user(db)))
 
 
 def test_review_of_trace_from_another_assessment_is_rejected(db):
@@ -187,7 +215,7 @@ def test_review_of_trace_from_another_assessment_is_rejected(db):
     reviewed = record_trace(db, make_trace(organization.id, uuid.uuid4()))
 
     with pytest.raises(IntegrityError, match="reviews_same_assessment"):
-        record_trace(db, make_review(organization.id, uuid.uuid4(), reviewed.id))
+        record_trace(db, make_review(organization.id, uuid.uuid4(), reviewed.id, make_user(db)))
 
 
 def test_replacement_of_trace_from_another_organization_is_rejected(db):
@@ -209,6 +237,23 @@ def test_replacement_of_trace_from_another_assessment_is_rejected(db):
 
 
 # --- database rules (second line of defence behind Pydantic) -----------------
+
+def test_database_rejects_human_decision_without_user(db):
+    organization = make_organization(db)
+    row = DecisionTraceRecord(
+        organization_id=organization.id,
+        assessment_id=uuid.uuid4(),
+        decision_type="status_assessed",
+        actor_type="aligo_consultant",
+        kb_version="csf2.0-kb-0.1",
+        output={"status": "implemented"},
+        rationale="No user recorded.",
+    )
+    db.add(row)
+
+    with pytest.raises(IntegrityError, match="actor_user_matches_type"):
+        db.flush()
+
 
 def test_database_rejects_llm_decision_without_model(db):
     organization = make_organization(db)
@@ -237,6 +282,7 @@ def test_database_rejects_unknown_decision_type(db):
         assessment_id=uuid.uuid4(),
         decision_type="guessed",
         actor_type="aligo_consultant",
+        actor_user_id=make_user(db).id,
         kb_version="csf2.0-kb-0.1",
         output={},
         rationale="Unknown type.",

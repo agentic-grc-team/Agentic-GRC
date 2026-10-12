@@ -117,8 +117,18 @@ def test_agent_decision_without_prompt_is_rejected():
 
 def test_review_by_agent_is_rejected():
     with pytest.raises(ValidationError, match="never by the agent"):
-        make_review(actor_type="agent", prompt_id="rule:x", prompt_version="0.1",
+        make_review(actor_type="agent", actor_user_id=None, prompt_id="rule:x", prompt_version="0.1",
                     sources=[{"type": "interview_turn", "ref": "interview_turn:1"}])
+
+
+def test_human_decision_without_user_is_rejected():
+    with pytest.raises(ValidationError, match="must record actor_user_id"):
+        make_review(actor_user_id=None)
+
+
+def test_agent_decision_with_user_is_rejected():
+    with pytest.raises(ValidationError, match="agent decision has no actor_user_id"):
+        make_trace(actor_user_id=uuid.uuid4())
 
 
 def test_review_without_reviewed_trace_is_rejected():

@@ -83,7 +83,11 @@ class DecisionTrace(BaseModel):
     @model_validator(mode="after")
     def check_human_decision(self) -> "DecisionTrace":
         if self.actor_type == "agent":
+            if self.actor_user_id is not None:
+                raise ValueError("An agent decision has no actor_user_id.")
             return self
+        if self.actor_user_id is None:
+            raise ValueError("A human decision must record actor_user_id.")
         if self.confidence is not None:
             raise ValueError("A human decision has no confidence value.")
         return self

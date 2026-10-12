@@ -298,6 +298,9 @@ class DecisionTraceRecord(Base):
         CheckConstraint(
             "decision_type <> 'human_review' OR actor_type <> 'agent'", name="review_by_human"
         ),
+        CheckConstraint(
+            "(actor_type = 'agent') = (actor_user_id IS NULL)", name="actor_user_matches_type"
+        ),
         # A review or a replacement must point to a trace of the same organization and assessment.
         UniqueConstraint("organization_id", "assessment_id", "id", name="uq_decision_traces_org_assessment_id"),
         ForeignKeyConstraint(
