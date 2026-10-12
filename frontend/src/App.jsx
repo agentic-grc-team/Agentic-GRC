@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import { checkApiHealth } from "./api/client.js";
 import { useAuth } from "./auth/AuthProvider.jsx";
 import InvitationActivation from "./auth/InvitationActivation.jsx";
+import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
+
+const EVIDENCE_PATH = "/evidence";
 
 function ApiStatus({ status, onRetry }) {
   const labels = {
@@ -116,6 +119,26 @@ function App() {
     isSupabaseConfigured,
   } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
+  const [pathname, setPathname] = useState(window.location.pathname);
+  const isEvidencePage = pathname === EVIDENCE_PATH;
+
+  useEffect(() => {
+    const syncPath = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", syncPath);
+    return () => window.removeEventListener("popstate", syncPath);
+  }, []);
+
+  function navigate(path) {
+    window.history.pushState({}, "", path);
+    setPathname(window.location.pathname);
+  }
+
+  function navLink(path) {
+    return (event) => {
+      event.preventDefault();
+      navigate(path);
+    };
+  }
 
   async function refreshApiStatus() {
     setApiStatus("checking");
@@ -159,11 +182,26 @@ function App() {
 
         <div className="rail-divider" />
         <p className="rail-label">WORKSPACE</p>
-        <div className="rail-current">
+        <a
+          className={`rail-link${isEvidencePage ? "" : " is-active"}`}
+          href="/"
+          onClick={navLink("/")}
+          aria-current={isEvidencePage ? undefined : "page"}
+        >
           <span className="rail-current-icon" aria-hidden="true">⌂</span>
           <span>Client onboarding</span>
-          <span className="rail-active-dot" />
-        </div>
+        </a>
+        {user?.accessToken && (
+          <a
+            className={`rail-link${isEvidencePage ? " is-active" : ""}`}
+            href={EVIDENCE_PATH}
+            onClick={navLink(EVIDENCE_PATH)}
+            aria-current={isEvidencePage ? "page" : undefined}
+          >
+            <span className="rail-current-icon" aria-hidden="true">⇪</span>
+            <span>Evidence upload</span>
+          </a>
+        )}
         <div className="rail-disabled" aria-label="Assessment workspace coming soon">
           <span aria-hidden="true">◌</span>
           <span>Assessments</span>
@@ -178,7 +216,7 @@ function App() {
 
       <section className="app-main">
         <header className="topbar">
-          <div className="breadcrumb"><span>Platform</span><span aria-hidden="true">/</span><strong>Organization setup</strong></div>
+          <div className="breadcrumb"><span>Platform</span><span aria-hidden="true">/</span><strong>{isEvidencePage ? "Evidence upload" : "Organization setup"}</strong></div>
           <div className="topbar-actions">
             <ApiStatus status={apiStatus} onRetry={refreshApiStatus} />
             {user && (
@@ -195,11 +233,18 @@ function App() {
 
         {isLoading ? (
           <div className="loading-screen" role="status"><span className="loading-orb" />Loading secure workspace…</div>
+        ) : user?.accessToken && isEvidencePage ? (
+          <EvidencePage accessToken={user.accessToken} onNavigate={navigate} />
         ) : user?.accessToken ? (
-          <OrganizationWorkspace
-            accessToken={user.accessToken}
-            isPlatformAdmin={user.is_platform_admin}
-          />
+          <>
+            <a className="primary-button evidence-home-link" href={EVIDENCE_PATH} onClick={navLink(EVIDENCE_PATH)}>
+              Upload evidence <span aria-hidden="true">→</span>
+            </a>
+            <OrganizationWorkspace
+              accessToken={user.accessToken}
+              isPlatformAdmin={user.is_platform_admin}
+            />
+          </>
         ) : (
           <LoginPanel
             authError={authError}
