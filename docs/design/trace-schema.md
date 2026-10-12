@@ -89,9 +89,9 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 ### F. Review and history
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `reviews_trace_id` | UUID → decision_trace | for `human_review` | The decision being reviewed |
+| `reviews_trace_id` | UUID → decision_trace | for `human_review` | The decision being reviewed. Must belong to the same organization and assessment |
 | `review_outcome` | enum: `accepted`, `modified`, `rejected` | for `human_review` | Outcome of the review |
-| `supersedes_trace_id` | UUID → decision_trace | no | Earlier decision this record replaces |
+| `supersedes_trace_id` | UUID → decision_trace | no | Earlier decision this record replaces. Must belong to the same organization and assessment |
 
 When `review_outcome` is `modified`, the corrected result is stored in the `output` of the `human_review` record. A review is always made by a person, never by the agent.
 
@@ -208,10 +208,16 @@ CREATE TABLE decision_traces (
   requires_human_review BOOLEAN NOT NULL DEFAULT false,
   latency_ms            INTEGER CHECK (latency_ms >= 0),
   fallback_used         BOOLEAN NOT NULL DEFAULT false,
-  reviews_trace_id      UUID REFERENCES decision_traces(id),
+  reviews_trace_id      UUID,
   review_outcome        review_outcome,
-  supersedes_trace_id   UUID REFERENCES decision_traces(id),
+  supersedes_trace_id   UUID,
 
+  -- a review or a replacement must point to a trace of the same organization and assessment
+  UNIQUE (organization_id, assessment_id, id),
+  FOREIGN KEY (organization_id, assessment_id, reviews_trace_id)
+    REFERENCES decision_traces (organization_id, assessment_id, id),
+  FOREIGN KEY (organization_id, assessment_id, supersedes_trace_id)
+    REFERENCES decision_traces (organization_id, assessment_id, id),
   -- sources must always be a JSON array
   CHECK (jsonb_typeof(sources) = 'array'),
   -- agent decisions must record the prompt or rule applied, and cite at least one source
@@ -239,12 +245,13 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 4. How the agent computes `confidence` (agent developers).
 5. Add the foreign key on `assessment_id` once the `assessments` table exists. Enforce that the assessment belongs to the same organization with a composite foreign key `(organization_id, assessment_id)` → `assessments(organization_id, id)`.
 6. Normalizing `sources` and `control_ids` into separate tables (as in the team schema v0.3) is deferred until the tables they would reference (`interview_turns`, `document_chunks`, `configuration_items`, `framework_nodes`) exist. Until then they stay as JSONB and `TEXT[]` columns.
-7. Agent integration: the backend `DecisionTrace` model is the single source of truth. When the agent moves into the backend, it replaces its JSONL `TraceRecorder` with the backend's `record_trace()` function.
+7. Agent integration: the backend `DecisionTrace` model is the single source of truth. When the agent moves into the backend, it replaces its JSONL `TraceRecorder` with the backend's `record_trace()` function. `record_trace()` only flushes; the caller commits, so a decision and the data it explains (for example an expert review) are saved in one transaction.
 
 ## 11. Changelog
 
 | Version | Date | Change |
 | --- | --- | --- |
 | 0.1 | 2026-09-30 | First draft |
+| 0.2 | 2026-10-12 | Review by Miloš: reviews and replacements must reference a trace of the same organization and assessment (composite foreign keys); `record_trace()` leaves the commit to the caller. |
 | 0.2 | 2026-10-12 | Review by Natalia: control status values listed in snake_case, `not_applicable` added, fallback review required only when a control is closed, `attestation` recommended for interview-based decisions. |
 | 0.2 | 2026-10-10 | Access rules aligned with HU-03 (representatives have no access), append-only enforced by trigger, JSON export, `created_at` uses `clock_timestamp()`. Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
