@@ -23,6 +23,7 @@ ActorType = Literal["agent", "assessed_org_representative", "aligo_consultant"]
 SourceType = Literal["interview_turn", "document_span", "tenant_configuration", "prior_phase_evidence"]
 EvidenceNature = Literal["intent", "implementation", "attestation"]
 ReviewOutcome = Literal["accepted", "modified", "rejected"]
+CONTROL_STATUSES = ("implemented", "partially_implemented", "not_implemented", "not_applicable", "not_assessed")
 
 
 class TraceSource(BaseModel):
@@ -99,9 +100,16 @@ class DecisionTrace(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def check_control_status(self) -> "DecisionTrace":
+        if self.decision_type == "status_assessed" and self.output.get("status") not in CONTROL_STATUSES:
+            raise ValueError("A status_assessed decision must set output.status to one of: " + ", ".join(CONTROL_STATUSES) + ".")
+        return self
+
+    @model_validator(mode="after")
     def check_human_review_flag(self) -> "DecisionTrace":
-        if self.fallback_used and not self.requires_human_review:
-            raise ValueError("A decision made by a fallback must require human review.")
+        # A fallback that only leads to a follow-up question needs no review; a control closed on it does.
+        if self.decision_type == "status_assessed" and self.fallback_used and not self.requires_human_review:
+            raise ValueError("A control closed on a fallback interpretation must require human review.")
         insufficient = (
             self.decision_type == "evidence_validated"
             and self.output.get("state") == "provided_insufficient"

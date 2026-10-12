@@ -61,12 +61,13 @@ def test_valid_llm_decision_is_created():
 
 
 def test_rule_decision_without_model_is_accepted():
-    trace = make_trace(decision_type="status_assessed", prompt_id="rule:close-on-no", model_name=None)
+    trace = make_trace(decision_type="status_assessed", prompt_id="rule:close-on-no", model_name=None,
+                       output={"status": "not_implemented"})
     assert trace.model_name is None
 
 
 def test_valid_human_review_is_accepted():
-    review = make_review(review_outcome="modified", output={"status": "Partially"})
+    review = make_review(review_outcome="modified", output={"status": "partially_implemented"})
     assert review.review_outcome == "modified"
 
 
@@ -130,9 +131,27 @@ def test_human_decision_with_confidence_is_rejected():
         make_review(confidence=0.8)
 
 
-def test_fallback_without_human_review_is_rejected():
+def test_fallback_interpretation_without_review_is_accepted():
+    # A fallback that only leads to a follow-up question does not need review (schema v0.2, review on PR #9).
+    trace = make_trace(fallback_used=True, requires_human_review=False, prompt_id="rule:keyword_fallback", model_name=None)
+    assert trace.fallback_used is True
+
+
+def test_control_closed_on_fallback_without_review_is_rejected():
     with pytest.raises(ValidationError, match="fallback"):
-        make_trace(fallback_used=True, requires_human_review=False)
+        make_trace(decision_type="status_assessed", output={"status": "implemented"},
+                   fallback_used=True, requires_human_review=False)
+
+
+@pytest.mark.parametrize("status", ["implemented", "partially_implemented", "not_implemented", "not_applicable", "not_assessed"])
+def test_every_control_status_is_accepted(status):
+    trace = make_trace(decision_type="status_assessed", prompt_id="rule:x", model_name=None, output={"status": status})
+    assert trace.output["status"] == status
+
+
+def test_unknown_control_status_is_rejected():
+    with pytest.raises(ValidationError, match="output.status"):
+        make_trace(decision_type="status_assessed", prompt_id="rule:x", model_name=None, output={"status": "Partially"})
 
 
 def test_insufficient_evidence_without_human_review_is_rejected():
