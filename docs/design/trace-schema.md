@@ -30,7 +30,7 @@ It is **not** the model's private chain-of-thought, the chat transcript, or tech
 | `evidence_extracted` | Evidence was extracted from a document or Microsoft 365 configuration |
 | `evidence_validated` | Evidence was judged `provided_sufficient`, `provided_insufficient`, `documented_absence` or `not_requested` |
 | `mapping_assigned` | Evidence or a finding was mapped to one or more NIST CSF 2.0 subcategories, with a justification |
-| `status_assessed` | A control status was set: Implemented, Partially, Not Implemented, or Not assessed (with the reason in `rationale`) |
+| `status_assessed` | A control status was set. `output.status` is one of `implemented`, `partially_implemented`, `not_implemented`, `not_applicable`, `not_assessed` (the reason is in `rationale`) |
 | `maturity_assessed` | A maturity level was set for a subcategory: current and target, 1 Performed to 5 Optimizing (industry convention, not defined by NIST) |
 | `contradiction_detected` | Two sources disagree (for example policy vs. tenant configuration) |
 | `finding_generated` | A finding (gap) was created, with priority and risks |
@@ -39,7 +39,9 @@ It is **not** the model's private chain-of-thought, the chat transcript, or tech
 Rules that follow from Aligo's evidence rubric and classification guide:
 
 - Evidence judged `provided_insufficient` always sets `requires_human_review = true`, because insufficient evidence and non-compliance are different findings.
-- `Not assessed` is a recorded decision, not a missing value: partial completeness is normal, and the report must state which subcategories could not be assessed and why.
+- Control status values are written in snake_case exactly as listed above, by the agent, the backend and the export. Reports may show them as Aligo labels (Implemented, Partially, Not Implemented, Not applicable, Not assessed).
+- `not_applicable` requires a written justification from the participant (HU-08); without one the control is closed as `not_assessed`.
+- `not_assessed` is a recorded decision, not a missing value: partial completeness is normal, and the report must state which subcategories could not be assessed and why.
 - Control status, maturity level and remediation status are separate scales and are never derived from each other.
 
 ## 4. Fields
@@ -63,7 +65,7 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `sources` | JSON array | yes for agent decisions | Each item: `type` (`interview_turn`, `document_span`, `tenant_configuration`, `prior_phase_evidence`), `ref`, `excerpt` |
-| `evidence_nature` | enum: `intent`, `implementation`, `attestation` | no | Policy (intent), configuration (implementation) or a person's statement (attestation). A policy never proves implementation. |
+| `evidence_nature` | enum: `intent`, `implementation`, `attestation` | no | Policy (intent), configuration (implementation) or a person's statement (attestation). A policy never proves implementation. Decisions based only on interview answers (`answer_interpreted`, and `status_assessed` from the interview) should use `attestation` |
 
 ### D. Who decided and how
 | Field | Type | Required | Description |
@@ -77,12 +79,12 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 ### E. Result
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `output` | JSON | yes | Decision result, shape depends on `decision_type`, e.g. `{"status": "Partially"}` |
+| `output` | JSON | yes | Decision result, shape depends on `decision_type`, e.g. `{"status": "partially_implemented"}` |
 | `rationale` | text | yes | Short human-readable justification that cites the sources |
 | `confidence` | number 0–1 | no | Agent confidence; empty for human decisions |
 | `requires_human_review` | boolean | yes | True for uncertain or critical decisions |
 | `latency_ms` | integer ≥ 0 | no | Time the LLM call took, for the 10 s turn NFR and the model benchmark (E0-04) |
-| `fallback_used` | boolean | yes, default false | True when the LLM failed or timed out and a deterministic fallback was used. Such decisions also set `requires_human_review` |
+| `fallback_used` | boolean | yes, default false | True when the LLM failed or timed out and a deterministic fallback was used. A fallback interpretation that only leads to a follow-up question does not need review; a control closed (`status_assessed`) on a fallback must set `requires_human_review` |
 
 ### F. Review and history
 | Field | Type | Required | Description |
@@ -244,4 +246,5 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 | Version | Date | Change |
 | --- | --- | --- |
 | 0.1 | 2026-09-30 | First draft |
+| 0.2 | 2026-10-12 | Review by Natalia: control status values listed in snake_case, `not_applicable` added, fallback review required only when a control is closed, `attestation` recommended for interview-based decisions. |
 | 0.2 | 2026-10-10 | Access rules aligned with HU-03 (representatives have no access), append-only enforced by trigger, JSON export, `created_at` uses `clock_timestamp()`. Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
