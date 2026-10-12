@@ -4,16 +4,22 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
+    Integer,
+    Numeric,
     String,
+    Text,
     Uuid,
     UniqueConstraint,
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -233,3 +239,129 @@ Index(
     OrganizationInvitation.token_hash,
     unique=True,
 )
+
+
+DECISION_TYPES = (
+    "answer_interpreted",
+    "evidence_requested",
+    "evidence_extracted",
+    "evidence_validated",
+    "mapping_assigned",
+    "status_assessed",
+    "maturity_assessed",
+    "contradiction_detected",
+    "finding_generated",
+    "human_review",
+)
+ACTOR_TYPES = ("agent", "assessed_org_representative", "aligo_consultant")
+EVIDENCE_NATURES = ("intent", "implementation", "attestation")
+REVIEW_OUTCOMES = ("accepted", "modified", "rejected")
+
+
+def _in_list(column: str, values: tuple[str, ...]) -> str:
+    quoted = ", ".join(f"'{value}'" for value in values)
+    return f"{column} IN ({quoted})"
+
+
+class DecisionTraceRecord(Base):
+    """Append-only reasoning trace (AGRC-15). See docs/design/trace-schema.md v0.2."""
+
+    __tablename__ = "decision_traces"
+    __table_args__ = (
+        CheckConstraint(_in_list("decision_type", DECISION_TYPES), name="decision_type"),
+        CheckConstraint(_in_list("actor_type", ACTOR_TYPES), name="actor_type"),
+        CheckConstraint(
+            "evidence_nature IS NULL OR " + _in_list("evidence_nature", EVIDENCE_NATURES),
+            name="evidence_nature",
+        ),
+        CheckConstraint(
+            "review_outcome IS NULL OR " + _in_list("review_outcome", REVIEW_OUTCOMES),
+            name="review_outcome",
+        ),
+        CheckConstraint("jsonb_typeof(sources) = 'array'", name="sources_array"),
+        CheckConstraint("jsonb_typeof(output) = 'object'", name="output_object"),
+        CheckConstraint("confidence IS NULL OR confidence BETWEEN 0 AND 1", name="confidence_range"),
+        CheckConstraint("latency_ms IS NULL OR latency_ms >= 0", name="latency_non_negative"),
+        CheckConstraint(
+            "actor_type <> 'agent' OR (prompt_id IS NOT NULL AND prompt_version IS NOT NULL "
+            "AND jsonb_array_length(sources) >= 1)",
+            name="agent_complete",
+        ),
+        CheckConstraint(
+            "actor_type <> 'agent' OR prompt_id LIKE 'rule:%' OR model_name IS NOT NULL",
+            name="llm_has_model",
+        ),
+        CheckConstraint(
+            "decision_type <> 'human_review' OR (reviews_trace_id IS NOT NULL AND review_outcome IS NOT NULL)",
+            name="review_complete",
+        ),
+        CheckConstraint(
+            "decision_type <> 'human_review' OR actor_type <> 'agent'", name="review_by_human"
+        ),
+        CheckConstraint(
+            "(actor_type = 'agent') = (actor_user_id IS NULL)", name="actor_user_matches_type"
+        ),
+        # A review or a replacement must point to a trace of the same organization and assessment.
+        UniqueConstraint("organization_id", "assessment_id", "id", name="uq_decision_traces_org_assessment_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "reviews_trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_decision_traces_reviews_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "supersedes_trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_decision_traces_supersedes_same_assessment",
+        ),
+        Index("ix_decision_traces_org_assessment", "organization_id", "assessment_id", "created_at"),
+        Index("ix_decision_traces_control_ids", "control_ids", postgresql_using="gin"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False
+    )
+    # No foreign key yet: the assessments table does not exist (trace-schema.md, section 10).
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    # clock_timestamp(), not now(): now() is the same for every row in one transaction,
+    # so several decisions saved together would lose their order.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+    decision_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    control_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'")
+    )
+    module: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    sources: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    evidence_nature: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    kb_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    output: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    requires_human_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
+    reviews_trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+    review_outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    supersedes_trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
