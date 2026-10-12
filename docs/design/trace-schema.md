@@ -16,7 +16,7 @@ It is **not** the model's private chain-of-thought, the chat transcript, or tech
 ## 2. Principles
 
 1. **One record per decision.** A decision is anything a consultant or auditor could ask "why is this so?" about.
-2. **Append-only.** Records are never updated or deleted. A changed decision creates a new record that points to the old one (`supersedes_trace_id`).
+2. **Append-only.** Records are never updated, deleted or truncated (enforced by database triggers). A changed decision creates a new record that points to the old one (`supersedes_trace_id`).
 3. **Every agent decision cites at least one source.** An uncited assertion is a fabrication.
 4. **Isolated by organization** at the data layer, like all other assessment data.
 5. **Persists after the assessment session closes.**
@@ -71,7 +71,7 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `actor_type` | enum: `agent`, `assessed_org_representative`, `aligo_consultant` | yes | The organization confirms facts; the consultant validates judgment |
-| `actor_user_id` | UUID | no | Set for human actors |
+| `actor_user_id` | UUID → user | for human actors | Required for human actors, empty for the agent |
 | `model_name` | text | for LLM decisions | LLM used. Empty when the decision was made by a deterministic rule (`prompt_id` starts with `rule:`) |
 | `prompt_id`, `prompt_version` | text | for agent | Prompt or deterministic rule applied (a rule uses the prefix `rule:`, e.g. `rule:risk-classification`) |
 | `kb_version` | text | yes | Knowledge base version used |
@@ -197,7 +197,7 @@ CREATE TABLE decision_traces (
   sources               JSONB NOT NULL DEFAULT '[]',
   evidence_nature       evidence_nature,
   actor_type            actor_type NOT NULL,
-  actor_user_id         UUID,
+  actor_user_id         UUID REFERENCES users(id),
   model_name            TEXT,
   prompt_id             TEXT,
   prompt_version        TEXT,
@@ -230,7 +230,9 @@ CREATE TABLE decision_traces (
   CHECK (decision_type <> 'human_review'
          OR (reviews_trace_id IS NOT NULL AND review_outcome IS NOT NULL)),
   -- a review must be done by a person, never by the agent
-  CHECK (decision_type <> 'human_review' OR actor_type <> 'agent')
+  CHECK (decision_type <> 'human_review' OR actor_type <> 'agent'),
+  -- a human decision records who made it; an agent decision has no user
+  CHECK ((actor_type = 'agent') = (actor_user_id IS NULL))
 );
 
 CREATE INDEX idx_trace_org_assessment ON decision_traces (organization_id, assessment_id, created_at);
@@ -252,6 +254,7 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 | Version | Date | Change |
 | --- | --- | --- |
 | 0.1 | 2026-09-30 | First draft |
+| 0.2 | 2026-10-12 | Human decisions must record `actor_user_id` (agent decisions must not); `TRUNCATE` is blocked like `UPDATE` and `DELETE`. |
 | 0.2 | 2026-10-12 | Review by Miloš: reviews and replacements must reference a trace of the same organization and assessment (composite foreign keys); `record_trace()` leaves the commit to the caller. |
 | 0.2 | 2026-10-12 | Review by Natalia: control status values listed in snake_case, `not_applicable` added, fallback review required only when a control is closed, `attestation` recommended for interview-based decisions. |
 | 0.2 | 2026-10-10 | Access rules aligned with HU-03 (representatives have no access), append-only enforced by trigger, JSON export, `created_at` uses `clock_timestamp()`. Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
