@@ -10,11 +10,14 @@ from app.schemas.decision_trace import DecisionTrace
 
 
 def record_trace(db: Session, trace: DecisionTrace) -> DecisionTraceRecord:
-    """Save one validated decision. Traces are never updated or deleted."""
-    record = DecisionTraceRecord(**trace.model_dump(mode="json"))
+    """Add one validated decision to the current transaction. Traces are never updated or deleted.
+
+    It only flushes: the caller commits, so a decision and the data it explains
+    (for example an expert review) are saved together or not at all.
+    """
+    record = DecisionTraceRecord(**trace.model_dump())
     db.add(record)
-    db.commit()
-    db.refresh(record)
+    db.flush()
     return record
 
 

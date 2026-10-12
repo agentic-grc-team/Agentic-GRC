@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -297,6 +298,18 @@ class DecisionTraceRecord(Base):
         CheckConstraint(
             "decision_type <> 'human_review' OR actor_type <> 'agent'", name="review_by_human"
         ),
+        # A review or a replacement must point to a trace of the same organization and assessment.
+        UniqueConstraint("organization_id", "assessment_id", "id", name="uq_decision_traces_org_assessment_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "reviews_trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_decision_traces_reviews_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "supersedes_trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_decision_traces_supersedes_same_assessment",
+        ),
         Index("ix_decision_traces_org_assessment", "organization_id", "assessment_id", "created_at"),
         Index("ix_decision_traces_control_ids", "control_ids", postgresql_using="gin"),
     )
@@ -343,9 +356,9 @@ class DecisionTraceRecord(Base):
     fallback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     reviews_trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("decision_traces.id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )
     review_outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
     supersedes_trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("decision_traces.id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )

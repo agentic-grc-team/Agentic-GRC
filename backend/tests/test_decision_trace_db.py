@@ -138,6 +138,76 @@ def test_delete_of_a_trace_is_rejected(db):
         db.execute(text("DELETE FROM decision_traces WHERE id = :id"), {"id": record.id})
 
 
+# --- transactions -------------------------------------------------------------
+
+def test_record_trace_leaves_commit_to_caller(db):
+    organization = make_organization(db)
+    assessment_id = uuid.uuid4()
+    record_trace(db, make_trace(organization.id, assessment_id))
+
+    db.rollback()
+
+    assert list_traces(db, organization.id, assessment_id) == []
+
+
+# --- references between traces (reviews and replacements) ---------------------
+
+def make_review(organization_id, assessment_id, reviewed_trace_id) -> DecisionTrace:
+    return make_trace(
+        organization_id, assessment_id,
+        decision_type="human_review", actor_type="aligo_consultant",
+        sources=[], prompt_id=None, prompt_version=None, model_name=None, confidence=None,
+        reviews_trace_id=reviewed_trace_id, review_outcome="accepted",
+        output={}, rationale="Agrees with the agent.",
+    )
+
+
+def test_review_of_trace_in_same_assessment_is_accepted(db):
+    organization = make_organization(db)
+    assessment_id = uuid.uuid4()
+    reviewed = record_trace(db, make_trace(organization.id, assessment_id))
+
+    review = record_trace(db, make_review(organization.id, assessment_id, reviewed.id))
+
+    assert review.reviews_trace_id == reviewed.id
+
+
+def test_review_of_trace_from_another_organization_is_rejected(db):
+    organization_a = make_organization(db)
+    organization_b = make_organization(db)
+    assessment_id = uuid.uuid4()
+    reviewed = record_trace(db, make_trace(organization_a.id, assessment_id))
+
+    with pytest.raises(IntegrityError, match="reviews_same_assessment"):
+        record_trace(db, make_review(organization_b.id, assessment_id, reviewed.id))
+
+
+def test_review_of_trace_from_another_assessment_is_rejected(db):
+    organization = make_organization(db)
+    reviewed = record_trace(db, make_trace(organization.id, uuid.uuid4()))
+
+    with pytest.raises(IntegrityError, match="reviews_same_assessment"):
+        record_trace(db, make_review(organization.id, uuid.uuid4(), reviewed.id))
+
+
+def test_replacement_of_trace_from_another_organization_is_rejected(db):
+    organization_a = make_organization(db)
+    organization_b = make_organization(db)
+    assessment_id = uuid.uuid4()
+    old = record_trace(db, make_trace(organization_a.id, assessment_id))
+
+    with pytest.raises(IntegrityError, match="supersedes_same_assessment"):
+        record_trace(db, make_trace(organization_b.id, assessment_id, supersedes_trace_id=old.id))
+
+
+def test_replacement_of_trace_from_another_assessment_is_rejected(db):
+    organization = make_organization(db)
+    old = record_trace(db, make_trace(organization.id, uuid.uuid4()))
+
+    with pytest.raises(IntegrityError, match="supersedes_same_assessment"):
+        record_trace(db, make_trace(organization.id, uuid.uuid4(), supersedes_trace_id=old.id))
+
+
 # --- database rules (second line of defence behind Pydantic) -----------------
 
 def test_database_rejects_llm_decision_without_model(db):

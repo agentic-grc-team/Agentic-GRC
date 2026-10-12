@@ -59,8 +59,10 @@ def upgrade() -> None:
     sa.CheckConstraint('latency_ms IS NULL OR latency_ms >= 0', name=op.f('ck_decision_traces_latency_non_negative')),
     sa.ForeignKeyConstraint(['actor_user_id'], ['users.id'], name=op.f('fk_decision_traces_actor_user_id_users')),
     sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], name=op.f('fk_decision_traces_organization_id_organizations')),
-    sa.ForeignKeyConstraint(['reviews_trace_id'], ['decision_traces.id'], name=op.f('fk_decision_traces_reviews_trace_id_decision_traces')),
-    sa.ForeignKeyConstraint(['supersedes_trace_id'], ['decision_traces.id'], name=op.f('fk_decision_traces_supersedes_trace_id_decision_traces')),
+    # A review or a replacement must point to a trace of the same organization and assessment.
+    sa.UniqueConstraint('organization_id', 'assessment_id', 'id', name='uq_decision_traces_org_assessment_id'),
+    sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'reviews_trace_id'], ['decision_traces.organization_id', 'decision_traces.assessment_id', 'decision_traces.id'], name='fk_decision_traces_reviews_same_assessment'),
+    sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'supersedes_trace_id'], ['decision_traces.organization_id', 'decision_traces.assessment_id', 'decision_traces.id'], name='fk_decision_traces_supersedes_same_assessment'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_decision_traces'))
     )
     op.create_index('ix_decision_traces_control_ids', 'decision_traces', ['control_ids'], unique=False, postgresql_using='gin')
