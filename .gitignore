@@ -10,3 +10,10 @@ __pycache__/
 
 # Secrets
 .env
+
+# macOS
+.DS_Store
+
+# Agent outputs
+traces/
+evals/results/
