@@ -446,7 +446,7 @@ class AssessmentControl(Base):
             name="scope_rationale",
         ),
         UniqueConstraint("assessment_id", "control_code", name="uq_assessment_controls_assessment_code"),
-        UniqueConstraint("organization_id", "id", name="uq_assessment_controls_org_id"),
+        UniqueConstraint("organization_id", "assessment_id", "id", name="uq_assessment_controls_org_assessment_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -466,23 +466,29 @@ class AssessmentControl(Base):
     )
 
 
+# Nullable columns (based_on_result_id, trace_id) skip the FK check when NULL under PostgreSQL's default MATCH SIMPLE.
 class ControlResult(Base):
     """Immutable version of the result of one control (0007)."""
 
     __tablename__ = "control_results"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["organization_id", "assessment_control_id"],
-            ["assessment_controls.organization_id", "assessment_controls.id"],
-            name="fk_control_results_control_same_org",
+            ["organization_id", "assessment_id", "assessment_control_id"],
+            ["assessment_controls.organization_id", "assessment_controls.assessment_id", "assessment_controls.id"],
+            name="fk_control_results_control_same_assessment",
         ),
         ForeignKeyConstraint(
-            ["organization_id", "based_on_result_id"],
-            ["control_results.organization_id", "control_results.id"],
-            name="fk_control_results_based_on_same_org",
+            ["organization_id", "assessment_id", "based_on_result_id"],
+            ["control_results.organization_id", "control_results.assessment_id", "control_results.id"],
+            name="fk_control_results_based_on_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_control_results_trace_same_assessment",
         ),
         UniqueConstraint("assessment_control_id", "version_no", name="uq_control_results_control_version"),
-        UniqueConstraint("organization_id", "id", name="uq_control_results_org_id"),
+        UniqueConstraint("organization_id", "assessment_id", "id", name="uq_control_results_org_assessment_id"),
         CheckConstraint("version_no >= 1", name="version_positive"),
         CheckConstraint(_in_list("author_actor", RESULT_AUTHORS), name="author_actor"),
         CheckConstraint(
@@ -519,6 +525,7 @@ class ControlResult(Base):
         Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     assessment_control_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     based_on_result_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
@@ -544,7 +551,7 @@ class ControlResult(Base):
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("decision_traces.id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
@@ -558,14 +565,19 @@ class ControlResultReview(Base):
     __tablename__ = "control_result_reviews"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["organization_id", "control_result_id"],
-            ["control_results.organization_id", "control_results.id"],
-            name="fk_control_result_reviews_result_same_org",
+            ["organization_id", "assessment_id", "control_result_id"],
+            ["control_results.organization_id", "control_results.assessment_id", "control_results.id"],
+            name="fk_control_result_reviews_result_same_assessment",
         ),
         ForeignKeyConstraint(
-            ["organization_id", "resulting_result_id"],
-            ["control_results.organization_id", "control_results.id"],
-            name="fk_control_result_reviews_resulting_same_org",
+            ["organization_id", "assessment_id", "resulting_result_id"],
+            ["control_results.organization_id", "control_results.assessment_id", "control_results.id"],
+            name="fk_control_result_reviews_resulting_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "review_trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_control_result_reviews_trace_same_assessment",
         ),
         UniqueConstraint("control_result_id", name="uq_control_result_reviews_result"),
         CheckConstraint(_in_list("outcome", REVIEW_OUTCOMES), name="outcome"),
@@ -587,6 +599,7 @@ class ControlResultReview(Base):
         Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     control_result_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     resulting_result_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -600,6 +613,6 @@ class ControlResultReview(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     review_trace_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("decision_traces.id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )
 

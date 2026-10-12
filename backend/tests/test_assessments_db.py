@@ -104,6 +104,7 @@ def make_control(db: Session, organization: Organization, assessment: Assessment
 def make_result(db: Session, organization: Organization, control: AssessmentControl, **changes) -> ControlResult:
     fields = {
         "organization_id": organization.id,
+        "assessment_id": control.assessment_id,
         "assessment_control_id": control.id,
         "version_no": 1,
         "based_on_result_id": None,
@@ -373,6 +374,7 @@ def test_duplicate_result_version_for_same_control_rejected(db):
 
     dup_result = ControlResult(
         organization_id=org.id,
+        assessment_id=control.assessment_id,
         assessment_control_id=control.id,
         version_no=1,
         author_actor="agent",
@@ -390,6 +392,7 @@ def test_not_applicable_without_justification_rejected(db):
     control = make_control(db, org, assessment)
     result = ControlResult(
         organization_id=org.id,
+        assessment_id=control.assessment_id,
         assessment_control_id=control.id,
         version_no=1,
         author_actor="agent",
@@ -408,6 +411,7 @@ def test_not_assessed_without_reason_rejected(db):
     control = make_control(db, org, assessment)
     result = ControlResult(
         organization_id=org.id,
+        assessment_id=control.assessment_id,
         assessment_control_id=control.id,
         version_no=1,
         author_actor="agent",
@@ -426,6 +430,7 @@ def test_consultant_result_without_user_rejected(db):
     control = make_control(db, org, assessment)
     result = ControlResult(
         organization_id=org.id,
+        assessment_id=control.assessment_id,
         assessment_control_id=control.id,
         version_no=1,
         author_actor="aligo_consultant",
@@ -444,6 +449,7 @@ def test_maturity_current_out_of_range_rejected(db):
     control = make_control(db, org, assessment)
     result = ControlResult(
         organization_id=org.id,
+        assessment_id=control.assessment_id,
         assessment_control_id=control.id,
         version_no=1,
         author_actor="agent",
@@ -475,10 +481,12 @@ def test_result_with_mismatched_organization_control_rejected(db):
     org_a = make_organization(db)
     org_b = make_organization(db)
     assessment_a = make_assessment(db, org_a)
+    assessment_b = make_assessment(db, org_b)
     control_a = make_control(db, org_a, assessment_a)
 
     result = ControlResult(
         organization_id=org_b.id,
+        assessment_id=assessment_b.id,
         assessment_control_id=control_a.id,
         version_no=1,
         author_actor="agent",
@@ -486,7 +494,7 @@ def test_result_with_mismatched_organization_control_rejected(db):
         explanation="Mismatched control org",
     )
     db.add(result)
-    with pytest.raises(IntegrityError, match="control_same_org"):
+    with pytest.raises(IntegrityError, match="control_same_assessment"):
         db.commit()
 
 
@@ -501,6 +509,7 @@ def test_accepted_review_stored_with_empty_comment(db):
 
     review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=result.id,
         outcome="accepted",
         comment="",
@@ -533,6 +542,7 @@ def test_modified_review_stored_with_resulting_result(db):
 
     review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=agent_result.id,
         outcome="modified",
         resulting_result_id=consultant_result.id,
@@ -554,6 +564,7 @@ def test_modified_review_without_resulting_result_rejected(db):
 
     review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=agent_result.id,
         outcome="modified",
         resulting_result_id=None,
@@ -574,6 +585,7 @@ def test_rejected_review_with_blank_comment_rejected(db):
 
     review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=agent_result.id,
         outcome="rejected",
         comment="   ",
@@ -593,6 +605,7 @@ def test_duplicate_review_for_same_result_rejected(db):
 
     first_review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=agent_result.id,
         outcome="accepted",
         comment="",
@@ -603,6 +616,7 @@ def test_duplicate_review_for_same_result_rejected(db):
 
     second_review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=agent_result.id,
         outcome="accepted",
         comment="",
@@ -622,6 +636,7 @@ def test_review_update_rejected_by_trigger(db):
 
     review = ControlResultReview(
         organization_id=org.id,
+        assessment_id=assessment.id,
         control_result_id=agent_result.id,
         outcome="accepted",
         comment="",
@@ -640,18 +655,289 @@ def test_review_update_rejected_by_trigger(db):
 def test_review_with_mismatched_organization_result_rejected(db):
     org_a = make_organization(db)
     org_b = make_organization(db)
-    user = make_user(db)
     assessment_a = make_assessment(db, org_a)
+    assessment_b = make_assessment(db, org_b)
+    user = make_user(db)
     control_a = make_control(db, org_a, assessment_a)
     agent_result_a = make_result(db, org_a, control_a)
 
     review = ControlResultReview(
         organization_id=org_b.id,
+        assessment_id=assessment_b.id,
         control_result_id=agent_result_a.id,
         outcome="accepted",
         comment="",
         reviewed_by_user_id=user.id,
     )
     db.add(review)
-    with pytest.raises(IntegrityError, match="result_same_org"):
+    with pytest.raises(IntegrityError, match="result_same_assessment"):
         db.commit()
+
+
+# --- composite trace and assessment FKs (AGRC-61 fix) ------------------------
+
+def test_result_with_trace_of_same_assessment_accepted(db):
+    org = make_organization(db)
+    assessment = make_assessment(db, org)
+    control = make_control(db, org, assessment)
+    trace = make_trace(db, org, assessment)
+
+    result = make_result(db, org, control, trace_id=trace.id)
+    assert result.id is not None
+    assert result.trace_id == trace.id
+
+
+def test_result_with_trace_of_another_organization_rejected(db):
+    org_a = make_organization(db)
+    org_b = make_organization(db)
+    assessment_a = make_assessment(db, org_a)
+    assessment_b = make_assessment(db, org_b)
+    control_a = make_control(db, org_a, assessment_a)
+    trace_b = make_trace(db, org_b, assessment_b)
+
+    result = ControlResult(
+        organization_id=org_a.id,
+        assessment_id=assessment_a.id,
+        assessment_control_id=control_a.id,
+        version_no=1,
+        author_actor="agent",
+        control_status="implemented",
+        explanation="Result with other org trace",
+        trace_id=trace_b.id,
+    )
+    db.add(result)
+    with pytest.raises(IntegrityError, match="trace_same_assessment"):
+        db.commit()
+
+
+def test_result_with_trace_of_another_assessment_same_org_rejected(db):
+    org = make_organization(db)
+    assessment_1 = make_assessment(db, org)
+    assessment_2 = make_assessment(db, org)
+    control_1 = make_control(db, org, assessment_1)
+    trace_2 = make_trace(db, org, assessment_2)
+
+    result = ControlResult(
+        organization_id=org.id,
+        assessment_id=assessment_1.id,
+        assessment_control_id=control_1.id,
+        version_no=1,
+        author_actor="agent",
+        control_status="implemented",
+        explanation="Result with other assessment trace",
+        trace_id=trace_2.id,
+    )
+    db.add(result)
+    with pytest.raises(IntegrityError, match="trace_same_assessment"):
+        db.commit()
+
+
+def test_result_with_mismatched_assessment_id_to_control_rejected(db):
+    org = make_organization(db)
+    assessment_1 = make_assessment(db, org)
+    assessment_2 = make_assessment(db, org)
+    control_1 = make_control(db, org, assessment_1)
+
+    result = ControlResult(
+        organization_id=org.id,
+        assessment_id=assessment_2.id,
+        assessment_control_id=control_1.id,
+        version_no=1,
+        author_actor="agent",
+        control_status="implemented",
+        explanation="Result with mismatched assessment_id to control",
+    )
+    db.add(result)
+    with pytest.raises(IntegrityError, match="control_same_assessment"):
+        db.commit()
+
+
+def test_result_with_based_on_result_of_another_assessment_rejected(db):
+    org = make_organization(db)
+    assessment_1 = make_assessment(db, org)
+    assessment_2 = make_assessment(db, org)
+    control_1 = make_control(db, org, assessment_1)
+    control_2 = make_control(db, org, assessment_2)
+    result_1 = make_result(db, org, control_1, version_no=1)
+
+    result_2 = ControlResult(
+        organization_id=org.id,
+        assessment_id=assessment_2.id,
+        assessment_control_id=control_2.id,
+        version_no=2,
+        based_on_result_id=result_1.id,
+        author_actor="agent",
+        control_status="implemented",
+        explanation="Result based on another assessment result",
+    )
+    db.add(result_2)
+    with pytest.raises(IntegrityError, match="based_on_same_assessment"):
+        db.commit()
+
+
+def test_review_with_trace_of_same_assessment_accepted(db):
+    org = make_organization(db)
+    user = make_user(db)
+    assessment = make_assessment(db, org)
+    control = make_control(db, org, assessment)
+    result = make_result(db, org, control)
+    trace = make_trace(db, org, assessment)
+
+    review = ControlResultReview(
+        organization_id=org.id,
+        assessment_id=assessment.id,
+        control_result_id=result.id,
+        outcome="accepted",
+        comment="",
+        reviewed_by_user_id=user.id,
+        review_trace_id=trace.id,
+    )
+    db.add(review)
+    db.commit()
+    assert review.id is not None
+    assert review.review_trace_id == trace.id
+
+
+def test_review_with_trace_of_another_organization_rejected(db):
+    org_a = make_organization(db)
+    org_b = make_organization(db)
+    user = make_user(db)
+    assessment_a = make_assessment(db, org_a)
+    assessment_b = make_assessment(db, org_b)
+    control_a = make_control(db, org_a, assessment_a)
+    result_a = make_result(db, org_a, control_a)
+    trace_b = make_trace(db, org_b, assessment_b)
+
+    review = ControlResultReview(
+        organization_id=org_a.id,
+        assessment_id=assessment_a.id,
+        control_result_id=result_a.id,
+        outcome="accepted",
+        comment="",
+        reviewed_by_user_id=user.id,
+        review_trace_id=trace_b.id,
+    )
+    db.add(review)
+    with pytest.raises(IntegrityError, match="trace_same_assessment"):
+        db.commit()
+
+
+def test_review_with_trace_of_another_assessment_same_org_rejected(db):
+    org = make_organization(db)
+    user = make_user(db)
+    assessment_1 = make_assessment(db, org)
+    assessment_2 = make_assessment(db, org)
+    control_1 = make_control(db, org, assessment_1)
+    result_1 = make_result(db, org, control_1)
+    trace_2 = make_trace(db, org, assessment_2)
+
+    review = ControlResultReview(
+        organization_id=org.id,
+        assessment_id=assessment_1.id,
+        control_result_id=result_1.id,
+        outcome="accepted",
+        comment="",
+        reviewed_by_user_id=user.id,
+        review_trace_id=trace_2.id,
+    )
+    db.add(review)
+    with pytest.raises(IntegrityError, match="trace_same_assessment"):
+        db.commit()
+
+
+def test_review_with_mismatched_assessment_id_to_result_rejected(db):
+    org = make_organization(db)
+    user = make_user(db)
+    assessment_1 = make_assessment(db, org)
+    assessment_2 = make_assessment(db, org)
+    control_1 = make_control(db, org, assessment_1)
+    result_1 = make_result(db, org, control_1)
+
+    review = ControlResultReview(
+        organization_id=org.id,
+        assessment_id=assessment_2.id,
+        control_result_id=result_1.id,
+        outcome="accepted",
+        comment="",
+        reviewed_by_user_id=user.id,
+    )
+    db.add(review)
+    with pytest.raises(IntegrityError, match="result_same_assessment"):
+        db.commit()
+
+
+def test_modified_review_with_resulting_result_of_another_assessment_rejected(db):
+    org = make_organization(db)
+    user = make_user(db)
+    assessment_1 = make_assessment(db, org)
+    assessment_2 = make_assessment(db, org)
+    control_1 = make_control(db, org, assessment_1)
+    control_2 = make_control(db, org, assessment_2)
+    agent_result_1 = make_result(db, org, control_1, version_no=1)
+    consultant_result_2 = make_result(
+        db,
+        org,
+        control_2,
+        version_no=2,
+        author_actor="aligo_consultant",
+        author_user_id=user.id,
+        control_status="implemented",
+        explanation="Result in assessment 2",
+    )
+
+    review = ControlResultReview(
+        organization_id=org.id,
+        assessment_id=assessment_1.id,
+        control_result_id=agent_result_1.id,
+        outcome="modified",
+        resulting_result_id=consultant_result_2.id,
+        comment="Resulting result in another assessment",
+        reviewed_by_user_id=user.id,
+    )
+    db.add(review)
+    with pytest.raises(IntegrityError, match="resulting_same_assessment"):
+        db.commit()
+
+
+def test_result_with_null_trace_id_accepted(db):
+    org = make_organization(db)
+    assessment = make_assessment(db, org)
+    control = make_control(db, org, assessment)
+
+    result = ControlResult(
+        organization_id=org.id,
+        assessment_id=assessment.id,
+        assessment_control_id=control.id,
+        version_no=1,
+        author_actor="agent",
+        control_status="implemented",
+        explanation="Result without trace reference",
+        trace_id=None,
+    )
+    db.add(result)
+    db.commit()
+    assert result.id is not None
+    assert result.trace_id is None
+
+
+def test_review_with_null_review_trace_id_accepted(db):
+    org = make_organization(db)
+    user = make_user(db)
+    assessment = make_assessment(db, org)
+    control = make_control(db, org, assessment)
+    result = make_result(db, org, control)
+
+    review = ControlResultReview(
+        organization_id=org.id,
+        assessment_id=assessment.id,
+        control_result_id=result.id,
+        outcome="accepted",
+        comment="",
+        reviewed_by_user_id=user.id,
+        review_trace_id=None,
+    )
+    db.add(review)
+    db.commit()
+    assert review.id is not None
+    assert review.review_trace_id is None
+

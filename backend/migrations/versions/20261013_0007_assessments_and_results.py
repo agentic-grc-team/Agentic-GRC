@@ -59,12 +59,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['organization_id', 'assessment_id'], ['assessments.organization_id', 'assessments.id'], name='fk_assessment_controls_assessment_same_org'),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_assessment_controls')),
         sa.UniqueConstraint('assessment_id', 'control_code', name='uq_assessment_controls_assessment_code'),
-        sa.UniqueConstraint('organization_id', 'id', name='uq_assessment_controls_org_id')
+        sa.UniqueConstraint('organization_id', 'assessment_id', 'id', name='uq_assessment_controls_org_assessment_id')
     )
 
     op.create_table('control_results',
         sa.Column('id', sa.Uuid(), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('organization_id', sa.Uuid(), nullable=False),
+        sa.Column('assessment_id', sa.Uuid(), nullable=False),
         sa.Column('assessment_control_id', sa.Uuid(), nullable=False),
         sa.Column('version_no', sa.Integer(), nullable=False),
         sa.Column('based_on_result_id', sa.Uuid(), nullable=True),
@@ -96,17 +97,18 @@ def upgrade() -> None:
         sa.CheckConstraint("maturity_target IS NULL OR maturity_target BETWEEN 1 AND 5", name=op.f('ck_control_results_maturity_target_range')),
         sa.CheckConstraint("version_no >= 1", name=op.f('ck_control_results_version_positive')),
         sa.ForeignKeyConstraint(['author_user_id'], ['users.id'], name=op.f('fk_control_results_author_user_id_users')),
-        sa.ForeignKeyConstraint(['organization_id', 'assessment_control_id'], ['assessment_controls.organization_id', 'assessment_controls.id'], name='fk_control_results_control_same_org'),
-        sa.ForeignKeyConstraint(['organization_id', 'based_on_result_id'], ['control_results.organization_id', 'control_results.id'], name='fk_control_results_based_on_same_org'),
-        sa.ForeignKeyConstraint(['trace_id'], ['decision_traces.id'], name=op.f('fk_control_results_trace_id_decision_traces')),
+        sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'assessment_control_id'], ['assessment_controls.organization_id', 'assessment_controls.assessment_id', 'assessment_controls.id'], name='fk_control_results_control_same_assessment'),
+        sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'based_on_result_id'], ['control_results.organization_id', 'control_results.assessment_id', 'control_results.id'], name='fk_control_results_based_on_same_assessment'),
+        sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'trace_id'], ['decision_traces.organization_id', 'decision_traces.assessment_id', 'decision_traces.id'], name='fk_control_results_trace_same_assessment'),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_control_results')),
         sa.UniqueConstraint('assessment_control_id', 'version_no', name='uq_control_results_control_version'),
-        sa.UniqueConstraint('organization_id', 'id', name='uq_control_results_org_id')
+        sa.UniqueConstraint('organization_id', 'assessment_id', 'id', name='uq_control_results_org_assessment_id')
     )
 
     op.create_table('control_result_reviews',
         sa.Column('id', sa.Uuid(), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('organization_id', sa.Uuid(), nullable=False),
+        sa.Column('assessment_id', sa.Uuid(), nullable=False),
         sa.Column('control_result_id', sa.Uuid(), nullable=False),
         sa.Column('outcome', sa.String(length=16), nullable=False),
         sa.Column('resulting_result_id', sa.Uuid(), nullable=True),
@@ -118,9 +120,9 @@ def upgrade() -> None:
         sa.CheckConstraint("outcome = 'accepted' OR length(btrim(comment)) > 0", name=op.f('ck_control_result_reviews_comment_required')),
         sa.CheckConstraint("outcome IN ('accepted', 'modified', 'rejected')", name=op.f('ck_control_result_reviews_outcome')),
         sa.CheckConstraint("resulting_result_id IS NULL OR resulting_result_id <> control_result_id", name=op.f('ck_control_result_reviews_resulting_differs')),
-        sa.ForeignKeyConstraint(['organization_id', 'control_result_id'], ['control_results.organization_id', 'control_results.id'], name='fk_control_result_reviews_result_same_org'),
-        sa.ForeignKeyConstraint(['organization_id', 'resulting_result_id'], ['control_results.organization_id', 'control_results.id'], name='fk_control_result_reviews_resulting_same_org'),
-        sa.ForeignKeyConstraint(['review_trace_id'], ['decision_traces.id'], name=op.f('fk_control_result_reviews_review_trace_id_decision_traces')),
+        sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'control_result_id'], ['control_results.organization_id', 'control_results.assessment_id', 'control_results.id'], name='fk_control_result_reviews_result_same_assessment'),
+        sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'resulting_result_id'], ['control_results.organization_id', 'control_results.assessment_id', 'control_results.id'], name='fk_control_result_reviews_resulting_same_assessment'),
+        sa.ForeignKeyConstraint(['organization_id', 'assessment_id', 'review_trace_id'], ['decision_traces.organization_id', 'decision_traces.assessment_id', 'decision_traces.id'], name='fk_control_result_reviews_trace_same_assessment'),
         sa.ForeignKeyConstraint(['reviewed_by_user_id'], ['users.id'], name=op.f('fk_control_result_reviews_reviewed_by_user_id_users')),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_control_result_reviews')),
         sa.UniqueConstraint('control_result_id', name='uq_control_result_reviews_result')
@@ -162,7 +164,14 @@ def upgrade() -> None:
     op.execute(sa.text('ALTER TABLE public."control_result_reviews" ENABLE ROW LEVEL SECURITY'))
 
     # 5. Composite foreign key from decision_traces to assessments
-    # No trace data exists yet in any environment (2026-10-13), so the FK below cannot fail on existing rows.
+    # Existing traces would point to assessments that do not exist yet. Stop with a clear message instead of a raw FK error.
+    op.execute(sa.text(
+        "DO $$ BEGIN "
+        "IF EXISTS (SELECT 1 FROM public.decision_traces) THEN "
+        "RAISE EXCEPTION 'Migration 0007: decision_traces already has rows. They must be linked to real assessments before applying this migration.'; "
+        "END IF; END $$"
+    ))
+    # Checked on Supabase on 2026-10-12: migration 0006 applied, decision_traces has 0 rows.
     op.create_foreign_key(
         "fk_decision_traces_assessment_same_org",
         "decision_traces",
