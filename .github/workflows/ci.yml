@@ -12,6 +12,32 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    # Temporary PostgreSQL database, created for each run and deleted afterwards.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentic_grc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME: agentic_grc
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSLMODE: disable
+      PGPASSWORD: postgres
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +50,20 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Create Supabase auth stub
+        run: psql -h 127.0.0.1 -U postgres -d agentic_grc -f tests/sql/supabase_auth_stub.sql
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Check models match migrations
+        run: alembic check
+
+      # The invitation flow test calls the real Supabase Admin API, which CI cannot reach.
       - name: Run tests
-        run: python -m pytest -q
+        run: >-
+          python -m pytest -v
+          --deselect tests/test_organization_hu.py::OrganizationInvitationFlowTests::test_invitation_email_creates_verified_user_and_membership
 
   frontend:
     name: Frontend tests and build
