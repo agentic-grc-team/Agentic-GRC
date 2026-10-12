@@ -1,13 +1,15 @@
 # Interpretation test set. Each case = one question + the dialogue so far.
 # `expected.action` is what the rules should decide with 0 follow-ups used.
 # Labels are the team's judgement: review them with Aligo when possible.
+# A detailed "yes" expects `follow_up`: the rules ask for evidence once before closing.
+# `mentions_evidence` is labelled on those cases only to measure the model; no rule depends on it.
 # Quote "yes" / "no": unquoted, YAML loads them as booleans.
 cases:
   - id: mfa-yes-detailed
     question: IAM-01
     dialogue:
       - participant: "Yes, every administrator account in Microsoft 365 and on the servers has mandatory MFA with Microsoft Authenticator, enforced through a conditional access policy."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: true, action: follow_up}
 
   - id: mfa-yes-vague
     question: IAM-01
@@ -87,7 +89,7 @@ cases:
       - participant: "Yes."
       - agent: "You said yes. Which accounts does it apply to exactly? Does it include Microsoft 365?"
       - participant: "All accounts with the Global Administrator and Exchange Administrator roles in 365, using the Authenticator app."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: true, action: follow_up}
 
   - id: mfa-followup-reveals-gap
     question: IAM-01
@@ -101,13 +103,13 @@ cases:
     question: IAM-01
     dialogue:
       - participant: "Yes, every administrator gets an SMS code when signing in to 365 and the VPN."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: false, action: follow_up}
 
   - id: review-yes-detailed
     question: IAM-02
     dialogue:
       - participant: "Yes, every quarter the IT manager reviews access to the ERP and 365 with each department head, and unneeded access is removed."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: false, action: follow_up}
 
   - id: review-only-when-asked
     question: IAM-02

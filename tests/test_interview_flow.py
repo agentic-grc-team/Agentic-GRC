@@ -32,24 +32,74 @@ def pytest_kb():
 
 
 def test_vague_yes_then_detail_closes_as_implemented():
+    detailed = I(category="yes", specificity="detailed", mentions_scope=True)
     llm = FakeLLM({
-        "interpret_answer": scripted_interpretations(
-            I(category="yes", specificity="vague"),
-            I(category="yes", specificity="detailed", mentions_scope=True),
-        ),
+        "interpret_answer": scripted_interpretations(I(category="yes", specificity="vague"), detailed, detailed),
         "generate_follow_up": lambda _u: FollowUpQuestion(question="You said yes: which accounts does it apply to?"),
     })
     nodes, tracer = make(llm)
-    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["Yes", "All of the 365 admins, with Authenticator"])
+    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]),
+                     ["Yes", "All of the 365 admins, with Authenticator", "The conditional access policy shows it"])
 
     r = s["results"]["IAM-01"]
-    assert r["status"] == "implemented" and r["follow_ups_used"] == 1
-    assert r["supporting_turns"] == [2, 4]  # both participant turns support the result
+    assert r["status"] == "implemented" and r["follow_ups_used"] == 2  # scope, then evidence
+    assert r["supporting_turns"] == [2, 4, 6]  # every participant turn supports the result
     # the follow-up interpretation sees the whole dialogue about this question
     assert "Yes" in llm.calls[-1][1] and "Authenticator" in llm.calls[-1][1]
     kinds = [t.decision_type for t in tracer.records]
-    assert kinds == ["answer_interpreted", "answer_interpreted", "status_assessed"]
+    assert kinds == ["answer_interpreted", "answer_interpreted", "evidence_requested",
+                     "answer_interpreted", "status_assessed"]
     assert all(t.control_ids == ["PR.AA-03"] for t in tracer.records)
+    # an answer is not proof: decisions derived from it are attestations
+    assert all(t.evidence_nature == "attestation" for t in tracer.records if t.decision_type != "evidence_requested")
+
+
+def test_result_is_a_preliminary_draft_with_confidence_and_controls():
+    llm = FakeLLM({"interpret_answer": lambda _u: I(category="no", confidence=0.8)})
+    nodes, _ = make(llm)
+    r = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["No"])["results"]["IAM-01"]
+    assert r["is_preliminary"] is True
+    assert r["confidence"] == 0.8 and r["control_ids"] == ["PR.AA-03"]
+    assert r["evidence_pending"] is False  # nothing to prove for a "no"
+
+
+def test_detailed_yes_gets_one_evidence_request_before_closing():
+    detailed = I(category="yes", specificity="detailed", mentions_scope=True)
+    llm = FakeLLM({
+        "interpret_answer": lambda _u: detailed,
+        "generate_follow_up": lambda _u: FollowUpQuestion(question="Could we see the conditional access policy?"),
+    })
+    nodes, tracer = make(llm)
+    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]),
+                     ["Yes, all 365 admins, enforced centrally", "I can't share anything right now"])
+
+    r = s["results"]["IAM-01"]
+    assert r["status"] == "implemented" and r["evidence_pending"] and r["follow_ups_used"] == 1
+    assert "evidence was requested" in r["reason"]
+    kinds = [t.decision_type for t in tracer.records]
+    assert kinds == ["answer_interpreted", "evidence_requested", "answer_interpreted", "status_assessed"]
+    # the request shows the participant what would count as evidence
+    assert "Conditional access policy" in llm.calls[1][1]
+
+
+def test_evidence_request_flag_resets_on_the_next_question():
+    detailed = I(category="yes", specificity="detailed", mentions_scope=True)
+    llm = FakeLLM({
+        "interpret_answer": lambda _u: detailed,
+        "generate_follow_up": lambda _u: FollowUpQuestion(question="What could we look at?"),
+    })
+    nodes, tracer = make(llm)
+    run_scripted(nodes, initial_state("org", "a1", ["IAM-01", "IAM-02"]), ["a", "b", "c", "d"])
+    assert [t.decision_type for t in tracer.records].count("evidence_requested") == 2
+
+
+def test_control_closed_on_fallback_is_flagged_in_its_trace():
+    down = lambda _u: RuntimeError("connection refused")  # noqa: E731
+    nodes, tracer = make(FakeLLM({"interpret_answer": down}))
+    run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["No, never"])
+    closed = tracer.records[-1]
+    assert closed.decision_type == "status_assessed"
+    assert closed.fallback_used and closed.requires_human_review
 
 
 def test_three_vague_follow_ups_then_stops():

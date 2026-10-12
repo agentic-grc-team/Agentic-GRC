@@ -32,9 +32,25 @@ def test_vague_yes_asks_for_scope_then_evidence():
     assert decide_next_step(interp(category="yes", scope=True), 0, 3).missing is Missing.evidence
 
 
-def test_detailed_yes_with_scope_is_implemented():
-    step = decide_next_step(interp(category="yes", specificity="detailed", scope=True), 0, 3)
-    assert step.status is ControlStatus.implemented and not step.requires_human_review
+def test_detailed_yes_gets_one_evidence_request_then_closes():
+    i = interp(category="yes", specificity="detailed", scope=True)
+    first = decide_next_step(i, 0, 3)
+    assert first.action is Action.follow_up and first.missing is Missing.evidence
+    assert first.rule_id == "rule:yes_detailed_ask_evidence"
+    # already asked: do not insist
+    second = decide_next_step(i, 1, 3, evidence_asked=True)
+    assert second.status is ControlStatus.implemented and not second.requires_human_review
+    assert second.rule_id == "rule:yes_detailed"
+
+
+def test_evidence_request_does_not_depend_on_the_model_flag():
+    named = interp(category="yes", specificity="detailed", scope=True, evidence=True)
+    assert decide_next_step(named, 0, 3).missing is Missing.evidence
+
+
+def test_detailed_yes_closes_when_no_follow_ups_left():
+    step = decide_next_step(interp(category="yes", specificity="detailed", scope=True), 3, 3)
+    assert step.status is ControlStatus.implemented and step.rule_id == "rule:yes_detailed_limit"
 
 
 def test_vague_yes_at_limit_is_not_marked_compliant():
@@ -78,5 +94,6 @@ def test_eval_labels_agree_with_rules(case, kb):
     e = case["expected"]
     detailed = e.get("specificity", "detailed") == "detailed"
     i = interp(intent=e["intent"], category=e.get("category", "unsure"),
-               specificity="detailed" if detailed else "vague", scope=detailed)
+               specificity="detailed" if detailed else "vague", scope=detailed,
+               evidence=e.get("mentions_evidence", False))
     assert decide_next_step(i, 0, 3).action.value == e["action"]

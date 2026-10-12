@@ -36,10 +36,12 @@ class InterviewState(TypedDict, total=False):
     question_codes: list[str]
     current_index: int
     follow_ups_used: int
+    evidence_asked: bool  # an evidence request was already made for the current question
     pending_message: str  # what the agent says next to the participant
     turns: Annotated[list[dict], operator.add]  # full transcript, append-only
     last_interpretation: dict
     last_step: dict
+    last_fallback: bool  # the last interpretation came from the keyword fallback
     results: Annotated[dict, _merge]  # question_code -> ControlResult dump
 
 
@@ -112,6 +114,7 @@ class InterviewNodes:
         return {
             "pending_message": text,
             "follow_ups_used": 0,
+            "evidence_asked": False,
             "turns": [self._turn(s, q.code, "agent", "question", text)],
         }
 
@@ -133,11 +136,14 @@ class InterviewNodes:
             interp, fallback = heuristic_interpret(turns[-1]["content"]), True
             interp.rationale += f" ({e})"
 
-        step = decide_next_step(interp, s.get("follow_ups_used", 0), self.d.max_follow_ups)
+        step = decide_next_step(
+            interp, s.get("follow_ups_used", 0), self.d.max_follow_ups, s.get("evidence_asked", False)
+        )
         self._trace(
             s, q,
             decision_type="answer_interpreted",
             sources=self._sources(s, q.code),
+            evidence_nature="attestation",
             model_name=meta.model_name if meta else None,
             prompt_id=meta.prompt_id if meta else "rule:keyword_fallback",
             prompt_version=meta.prompt_version if meta else "0.1.0",
@@ -148,7 +154,11 @@ class InterviewNodes:
             latency_ms=meta.latency_ms if meta else None,
             fallback_used=fallback,
         )
-        return {"last_interpretation": interp.model_dump(mode="json"), "last_step": step.model_dump(mode="json")}
+        return {
+            "last_interpretation": interp.model_dump(mode="json"),
+            "last_step": step.model_dump(mode="json"),
+            "last_fallback": fallback,
+        }
 
     def clarify(self, s: InterviewState) -> dict:
         q = self._question(s)
@@ -191,6 +201,7 @@ class InterviewNodes:
         return {
             "pending_message": text,
             "follow_ups_used": s.get("follow_ups_used", 0) + 1,
+            "evidence_asked": s.get("evidence_asked", False) or missing is Missing.evidence,
             "turns": [self._turn(s, q.code, "agent", "follow_up", text)],
         }
 
@@ -201,7 +212,9 @@ class InterviewNodes:
         sources = self._sources(s, q.code)
         result = ControlResult(
             question_code=q.code,
+            control_ids=[m.node_code for m in q.mappings],
             status=step.status,
+            confidence=interp.confidence,
             reason=step.reason,
             summary=interp.summary,
             follow_ups_used=s.get("follow_ups_used", 0),
@@ -210,10 +223,11 @@ class InterviewNodes:
             supporting_turns=[int(src.ref.split(":")[1]) for src in sources],
         )
         self._trace(
-            s, q, decision_type="status_assessed", sources=sources,
+            s, q, decision_type="status_assessed", sources=sources, evidence_nature="attestation",
             prompt_id=step.rule_id, prompt_version="0.1.0",
             output=result.model_dump(mode="json"), rationale=step.reason,
             confidence=interp.confidence, requires_human_review=step.requires_human_review,
+            fallback_used=s.get("last_fallback", False),
         )
         return {"results": {q.code: result.model_dump(mode="json")}, "current_index": s["current_index"] + 1}
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 from .schemas import Missing, Question
 
 INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.2.0"
-FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.2.0"
+FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.3.0"
 CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.2.0"
 
 _ROLE = (
@@ -63,9 +63,12 @@ def follow_up(question: Question, turns: list[dict], key_quote: str, missing: Mi
         "participant just said. Do not repeat the original question word for word. "
         "Give no opinions or conclusions. Return JSON with the field 'question'."
     )
+    goal = _MISSING_GOAL[missing]
+    if missing is Missing.evidence and question.evidence_examples:
+        goal += ". Examples of suitable evidence: " + "; ".join(question.evidence_examples)
     user = (
         f"Original question: {question.text}\n"
-        f"Goal of the follow-up: {_MISSING_GOAL[missing]}\n"
+        f"Goal of the follow-up: {goal}\n"
         f"What the participant said (to quote): \"{key_quote}\"\n\n"
         f"Conversation:\n{_dialogue(turns)}"
     )

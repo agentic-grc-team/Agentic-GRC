@@ -29,7 +29,7 @@ from agentic_grc_agent.llm import LLMError, OllamaLLM  # noqa: E402
 from agentic_grc_agent.rules import decide_next_step  # noqa: E402
 from agentic_grc_agent.schemas import AnswerInterpretation  # noqa: E402
 
-FIELDS = ("intent", "category", "specificity", "action")
+FIELDS = ("intent", "category", "specificity", "mentions_evidence", "action")
 
 
 def to_turns(case: dict, question_text: str) -> list[dict]:
@@ -68,12 +68,13 @@ def run_model(model: str, cases: list[dict], kb, settings: Settings) -> dict:
             "intent": interp.intent.value,
             "category": interp.category.value,
             "specificity": interp.specificity.value,
+            "mentions_evidence": str(interp.mentions_evidence).lower(),
             "action": step.action.value,
         }
         wrong = []
         for field, expected in case["expected"].items():
             hits[field][1] += 1
-            if got[field] == str(expected):
+            if got[field] == str(expected).lower():
                 hits[field][0] += 1
             else:
                 wrong.append(f"{field}: expected {expected}, got {got[field]}")
@@ -108,9 +109,9 @@ def main() -> None:
         print(f"\n== {model} ==")
         summaries.append(run_model(model, cases, kb, settings))
 
-    print(f"\n{'model':<20}" + "".join(f"{f:>13}" for f in FIELDS) + f"{'failed':>8}{'p50 ms':>9}{'p95 ms':>9}")
+    print(f"\n{'model':<20}" + "".join(f"{f:>19}" for f in FIELDS) + f"{'failed':>8}{'p50 ms':>9}{'p95 ms':>9}")
     for s in summaries:
-        acc = "".join(f"{(s['accuracy'][f] or 0):>13.0%}" for f in FIELDS)
+        acc = "".join(f"{(s['accuracy'][f] or 0):>19.0%}" for f in FIELDS)
         print(f"{s['model']:<20}{acc}{s['invalid_or_failed']:>8}{s['latency_ms']['p50']:>9}{s['latency_ms']['p95']:>9}")
     print("\nNote: a real turn can add a second call (phrasing the follow-up).")
 

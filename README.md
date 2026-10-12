@@ -50,7 +50,11 @@ START → ask_question → wait_for_answer → interpret ─┬─ clarify ─�
 Rules worth discussing with the team / Aligo (`rules.py`):
 
 - A plain "no" closes as `not_implemented` without a follow-up (HU-06).
-- A "yes" closes as `implemented` only with scope described; evidence stays pending (an answer is an attestation, not proof).
+- A "yes" closes as `implemented` only with scope described, and only after one evidence request
+  (`rule:yes_detailed_ask_evidence`). The request never repeats, and evidence stays pending: an answer is an
+  attestation, not proof. The rule does not use the model's `mentions_evidence` flag, which is right only half the time.
+- Every result is preliminary (`is_preliminary: true`) until an expert reviews it, and carries the confidence
+  and the mapped control ids.
 - After 3 follow-ups an unsupported "yes" closes as `not_assessed` + human review — never as compliant.
 - `not_applicable` requires a justification (HU-08).
 - Any close with interpretation confidence < 0.5 is flagged for human review.

@@ -135,8 +135,13 @@ class NextStep(BaseModel):
 
 
 class ControlResult(BaseModel):
+    """Status proposed by the agent for one question. A draft until an expert reviews it."""
+
     question_code: str
+    control_ids: list[str]  # NIST CSF 2.0 subcategories the question maps to
     status: ControlStatus
+    is_preliminary: bool = True
+    confidence: float = Field(ge=0, le=1)  # of the interpretation the status is based on
     reason: str
     summary: str
     follow_ups_used: int

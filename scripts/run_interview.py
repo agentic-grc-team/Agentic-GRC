@@ -66,10 +66,11 @@ def main() -> None:
         print(f"   ({time.perf_counter() - start:.1f} s)")
 
     results = graph.get_state(config).values.get("results", {})
-    print("\n=== Result ===")
+    print("\n=== Preliminary result (draft until reviewed by an expert) ===")
     for code, r in results.items():
         flag = " ⚠ needs human review" if r["requires_human_review"] else ""
-        print(f"{code}: {r['status']} — {r['reason']}{flag}")
+        evidence = " · evidence pending" if r["evidence_pending"] else ""
+        print(f"{code}: {r['status']} — {r['reason']}{evidence}{flag}")
     print(f"\nTraces: {settings.trace_dir / (assessment_id + '.jsonl')}")
 
 
