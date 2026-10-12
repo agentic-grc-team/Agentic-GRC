@@ -147,12 +147,20 @@ def test_requires_comment_when_omitted(
 
 @pytest.mark.parametrize("outcome", ["accepted", "modified", "rejected"])
 def test_trims_review_comment(authenticated_client, outcome):
+    payload = {
+        "outcome": outcome,
+        "comment": "  Evidence checked.  ",
+    }
+
+    if outcome == "modified":
+        payload["modified_result"] = {
+            "control_status": "partially_implemented",
+            "explanation": "MFA is enabled for some accounts.",
+        }
+
     response = authenticated_client.post(
         "/api/v1/expert-reviews/result-demo-001/decision",
-        json={
-            "outcome": outcome,
-            "comment": "  Evidence checked.  ",
-        },
+        json=payload,
     )
 
     assert response.status_code == 200
@@ -167,3 +175,116 @@ def test_accepts_decision_without_comment(authenticated_client):
 
     assert response.status_code == 200
     assert response.json()["comment"] == ""
+
+def test_modified_decision_requires_modified_result(authenticated_client):
+    response = authenticated_client.post(
+        "/api/v1/expert-reviews/result-demo-001/decision",
+        json={
+            "outcome": "modified",
+            "comment": "The proposed status needs correction.",
+        },
+    )
+
+    assert response.status_code == 422
+    assert any(
+        "A modified result is required" in error["msg"]
+        for error in response.json()["detail"]
+    )
+
+@pytest.mark.parametrize(
+    "modified_result",
+    [
+        {
+            "control_status": "approved",
+            "explanation": "Updated result.",
+        },
+        {
+            "control_status": "implemented",
+            "explanation": "   ",
+        },
+        {
+            "control_status": "not_applicable",
+            "explanation": "This control does not apply.",
+            "justification": "   ",
+        },
+        {
+            "control_status": "not_assessed",
+            "explanation": "Assessment could not be completed.",
+            "not_assessed_reason": "   ",
+        },
+    ],
+)
+def test_rejects_invalid_modified_result(
+    authenticated_client,
+    modified_result,
+):
+    response = authenticated_client.post(
+        "/api/v1/expert-reviews/result-demo-001/decision",
+        json={
+            "outcome": "modified",
+            "comment": "Updated after review.",
+            "modified_result": modified_result,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("outcome", ["accepted", "rejected"])
+def test_other_decisions_cannot_include_modified_result(
+    authenticated_client,
+    outcome,
+):
+    response = authenticated_client.post(
+        "/api/v1/expert-reviews/result-demo-001/decision",
+        json={
+            "outcome": outcome,
+            "comment": "Evidence checked.",
+            "modified_result": {
+                "control_status": "implemented",
+                "explanation": "Updated result.",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "control_status,extra_fields",
+    [
+        ("implemented", {}),
+        ("partially_implemented", {}),
+        ("not_implemented", {}),
+        (
+            "not_applicable",
+            {"justification": "The organization does not develop software."},
+        ),
+        (
+            "not_assessed",
+            {"not_assessed_reason": "Configuration evidence is unavailable."},
+        ),
+    ],
+)
+def test_accepts_valid_modified_result(
+    authenticated_client,
+    control_status,
+    extra_fields,
+):
+    modified_result = {
+        "control_status": control_status,
+        "explanation": "Updated after checking the evidence.",
+    }
+    modified_result.update(extra_fields)
+
+    response = authenticated_client.post(
+        "/api/v1/expert-reviews/result-demo-001/decision",
+        json={
+            "outcome": "modified",
+            "comment": "Consultant correction.",
+            "modified_result": modified_result,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["outcome"] == "modified"

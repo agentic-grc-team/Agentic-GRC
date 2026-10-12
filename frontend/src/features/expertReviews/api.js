@@ -13,13 +13,20 @@ export function submitReviewDecision(
   outcome,
   comment,
   accessToken,
+  modifiedResult = null,
 ) {
+  const payload = {
+    outcome: outcome,
+    comment: comment,
+  };
+
+  if (modifiedResult !== null) {
+    payload.modified_result = modifiedResult;
+  }
+
   return apiRequest(`/expert-reviews/${resultId}/decision`, {
     method: "POST",
     accessToken: accessToken,
-    body: JSON.stringify({
-      outcome: outcome,
-      comment: comment,
-    }),
+    body: JSON.stringify(payload),
   });
 }

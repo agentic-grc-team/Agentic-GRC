@@ -204,7 +204,7 @@ describe("ExpertReviewWorkspace", () => {
 
     expect(acceptButton).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Mark as modified" }),
+      screen.getByRole("button", { name: "Edit result" }),
     ).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Reject" }),
@@ -336,5 +336,263 @@ describe("ExpertReviewWorkspace", () => {
     expect(
       screen.getByRole("button", { name: "Accept" }),
     ).toBeEnabled();
+  });
+  it("opens the editor with the current result values", async () => {
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit result" }),
+    );
+
+    expect(screen.getByLabelText("Modified status")).toHaveValue(
+      "partially_implemented",
+    );
+
+    expect(screen.getByLabelText("Modified explanation")).toHaveValue(
+      pendingReview.explanation,
+    );
+
+    expect(submitReviewDecision).not.toHaveBeenCalled();
+  });
+
+
+  it("submits the modified result with trimmed text", async () => {
+    submitReviewDecision.mockResolvedValueOnce({
+      result_id: pendingReview.result_id,
+      outcome: "modified",
+      comment: "Corrected after checking the configuration.",
+      message: "Review decision received successfully.",
+    });
+
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit result" }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Modified status"), {
+      target: { value: "not_implemented" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Modified explanation"), {
+      target: { value: "  MFA is not enabled for privileged accounts.  " },
+    });
+
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: {
+        value: "  Corrected after checking the configuration.  ",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Submit modified result" }),
+    );
+
+    await waitFor(() => {
+      expect(submitReviewDecision).toHaveBeenCalledWith(
+        pendingReview.result_id,
+        "modified",
+        "Corrected after checking the configuration.",
+        "test-token",
+        {
+          control_status: "not_implemented",
+          explanation: "MFA is not enabled for privileged accounts.",
+        },
+      );
+    });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Review queue complete",
+      }),
+    ).toBeInTheDocument();
+  });
+
+
+  it("requires a non-blank modified explanation", async () => {
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit result" }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "The result needs correction." },
+    });
+
+    fireEvent.change(screen.getByLabelText("Modified explanation"), {
+      target: { value: "   " },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Submit modified result" }),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "An explanation is required for a modified result.",
+    );
+
+    expect(submitReviewDecision).not.toHaveBeenCalled();
+  });
+
+
+  it.each([
+    [
+      "not_applicable",
+      "Justification for not applicable",
+      "A justification is required for not applicable.",
+      "justification",
+    ],
+    [
+      "not_assessed",
+      "Reason for not assessed",
+      "A reason is required for not assessed.",
+      "not_assessed_reason",
+    ],
+  ])(
+    "requires and submits the additional reason for %s",
+    async (status, fieldLabel, errorMessage, payloadField) => {
+      submitReviewDecision.mockResolvedValueOnce({
+        result_id: pendingReview.result_id,
+        outcome: "modified",
+        comment: "Updated after review.",
+        message: "Review decision received successfully.",
+      });
+
+      render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+      await screen.findByRole("heading", { name: "PR.AA-03" });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Edit result" }),
+      );
+
+      fireEvent.change(screen.getByLabelText("Modified status"), {
+        target: { value: status },
+      });
+
+      fireEvent.change(screen.getByLabelText("Review comment"), {
+        target: { value: "Updated after review." },
+      });
+
+      fireEvent.change(screen.getByLabelText(fieldLabel), {
+        target: { value: "   " },
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Submit modified result" }),
+      );
+
+      expect(screen.getByRole("alert")).toHaveTextContent(errorMessage);
+      expect(submitReviewDecision).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByLabelText(fieldLabel), {
+        target: { value: "  Reason confirmed by the consultant.  " },
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Submit modified result" }),
+      );
+
+      await waitFor(() => {
+        expect(submitReviewDecision).toHaveBeenCalledWith(
+          pendingReview.result_id,
+          "modified",
+          "Updated after review.",
+          "test-token",
+          {
+            control_status: status,
+            explanation: pendingReview.explanation,
+            [payloadField]: "Reason confirmed by the consultant.",
+          },
+        );
+      });
+
+      await screen.findByRole("heading", {
+        name: "Review queue complete",
+      });
+    },
+  );
+
+
+  it("preserves the edited fields when submission fails", async () => {
+    submitReviewDecision.mockRejectedValueOnce(
+      new Error("Unable to submit review."),
+    );
+
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit result" }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Modified status"), {
+      target: { value: "not_implemented" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Modified explanation"), {
+      target: { value: "No MFA configuration was found." },
+    });
+
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "Configuration checked." },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Submit modified result" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unable to submit review.",
+    );
+
+    expect(screen.getByLabelText("Modified status")).toHaveValue(
+      "not_implemented",
+    );
+
+    expect(screen.getByLabelText("Modified explanation")).toHaveValue(
+      "No MFA configuration was found.",
+    );
+
+    expect(screen.getByLabelText("Review comment")).toHaveValue(
+      "Configuration checked.",
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Submit modified result" }),
+    ).toBeEnabled();
+  });
+
+
+  it("cancels editing without submitting a decision", async () => {
+    render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit result" }),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel editing" }),
+    );
+
+    expect(
+      screen.queryByLabelText("Modified status"),
+    ).not.toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "Accept" }),
+    ).toBeEnabled();
+
+    expect(submitReviewDecision).not.toHaveBeenCalled();
   });
 });

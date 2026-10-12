@@ -26,7 +26,21 @@ export default function ExpertReviewWorkspace({ accessToken }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedStatus, setEditedStatus] = useState("");
+  const [editedExplanation, setEditedExplanation] = useState("");
+  const [justification, setJustification] = useState("");
+  const [notAssessedReason, setNotAssessedReason] = useState("");
+
   const sessionRef = useRef(null);
+
+  function resetEditor() {
+    setIsEditing(false);
+    setEditedStatus("");
+    setEditedExplanation("");
+    setJustification("");
+    setNotAssessedReason("");
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -40,6 +54,12 @@ export default function ExpertReviewWorkspace({ accessToken }) {
     setNotice("");
     setIsLoading(true);
     setIsSubmitting(false);
+
+    setIsEditing(false);
+    setEditedStatus("");
+    setEditedExplanation("");
+    setJustification("");
+    setNotAssessedReason("");
 
     async function loadReviews() {
       try {
@@ -72,6 +92,27 @@ export default function ExpertReviewWorkspace({ accessToken }) {
     };
   }, [accessToken]);
 
+  function startEditing() {
+    if (reviews.length === 0 || isSubmitting) {
+      return;
+    }
+
+    const review = reviews[0];
+
+    setEditedStatus(review.control_status);
+    setEditedExplanation(review.explanation);
+    setJustification(review.justification || "");
+    setNotAssessedReason(review.not_assessed_reason || "");
+    setIsEditing(true);
+    setError("");
+    setNotice("");
+  }
+
+  function cancelEditing() {
+    resetEditor();
+    setError("");
+  }
+
   async function handleDecision(outcome) {
     if (reviews.length === 0 || isSubmitting) {
       return;
@@ -81,6 +122,9 @@ export default function ExpertReviewWorkspace({ accessToken }) {
     const resultId = reviews[0].result_id;
     const trimmedComment = comment.trim();
 
+    setError("");
+    setNotice("");
+
     if (
       (outcome === "modified" || outcome === "rejected") &&
       trimmedComment === ""
@@ -88,21 +132,74 @@ export default function ExpertReviewWorkspace({ accessToken }) {
       setError(
         "A review comment is required when modifying or rejecting a result.",
       );
-      setNotice("");
       return;
     }
 
+    let modifiedResult = null;
+
+    if (outcome === "modified") {
+      if (!isEditing) {
+        return;
+      }
+
+      const explanation = editedExplanation.trim();
+
+      if (explanation === "") {
+        setError("An explanation is required for a modified result.");
+        return;
+      }
+
+      if (
+        editedStatus === "not_applicable" &&
+        justification.trim() === ""
+      ) {
+        setError("A justification is required for not applicable.");
+        return;
+      }
+
+      if (
+        editedStatus === "not_assessed" &&
+        notAssessedReason.trim() === ""
+      ) {
+        setError("A reason is required for not assessed.");
+        return;
+      }
+
+      modifiedResult = {
+        control_status: editedStatus,
+        explanation: explanation,
+      };
+
+      if (editedStatus === "not_applicable") {
+        modifiedResult.justification = justification.trim();
+      }
+
+      if (editedStatus === "not_assessed") {
+        modifiedResult.not_assessed_reason = notAssessedReason.trim();
+      }
+    }
+
     setIsSubmitting(true);
-    setError("");
-    setNotice("");
 
     try {
-      const response = await submitReviewDecision(
-        resultId,
-        outcome,
-        trimmedComment,
-        accessToken,
-      );
+      let response;
+
+      if (outcome === "modified") {
+        response = await submitReviewDecision(
+          resultId,
+          outcome,
+          trimmedComment,
+          accessToken,
+          modifiedResult,
+        );
+      } else {
+        response = await submitReviewDecision(
+          resultId,
+          outcome,
+          trimmedComment,
+          accessToken,
+        );
+      }
 
       if (sessionRef.current !== session) {
         return;
@@ -117,6 +214,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
       );
 
       setComment("");
+      resetEditor();
     } catch (requestError) {
       if (sessionRef.current === session) {
         setError(
@@ -192,6 +290,69 @@ export default function ExpertReviewWorkspace({ accessToken }) {
         <p>{review.evidence_summary}</p>
       </div>
 
+      {isEditing && (
+        <div className="review-section">
+          <h3>Edit result</h3>
+
+          <label className="review-comment">
+            Modified status
+            <select
+              value={editedStatus}
+              onChange={(event) => setEditedStatus(event.target.value)}
+              disabled={isSubmitting}
+            >
+              <option value="implemented">Implemented</option>
+              <option value="partially_implemented">
+                Partially implemented
+              </option>
+              <option value="not_implemented">Not implemented</option>
+              <option value="not_applicable">Not applicable</option>
+              <option value="not_assessed">Not assessed</option>
+            </select>
+          </label>
+
+          <label className="review-comment">
+            Modified explanation
+            <textarea
+              value={editedExplanation}
+              onChange={(event) =>
+                setEditedExplanation(event.target.value)
+              }
+              disabled={isSubmitting}
+              rows="5"
+            />
+          </label>
+
+          {editedStatus === "not_applicable" && (
+            <label className="review-comment">
+              Justification for not applicable
+              <textarea
+                value={justification}
+                onChange={(event) =>
+                  setJustification(event.target.value)
+                }
+                disabled={isSubmitting}
+                rows="3"
+              />
+            </label>
+          )}
+
+          {editedStatus === "not_assessed" && (
+            <label className="review-comment">
+              Reason for not assessed
+              <textarea
+                value={notAssessedReason}
+                onChange={(event) =>
+                  setNotAssessedReason(event.target.value)
+                }
+                disabled={isSubmitting}
+                rows="3"
+              />
+            </label>
+          )}
+        </div>
+      )}
+
       <label className="review-comment">
         Review comment
         <textarea
@@ -207,29 +368,53 @@ export default function ExpertReviewWorkspace({ accessToken }) {
       {notice && <p role="status">{notice}</p>}
 
       <div className="review-actions">
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={() => handleDecision("accepted")}
-        >
-          Accept
-        </button>
+        {!isEditing && (
+          <>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => handleDecision("accepted")}
+            >
+              Accept
+            </button>
 
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={() => handleDecision("modified")}
-        >
-          Mark as modified
-        </button>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={startEditing}
+            >
+              Edit result
+            </button>
 
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={() => handleDecision("rejected")}
-        >
-          Reject
-        </button>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => handleDecision("rejected")}
+            >
+              Reject
+            </button>
+          </>
+        )}
+
+        {isEditing && (
+          <>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => handleDecision("modified")}
+            >
+              Submit modified result
+            </button>
+
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={cancelEditing}
+            >
+              Cancel editing
+            </button>
+          </>
+        )}
       </div>
     </section>
   );
