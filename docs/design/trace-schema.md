@@ -95,6 +95,8 @@ Rules that follow from Aligo's evidence rubric and classification guide:
 
 When `review_outcome` is `modified`, the corrected result is stored in the `output` of the `human_review` record. A review is always made by a person, never by the agent.
 
+The trace is the audit log of how a result was reached. The current result of a control lives in `control_results` (a new consultant-authored version when the result is modified, schema v0.3), and reports read final results from there, not from traces.
+
 ## 5. Relationships
 
 ```mermaid
@@ -173,6 +175,8 @@ An agent judges a conditional access policy found in report-only mode:
 ```
 
 ## 9. Draft PostgreSQL definition
+
+> Implemented in migration `20261010_0006` with `VARCHAR` + `CHECK` constraints instead of the Postgres `ENUM` types below, following the team's convention. The rules are the same.
 
 Subject to the stack decision (E0-04) and the main DB schema (E0-02).
 
@@ -254,6 +258,7 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 | Version | Date | Change |
 | --- | --- | --- |
 | 0.1 | 2026-09-30 | First draft |
+| 0.2 | 2026-10-12 | Review by Juan: trace vs. `control_results` roles clarified; note that the implementation uses `VARCHAR` + `CHECK` instead of `ENUM`. |
 | 0.2 | 2026-10-12 | Human decisions must record `actor_user_id` (agent decisions must not); `TRUNCATE` is blocked like `UPDATE` and `DELETE`. |
 | 0.2 | 2026-10-12 | Review by Miloš: reviews and replacements must reference a trace of the same organization and assessment (composite foreign keys); `record_trace()` leaves the commit to the caller. |
 | 0.2 | 2026-10-12 | Review by Natalia: control status values listed in snake_case, `not_applicable` added, fallback review required only when a control is closed, `attestation` recommended for interview-based decisions. |
