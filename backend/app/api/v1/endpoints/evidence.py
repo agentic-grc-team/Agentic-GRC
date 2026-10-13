@@ -1,5 +1,6 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Form
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Form, Query
 from sqlalchemy.orm import Session
+import hashlib
 import shutil
 import os
 import uuid
@@ -8,9 +9,12 @@ import pandas as pd
 from docx import Document
 
 from app.api.v1.dependencies import get_db_session
-from app.db.models import User
+from app.db.models import EVIDENCE_MAX_BYTES, User
+from app.schemas.evidence import EvidenceFileRead
 from app.security.auth import get_current_user
 from app.api.v1.endpoints.organizations import _active_membership
+from app.services.assessments import get_assessment
+from app.services.evidence import list_evidence_files, store_evidence_file
 
 router = APIRouter()
 
@@ -18,7 +22,7 @@ UPLOAD_DIR = "uploaded_evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".csv", ".xlsx"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  
+MAX_FILE_SIZE = EVIDENCE_MAX_BYTES
 
 def extract_text(file_path: str, extension: str) -> str:
     text = ""
@@ -50,9 +54,23 @@ def extract_text(file_path: str, extension: str) -> str:
         
     return text.strip()
 
+def _remove_file(path: str) -> None:
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def _sha256_of(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as stored:
+        for chunk in iter(lambda: stored.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 @router.post("/")
 async def upload_evidence(
     organization_id: str = Form(...),
+    assessment_id: str | None = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
@@ -66,35 +84,79 @@ async def upload_evidence(
     if not membership:
         raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
 
+    assessment_uuid = None
+    if assessment_id:
+        try:
+            assessment_uuid = uuid.UUID(assessment_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid assessment ID format.")
+        if get_assessment(db, org_uuid, assessment_uuid) is None:
+            raise HTTPException(status_code=404, detail="Assessment not found.")
+
     if file.size and file.size > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10MB limit.")
 
-    file_extension = os.path.splitext(file.filename)[1].lower()
+    original_filename = os.path.basename((file.filename or "").replace("\\", "/")).strip()
+    file_extension = os.path.splitext(original_filename)[1].lower()
     
     if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Format not allowed: {file_extension}.")
-    safe_filename = f"{organization_id}_{uuid.uuid4()}{file_extension}"
+    safe_filename = f"{org_uuid}_{uuid.uuid4()}{file_extension}"
     file_location = os.path.join(UPLOAD_DIR, safe_filename)
 
     try:
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-            
+
+        size_bytes = os.path.getsize(file_location)
+        if size_bytes > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="File exceeds 10MB limit.")
+
         extracted_text = extract_text(file_location, file_extension)
-            
+        record = store_evidence_file(
+            db,
+            organization_id=org_uuid,
+            uploaded_by_user_id=user.id,
+            assessment_id=assessment_uuid,
+            original_filename=original_filename[:255],
+            stored_filename=safe_filename,
+            content_type=file.content_type[:255] if file.content_type else None,
+            file_extension=file_extension,
+            size_bytes=size_bytes,
+            sha256=_sha256_of(file_location),
+            extracted_text=extracted_text,
+        )
+
+    except HTTPException:
+        _remove_file(file_location)
+        raise
     except ValueError as ve:
-        if os.path.exists(file_location):
-            os.remove(file_location)
+        _remove_file(file_location)
         raise HTTPException(status_code=422, detail=str(ve))
-    except Exception as e:
-        if os.path.exists(file_location):
-            os.remove(file_location)
+    except Exception:
+        _remove_file(file_location)
         raise HTTPException(status_code=500, detail="Internal server error.")
 
     return {
         "info": "File uploaded and parsed successfully.", 
-        "original_filename": file.filename,
+        "id": str(record.id),
+        "original_filename": record.original_filename,
         "stored_filename": safe_filename,
-        "organization_id": organization_id,
+        "organization_id": str(org_uuid),
+        "assessment_id": str(assessment_uuid) if assessment_uuid else None,
+        "size_bytes": size_bytes,
+        "sha256": record.sha256,
         "extracted_content_preview": extracted_text[:500]
     }
+
+
+@router.get("/", response_model=list[EvidenceFileRead])
+def read_evidence_files(
+    organization_id: uuid.UUID = Query(...),
+    assessment_id: uuid.UUID | None = Query(None),
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    if not _active_membership(db, organization_id, user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
+    return list_evidence_files(db, organization_id, assessment_id)

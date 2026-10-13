@@ -42,5 +42,9 @@ def test_membership_query_filters_platform_admin_organizations(api):
 def test_platform_admin_upload_requires_active_membership(api, monkeypatch, has_membership, expected):
     client, _ = api
     monkeypatch.setattr("app.api.v1.endpoints.evidence._active_membership", lambda *args: object() if has_membership else None)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.evidence.store_evidence_file",
+        lambda db, **fields: SimpleNamespace(id=uuid4(), **fields),
+    )
     response = client.post("/api/v1/evidence/", data={"organization_id": str(uuid4())}, files={"file": ("policy.txt", b"Synthetic evidence", "text/plain")})
     assert response.status_code == expected
