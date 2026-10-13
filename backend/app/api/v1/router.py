@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     health,
     organizations,
     reference_data,
+    reports,
     traces,
 )
 
@@ -26,3 +27,4 @@ api_router.include_router(
     tags=["evidence"],
 )
 api_router.include_router(expert_reviews.router)
+api_router.include_router(reports.router)
