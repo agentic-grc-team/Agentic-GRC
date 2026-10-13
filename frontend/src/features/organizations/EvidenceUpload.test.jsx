@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import EvidenceUpload from "./EvidenceUpload.jsx";
 import { uploadEvidence } from "./api.js";
@@ -49,5 +49,87 @@ describe("EvidenceUpload", () => {
     fireEvent.change(container.querySelector("input[type=file]"), { target: { files: [new File(["evidence"], "policy.txt")] } });
     await screen.findByText(html);
     expect(container.querySelector(".evidence-preview img")).toBeNull();
+  });
+});
+
+describe("EvidenceUpload session changes", () => {
+  const drop = () => fireEvent.drop(screen.getByRole("button"), { dataTransfer: { files: [new File(["evidence"], "policy.txt")] } });
+
+  it("ignores a pending upload and clears the preview when the session changes for the same organization", async () => {
+    let resolveUpload;
+    uploadEvidence.mockImplementationOnce(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    const { rerender } = render(<EvidenceUpload organizationId="alpha" accessToken="token-a" sessionId="user-a" />);
+    drop();
+    await screen.findByText("Uploading policy.txt...");
+    const signal = uploadEvidence.mock.calls[0][3];
+
+    rerender(<EvidenceUpload organizationId="alpha" accessToken="token-b" sessionId="user-b" />);
+    expect(signal.aborted).toBe(true);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await act(async () => { resolveUpload({ extracted_content_preview: "Previous session preview" }); });
+    expect(screen.queryByText("Previous session preview")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("ignores a late error from the previous session", async () => {
+    let rejectUpload;
+    uploadEvidence.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectUpload = reject; }));
+    const { rerender } = render(<EvidenceUpload organizationId="alpha" accessToken="token-a" sessionId="user-a" />);
+    drop();
+    await screen.findByText("Uploading policy.txt...");
+
+    rerender(<EvidenceUpload organizationId="alpha" accessToken="token-b" sessionId="user-b" />);
+    await act(async () => { rejectUpload({ status: 500, message: "Internal server error." }); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("clears a completed preview when the session changes", async () => {
+    const { rerender } = render(<EvidenceUpload organizationId="alpha" accessToken="token-a" sessionId="user-a" />);
+    drop();
+    await screen.findByText("Evidence");
+
+    rerender(<EvidenceUpload organizationId="alpha" accessToken="token-b" sessionId="user-b" />);
+    expect(screen.queryByText("Evidence")).not.toBeInTheDocument();
+  });
+
+  it("keeps the preview and a pending upload when the same session only refreshes its token", async () => {
+    let resolveUpload;
+    uploadEvidence.mockImplementationOnce(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    const { rerender } = render(<EvidenceUpload organizationId="alpha" accessToken="token-1" sessionId="user-a" />);
+    drop();
+    await screen.findByText("Uploading policy.txt...");
+
+    rerender(<EvidenceUpload organizationId="alpha" accessToken="token-2" sessionId="user-a" />);
+    expect(uploadEvidence.mock.calls[0][3].aborted).toBe(false);
+    await act(async () => { resolveUpload({ extracted_content_preview: "Finished upload" }); });
+    expect(screen.getByText("Finished upload")).toBeInTheDocument();
+
+    rerender(<EvidenceUpload organizationId="alpha" accessToken="token-3" sessionId="user-a" />);
+    expect(screen.getByText("Finished upload")).toBeInTheDocument();
+  });
+
+  it("uploads with the most recent token after a refresh", async () => {
+    const { rerender } = render(<EvidenceUpload organizationId="alpha" accessToken="token-1" sessionId="user-a" />);
+    rerender(<EvidenceUpload organizationId="alpha" accessToken="token-2" sessionId="user-a" />);
+    drop();
+    await screen.findByText("Evidence");
+    expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal));
+  });
+
+  it("aborts the request and ignores the response after unmount", async () => {
+    let resolveUpload;
+    uploadEvidence.mockImplementationOnce(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { unmount } = render(<EvidenceUpload organizationId="alpha" accessToken="token" sessionId="user-a" />);
+    drop();
+    await screen.findByText("Uploading policy.txt...");
+    const signal = uploadEvidence.mock.calls[0][3];
+
+    unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => { resolveUpload({ extracted_content_preview: "Late" }); });
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

@@ -29,10 +29,11 @@ function describeError(status, detail) {
   return `Upload failed (${status}).`;
 }
 
-export default function EvidenceUpload({ organizationId, accessToken, disabled = false }) {
+export default function EvidenceUpload({ organizationId, accessToken, sessionId = "", disabled = false }) {
   const inputRef = useRef(null);
   const requestRef = useRef(null);
   const uploadingRef = useRef(false);
+  const tokenRef = useRef(accessToken);
   const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
@@ -40,6 +41,10 @@ export default function EvidenceUpload({ organizationId, accessToken, disabled =
 
   const isUploading = status === "uploading";
   const isDisabled = disabled || !organizationId || !accessToken || isUploading;
+
+  useEffect(() => {
+    tokenRef.current = accessToken;
+  }, [accessToken]);
 
   useEffect(() => {
     setStatus("idle");
@@ -50,7 +55,7 @@ export default function EvidenceUpload({ organizationId, accessToken, disabled =
       requestRef.current = null;
       uploadingRef.current = false;
     };
-  }, [organizationId]);
+  }, [organizationId, sessionId]);
 
   async function uploadFile(file) {
     if (isDisabled || uploadingRef.current) {
@@ -73,7 +78,7 @@ export default function EvidenceUpload({ organizationId, accessToken, disabled =
     setResult(null);
 
     try {
-      const body = await uploadEvidence(organizationId, file, accessToken, controller.signal);
+      const body = await uploadEvidence(organizationId, file, tokenRef.current, controller.signal);
       if (controller.signal.aborted) {
         return;
       }

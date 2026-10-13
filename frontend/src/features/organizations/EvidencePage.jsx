@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import EvidenceUpload from "./EvidenceUpload.jsx";
 import { listOrganizations } from "./api.js";
@@ -7,42 +7,60 @@ function readOrganizationParam() {
   return new URLSearchParams(window.location.search).get("organization_id") || "";
 }
 
-export default function EvidencePage({ accessToken, onNavigate, onOrganizationChange }) {
-  const [organizations, setOrganizations] = useState([]);
-  const [selectedId, setSelectedId] = useState(readOrganizationParam);
+export default function EvidencePage({ accessToken, sessionId = "", onNavigate, onOrganizationChange }) {
+  const [loaded, setLoaded] = useState(null);
+  const [loadedOrganizations, setLoadedOrganizations] = useState([]);
+  const [loadedSelectedId, setLoadedSelectedId] = useState("");
+  const [loadedError, setLoadedError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
   const [reloadCount, setReloadCount] = useState(0);
+  const tokenRef = useRef(accessToken);
+
+  const isCurrent = loaded?.id === sessionId;
+  const organizations = isCurrent ? loadedOrganizations : [];
+  const selectedId = isCurrent ? loadedSelectedId : "";
+  const error = isCurrent ? loadedError : "";
   const selectedOrganization = organizations.find((organization) => organization.id === selectedId);
 
   useEffect(() => {
-    if (!isLoading && !error) {
+    tokenRef.current = accessToken;
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (isCurrent && loadedError) {
+      setReloadCount((current) => current + 1);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (isCurrent && !isLoading && !error) {
       onOrganizationChange?.(selectedOrganization?.id || "");
     }
-  }, [isLoading, error, onOrganizationChange, selectedOrganization]);
+  }, [isCurrent, isLoading, error, onOrganizationChange, selectedOrganization]);
 
   useEffect(() => {
     let isActive = true;
 
     async function load() {
       setIsLoading(true);
-      setError("");
+      setLoadedError("");
       try {
-        const items = await listOrganizations(accessToken, { activeMembershipsOnly: true });
+        const items = await listOrganizations(tokenRef.current, { activeMembershipsOnly: true });
         if (!isActive) {
           return;
         }
-        setOrganizations(items);
-        setSelectedId((current) => (
-          items.some((organization) => organization.id === current) ? current : ""
-        ));
+        const requested = readOrganizationParam();
+        setLoadedOrganizations(items);
+        setLoadedSelectedId(items.some((organization) => organization.id === requested) ? requested : "");
+        setLoaded({ id: sessionId });
       } catch (loadError) {
         if (isActive) {
-          setOrganizations([]);
-          setSelectedId("");
-          setError(loadError?.status === 401
+          setLoadedOrganizations([]);
+          setLoadedSelectedId("");
+          setLoadedError(loadError?.status === 401
             ? "Your session has expired. Sign in again to continue."
             : loadError?.message || "Could not load your organizations.");
+          setLoaded({ id: sessionId });
         }
       } finally {
         if (isActive) {
@@ -55,17 +73,17 @@ export default function EvidencePage({ accessToken, onNavigate, onOrganizationCh
     return () => {
       isActive = false;
     };
-  }, [accessToken, reloadCount]);
+  }, [sessionId, reloadCount]);
 
   function selectOrganization(event) {
     const id = event.target.value;
-    setSelectedId(id);
+    setLoadedSelectedId(id);
     const url = new URL(window.location.href);
     url.searchParams.set("organization_id", id);
     window.history.replaceState({}, "", url);
   }
 
-  if (isLoading && organizations.length === 0) {
+  if (!isCurrent || (isLoading && organizations.length === 0)) {
     return <div className="loading-panel" role="status">Loading your organizations…</div>;
   }
 
@@ -121,6 +139,7 @@ export default function EvidencePage({ accessToken, onNavigate, onOrganizationCh
             key={selectedOrganization?.id || "unselected"}
             organizationId={selectedOrganization?.id || ""}
             accessToken={accessToken}
+            sessionId={sessionId}
             disabled={isLoading || !!error || !selectedOrganization}
           />
         </>

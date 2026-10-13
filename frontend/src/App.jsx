@@ -246,6 +246,7 @@ function App() {
         ) : user?.accessToken && isEvidencePage ? (
           <EvidencePage
             accessToken={user.accessToken}
+            sessionId={user.id}
             onNavigate={navigate}
             onOrganizationChange={setSelectedOrganizationId}
           />

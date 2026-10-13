@@ -101,3 +101,92 @@ describe("EvidencePage organization context", () => {
     expect(listOrganizations).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("EvidencePage session changes", () => {
+  const renderPage = (props) => render(<EvidencePage onNavigate={vi.fn()} {...props} />);
+
+  it("hides the previous evidence context while the new session loads and shows the new organizations", async () => {
+    const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
+    await screen.findByRole("combobox");
+    drop();
+    await screen.findByText("Alpha document");
+
+    let resolveNext;
+    listOrganizations.mockImplementationOnce(() => new Promise((resolve) => { resolveNext = resolve; }));
+    view.rerender(<EvidencePage accessToken="token-b" sessionId="user-b" onNavigate={vi.fn()} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your organizations");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alpha document")).not.toBeInTheDocument();
+    expect(screen.queryByText("Upload evidence")).not.toBeInTheDocument();
+
+    await act(async () => { resolveNext([{ id: "gamma", name: "Gamma" }]); });
+    expect(screen.getByRole("option", { name: "Gamma" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Alpha" })).not.toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenLastCalledWith("token-b", { activeMembershipsOnly: true });
+  });
+
+  it("does not keep the previous upload UI when loading the new session fails", async () => {
+    const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
+    await screen.findByRole("combobox");
+    drop();
+    await screen.findByText("Alpha document");
+
+    listOrganizations.mockRejectedValueOnce(new Error("Network unavailable"));
+    view.rerender(<EvidencePage accessToken="token-b" sessionId="user-b" onNavigate={vi.fn()} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alpha document")).not.toBeInTheDocument();
+    expect(screen.queryByText("Upload evidence")).not.toBeInTheDocument();
+  });
+
+  it("ignores a pending upload when the session changes and the same organization is returned", async () => {
+    let resolveUpload;
+    uploadEvidence.mockImplementationOnce(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
+    await screen.findByRole("combobox");
+    drop();
+    await screen.findByText("Uploading alpha.txt...");
+    const signal = uploadEvidence.mock.calls[0][3];
+
+    view.rerender(<EvidencePage accessToken="token-b" sessionId="user-b" onNavigate={vi.fn()} />);
+    expect(signal.aborted).toBe(true);
+    await screen.findByRole("combobox");
+    expect(screen.getByRole("combobox")).toHaveValue("alpha");
+
+    await act(async () => { resolveUpload(result); });
+    expect(screen.queryByText("Alpha document")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ignores a late organization response from the previous session", async () => {
+    let resolveFirst;
+    listOrganizations.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }));
+    const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
+    listOrganizations.mockResolvedValueOnce([{ id: "gamma", name: "Gamma" }]);
+    view.rerender(<EvidencePage accessToken="token-b" sessionId="user-b" onNavigate={vi.fn()} />);
+    await screen.findByRole("option", { name: "Gamma" });
+
+    await act(async () => { resolveFirst(organizations); });
+    expect(screen.getByRole("option", { name: "Gamma" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Alpha" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the context and does not reload when the same session refreshes its token", async () => {
+    const view = renderPage({ accessToken: "token-1", sessionId: "user-a" });
+    await screen.findByRole("combobox");
+    drop();
+    await screen.findByText("Alpha document");
+
+    view.rerender(<EvidencePage accessToken="token-2" sessionId="user-a" onNavigate={vi.fn()} />);
+    expect(screen.getByText("Alpha document")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveValue("alpha");
+    expect(listOrganizations).toHaveBeenCalledTimes(1);
+
+    uploadEvidence.mockClear();
+    drop();
+    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal)));
+  });
+});
