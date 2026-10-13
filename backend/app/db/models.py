@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     Uuid,
@@ -257,6 +258,12 @@ ACTOR_TYPES = ("agent", "assessed_org_representative", "aligo_consultant")
 EVIDENCE_NATURES = ("intent", "implementation", "attestation")
 REVIEW_OUTCOMES = ("accepted", "modified", "rejected")
 
+# Same values as app.schemas.decision_trace.CONTROL_STATUSES (a test checks they stay equal).
+CONTROL_STATUSES = ("implemented", "partially_implemented", "not_implemented", "not_applicable", "not_assessed")
+ASSESSMENT_STATUSES = ("draft", "in_progress", "awaiting_review", "completed")
+RESULT_AUTHORS = ("agent", "aligo_consultant")   # the assessed organization never authors a result (schema v0.3)
+CSF_CODE_REGEX = r"^(GV|ID|PR|DE|RS|RC)\.[A-Z]{2}-[0-9]{2}$"
+
 
 def _in_list(column: str, values: tuple[str, ...]) -> str:
     quoted = ", ".join(f"'{value}'" for value in values)
@@ -313,6 +320,11 @@ class DecisionTraceRecord(Base):
             ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
             name="fk_decision_traces_supersedes_same_assessment",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_decision_traces_assessment_same_org",
+        ),
         Index("ix_decision_traces_org_assessment", "organization_id", "assessment_id", "created_at"),
         Index("ix_decision_traces_control_ids", "control_ids", postgresql_using="gin"),
     )
@@ -323,7 +335,7 @@ class DecisionTraceRecord(Base):
     organization_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False
     )
-    # No foreign key yet: the assessments table does not exist (trace-schema.md, section 10).
+    # Composite FK to assessments (migration 0007): a trace can only point to an assessment of the same organization.
     assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     # clock_timestamp(), not now(): now() is the same for every row in one transaction,
     # so several decisions saved together would lose their order.
@@ -365,3 +377,242 @@ class DecisionTraceRecord(Base):
     supersedes_trace_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), nullable=True
     )
+
+
+class Assessment(Base):
+    """An assessment of one organization against a cybersecurity framework (AGRC-61)."""
+
+    __tablename__ = "assessments"
+    __table_args__ = (
+        CheckConstraint(_in_list("status", ASSESSMENT_STATUSES), name="status"),
+        CheckConstraint("length(btrim(title)) > 0", name="title_not_blank"),
+        CheckConstraint("status <> 'completed' OR completed_at IS NOT NULL", name="completed_at"),
+        CheckConstraint(
+            "completed_at IS NULL OR started_at IS NULL OR completed_at >= started_at",
+            name="dates_order",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_assessments_org_id"),
+        Index("ix_assessments_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    framework_code: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default="NIST-CSF"
+    )
+    framework_version: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="2.0"
+    )
+    kb_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="draft"
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AssessmentControl(Base):
+    """A framework control / subcategory in scope of an assessment (0007)."""
+
+    __tablename__ = "assessment_controls"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_assessment_controls_assessment_same_org",
+        ),
+        CheckConstraint(f"control_code ~ '{CSF_CODE_REGEX}'", name="control_code_format"),
+        CheckConstraint("length(btrim(control_title)) > 0", name="title_not_blank"),
+        CheckConstraint(
+            "in_scope OR (scope_rationale IS NOT NULL AND length(btrim(scope_rationale)) > 0)",
+            name="scope_rationale",
+        ),
+        UniqueConstraint("assessment_id", "control_code", name="uq_assessment_controls_assessment_code"),
+        UniqueConstraint("organization_id", "assessment_id", "id", name="uq_assessment_controls_org_assessment_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    control_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    control_title: Mapped[str] = mapped_column(String(500), nullable=False)
+    in_scope: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    scope_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    added_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+# Nullable columns (based_on_result_id, trace_id) skip the FK check when NULL under PostgreSQL's default MATCH SIMPLE.
+class ControlResult(Base):
+    """Immutable version of the result of one control (0007)."""
+
+    __tablename__ = "control_results"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "assessment_control_id"],
+            ["assessment_controls.organization_id", "assessment_controls.assessment_id", "assessment_controls.id"],
+            name="fk_control_results_control_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "based_on_result_id"],
+            ["control_results.organization_id", "control_results.assessment_id", "control_results.id"],
+            name="fk_control_results_based_on_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_control_results_trace_same_assessment",
+        ),
+        UniqueConstraint("assessment_control_id", "version_no", name="uq_control_results_control_version"),
+        UniqueConstraint("organization_id", "assessment_id", "id", name="uq_control_results_org_assessment_id"),
+        CheckConstraint("version_no >= 1", name="version_positive"),
+        CheckConstraint(_in_list("author_actor", RESULT_AUTHORS), name="author_actor"),
+        CheckConstraint(
+            "(author_actor = 'agent') = (author_user_id IS NULL)",
+            name="author_user_matches_actor",
+        ),
+        CheckConstraint(_in_list("control_status", CONTROL_STATUSES), name="control_status"),
+        CheckConstraint("length(btrim(explanation)) > 0", name="explanation_not_blank"),
+        CheckConstraint(
+            "control_status <> 'not_applicable' OR (justification IS NOT NULL AND length(btrim(justification)) > 0)",
+            name="not_applicable_justified",
+        ),
+        CheckConstraint(
+            "control_status <> 'not_assessed' OR (not_assessed_reason IS NOT NULL AND length(btrim(not_assessed_reason)) > 0)",
+            name="not_assessed_reason",
+        ),
+        CheckConstraint(
+            "maturity_current IS NULL OR maturity_current BETWEEN 1 AND 5",
+            name="maturity_current_range",
+        ),
+        CheckConstraint(
+            "maturity_target IS NULL OR maturity_target BETWEEN 1 AND 5",
+            name="maturity_target_range",
+        ),
+        CheckConstraint("confidence IS NULL OR confidence BETWEEN 0 AND 1", name="confidence_range"),
+        CheckConstraint("jsonb_typeof(evidence_refs) = 'array'", name="evidence_refs_array"),
+        CheckConstraint(
+            "based_on_result_id IS NULL OR based_on_result_id <> id",
+            name="not_based_on_self",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_control_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    based_on_result_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    author_actor: Mapped[str] = mapped_column(String(32), nullable=False)
+    author_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    control_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    not_assessed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maturity_current: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    maturity_target: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    requires_human_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    evidence_pending: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    evidence_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_refs: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+# Domain rules (only agent versions reviewed, resulting version consultant-authored with higher version_no) enforced in service (AGRC-52).
+class ControlResultReview(Base):
+    """Review of an agent-authored control result version (0007)."""
+
+    __tablename__ = "control_result_reviews"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "control_result_id"],
+            ["control_results.organization_id", "control_results.assessment_id", "control_results.id"],
+            name="fk_control_result_reviews_result_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "resulting_result_id"],
+            ["control_results.organization_id", "control_results.assessment_id", "control_results.id"],
+            name="fk_control_result_reviews_resulting_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "review_trace_id"],
+            ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
+            name="fk_control_result_reviews_trace_same_assessment",
+        ),
+        UniqueConstraint("control_result_id", name="uq_control_result_reviews_result"),
+        CheckConstraint(_in_list("outcome", REVIEW_OUTCOMES), name="outcome"),
+        CheckConstraint(
+            "(outcome = 'modified') = (resulting_result_id IS NOT NULL)",
+            name="modified_has_result",
+        ),
+        CheckConstraint(
+            "resulting_result_id IS NULL OR resulting_result_id <> control_result_id",
+            name="resulting_differs",
+        ),
+        CheckConstraint(
+            "outcome = 'accepted' OR length(btrim(comment)) > 0",
+            name="comment_required",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    control_result_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    resulting_result_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+    comment: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    reviewed_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    review_trace_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+
