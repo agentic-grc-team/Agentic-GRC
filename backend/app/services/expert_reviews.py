@@ -1,12 +1,9 @@
+from copy import deepcopy
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import aliased
-
-from app.db.models import OrganizationMembership
-from app.schemas.expert_review import ReviewItem
+from sqlalchemy.orm import Session, aliased
 
 from app.db.models import (
     Assessment,
@@ -14,14 +11,13 @@ from app.db.models import (
     ControlResult,
     ControlResultReview,
     DecisionTraceRecord,
+    OrganizationMembership,
     User,
 )
-from app.security.expert_reviews import require_expert_review_access
 from app.schemas.decision_trace import DecisionTrace
-from app.schemas.expert_review import ReviewDecision
+from app.schemas.expert_review import ReviewDecision, ReviewItem
+from app.security.expert_reviews import require_expert_review_access
 from app.services.decision_traces import record_trace
-
-from copy import deepcopy
 
 def load_reviewable_result(
     db: Session,

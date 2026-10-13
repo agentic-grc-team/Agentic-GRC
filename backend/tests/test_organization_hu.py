@@ -136,8 +136,8 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
                     token=raw_token,
                     password="a-secure-test-password-12",
                 ),
-            self.session,
-            Settings(),
+                self.session,
+                Settings(),
             )
         self.assertEqual(accept.role, "representative")
 

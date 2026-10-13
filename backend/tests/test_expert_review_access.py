@@ -46,8 +46,8 @@ def test_rejects_missing_active_membership():
     with pytest.raises(HTTPException) as error:
         require_expert_review_access(db, uuid4(), user)
 
-    assert error.value.status_code == 403
-    assert error.value.detail == "Active organization membership required."
+    assert error.value.status_code == 404
+    assert error.value.detail == "Review result not found."
 
 
 def test_rejects_representative():

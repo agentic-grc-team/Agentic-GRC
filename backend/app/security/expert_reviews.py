@@ -25,8 +25,8 @@ def require_expert_review_access(
 
     if membership is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Active organization membership required.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review result not found.",
         )
 
     if membership.role not in ("administrator", "consultant"):
