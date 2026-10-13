@@ -120,6 +120,7 @@ function App() {
     isSupabaseConfigured,
   } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
+  const [currentView, setCurrentView] = useState("organizations");
   const [pathname, setPathname] = useState(window.location.pathname);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
   const isEvidencePage = pathname === EVIDENCE_PATH;
@@ -147,7 +148,13 @@ function App() {
       navigate(path);
     };
   }
-  const [currentView, setCurrentView] = useState("organizations");
+
+  function showView(view) {
+    setCurrentView(view);
+    if (isEvidencePage) {
+      navigate("/");
+    }
+  }
 
   async function refreshApiStatus() {
     setApiStatus("checking");
@@ -192,19 +199,35 @@ function App() {
 
         <div className="rail-divider" />
         <p className="rail-label">WORKSPACE</p>
-        <a
-          className={`rail-link${isEvidencePage ? "" : " is-active"}`}
-          href="/"
-          onClick={navLink("/")}
+        <button
+          className={`rail-navigation-item ${!isEvidencePage && currentView === "organizations" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => showView("organizations")}
+          disabled={!user?.accessToken}
           aria-label="Client onboarding"
-          aria-current={isEvidencePage ? undefined : "page"}
+          aria-current={!isEvidencePage && currentView === "organizations" ? "page" : undefined}
         >
           <span className="rail-current-icon" aria-hidden="true">⌂</span>
           <span>Client onboarding</span>
-        </a>
+          {!isEvidencePage && currentView === "organizations" && <span className="rail-active-dot" />}
+        </button>
+
+        <button
+          className={`rail-navigation-item ${!isEvidencePage && currentView === "expert-reviews" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => showView("expert-reviews")}
+          disabled={!user?.accessToken}
+          aria-label="Expert reviews"
+          aria-current={!isEvidencePage && currentView === "expert-reviews" ? "page" : undefined}
+        >
+          <span className="rail-current-icon" aria-hidden="true">✓</span>
+          <span>Expert reviews</span>
+          {!isEvidencePage && currentView === "expert-reviews" && <span className="rail-active-dot" />}
+        </button>
+
         {user?.accessToken && (
           <a
-            className={`rail-link${isEvidencePage ? " is-active" : ""}`}
+            className={`rail-navigation-item ${isEvidencePage ? "is-active" : ""}`}
             href={evidencePath}
             onClick={navLink(evidencePath)}
             aria-label="Evidence upload"
@@ -212,45 +235,9 @@ function App() {
           >
             <span className="rail-current-icon" aria-hidden="true">⇪</span>
             <span>Evidence upload</span>
+            {isEvidencePage && <span className="rail-active-dot" />}
           </a>
         )}
-        <div className="rail-disabled" aria-label="Assessment workspace coming soon">
-          <span aria-hidden="true">◌</span>
-          <span>Assessments</span>
-          <small>Later</small>
-        </div>
-        <button 
-          className={`rail-navigation-item ${
-            currentView === "organizations" ? "is-active" : ""
-          }`}
-          type="button"
-          onClick={() => setCurrentView("organizations")}
-          disabled={!user?.accessToken}
-        >
-          <span className="rail-current-icon" aria-hidden="true">⌂</span>
-          <span>Client onboarding</span>
-
-          {currentView === "organizations" && (
-            <span className="rail-active-dot" />
-          )}
-        </button>
-        
-        <button
-          className={`rail-navigation-item ${
-            currentView === "expert-reviews" ? "is-active" : ""
-          }`}
-          type="button"
-          onClick={() => setCurrentView("expert-reviews")}
-          disabled={!user?.accessToken}
-        >
-          <span className="rail-current-icon" aria-hidden="true">✓</span>
-          <span>Expert reviews</span>
-
-          {currentView === "expert-reviews" && (
-            <span className="rail-active-dot" />
-          )}
-
-        </button>
 
         <div className="rail-bottom">
           <div className="rail-help-mark" aria-hidden="true">?</div>
@@ -260,14 +247,15 @@ function App() {
 
       <section className="app-main">
         <header className="topbar">
-          <div className="breadcrumb"><span>Platform</span><span aria-hidden="true">/</span><strong>{isEvidencePage ? "Evidence upload" : "Organization setup"}</strong></div>
           <div className="breadcrumb">
             <span>Platform</span>
             <span aria-hidden="true">/</span>
             <strong>
-              {currentView === "expert-reviews"
-                ? "Expert reviews"
-                : "Organization setup"}
+              {isEvidencePage
+                ? "Evidence upload"
+                : currentView === "expert-reviews"
+                  ? "Expert reviews"
+                  : "Organization setup"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -294,27 +282,22 @@ function App() {
             onOrganizationChange={setSelectedOrganizationId}
           />
         ) : user?.accessToken ? (
-          <>
-            <a className="primary-button evidence-home-link" href={evidencePath} onClick={navLink(evidencePath)}>
-              Upload evidence <span aria-hidden="true">→</span>
-            </a>
-            <OrganizationWorkspace
-              accessToken={user.accessToken}
-              isPlatformAdmin={user.is_platform_admin}
-              initialOrganizationId={selectedOrganizationId}
-              onOrganizationChange={setSelectedOrganizationId}
-            />
-          </>
-        ) : user?.accessToken ? (
           currentView === "expert-reviews" ? (
             <ExpertReviewWorkspace
               accessToken={user.accessToken}
             />
           ) : (
-            <OrganizationWorkspace
-              accessToken={user.accessToken}
-              isPlatformAdmin={user.is_platform_admin}
-            />
+            <>
+              <a className="primary-button evidence-home-link" href={evidencePath} onClick={navLink(evidencePath)}>
+                Upload evidence <span aria-hidden="true">→</span>
+              </a>
+              <OrganizationWorkspace
+                accessToken={user.accessToken}
+                isPlatformAdmin={user.is_platform_admin}
+                initialOrganizationId={selectedOrganizationId}
+                onOrganizationChange={setSelectedOrganizationId}
+              />
+            </>
           )
         ) : (
           <LoginPanel
