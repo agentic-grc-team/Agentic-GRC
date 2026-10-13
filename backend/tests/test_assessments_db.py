@@ -32,7 +32,10 @@ from app.services.expert_reviews import (
     save_review_decision,
 )
 from fastapi import HTTPException
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
+from app.core.config import get_settings
 
 @pytest.fixture
 def db():
@@ -1231,3 +1234,124 @@ def test_expert_review_rollback_removes_all_new_records(db):
     assert [item.result_id for item in list_pending_reviews(db, user)] == [
         str(result_id)
     ]
+
+def test_expert_review_concurrent_modify_requests():
+    settings = get_settings()
+
+    # This test commits setup data, so run it only on our local Docker DB.
+    if (
+        settings.db_host != "127.0.0.1"
+        or settings.db_port != 55432
+        or settings.db_name != "agentic_grc_test"
+    ):
+        pytest.skip("Requires the dedicated local Docker test database.")
+
+    engine = get_engine()
+
+    with Session(engine) as setup:
+        organization, user, assessment, control, result, trace = (
+            make_review_context(setup)
+        )
+
+        user_id = user.id
+        result_id = result.id
+        control_id = control.id
+        assessment_id = assessment.id
+
+        setup.commit()
+
+    barrier = Barrier(2)
+
+    def submit_decision(comment):
+        with Session(engine) as session:
+            session.execute(
+                text("SET LOCAL lock_timeout = '10s'")
+            )
+            session.execute(
+                text("SET LOCAL statement_timeout = '15s'")
+            )
+
+            reviewer = session.get(User, user_id)
+
+            decision = ReviewDecision(
+                outcome="modified",
+                comment=comment,
+                modified_result={
+                    "control_status": "not_implemented",
+                    "explanation": "Concurrent review test correction.",
+                },
+            )
+
+            # Both workers reach this point before either submits.
+            barrier.wait(timeout=10)
+
+            try:
+                save_review_decision(
+                    session,
+                    result_id,
+                    decision,
+                    reviewer,
+                )
+                session.commit()
+                return 200
+
+            except HTTPException as error:
+                session.rollback()
+                return error.status_code
+
+            except Exception:
+                session.rollback()
+                raise
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            submit_decision,
+            "First consultant decision.",
+        )
+        second = executor.submit(
+            submit_decision,
+            "Second consultant decision.",
+        )
+
+        outcomes = [
+            first.result(timeout=30),
+            second.result(timeout=30),
+        ]
+
+    assert sorted(outcomes) == [200, 409]
+
+    with Session(engine) as verification:
+        reviews = list(
+            verification.scalars(
+                select(ControlResultReview).where(
+                    ControlResultReview.control_result_id == result_id,
+                )
+            )
+        )
+
+        versions = list(
+            verification.scalars(
+                select(ControlResult)
+                .where(
+                    ControlResult.assessment_control_id == control_id,
+                )
+                .order_by(ControlResult.version_no)
+            )
+        )
+
+        human_traces = list(
+            verification.scalars(
+                select(DecisionTraceRecord).where(
+                    DecisionTraceRecord.assessment_id == assessment_id,
+                    DecisionTraceRecord.decision_type == "human_review",
+                )
+            )
+        )
+
+        assert len(reviews) == 1
+        assert [version.version_no for version in versions] == [1, 2]
+        assert len(human_traces) == 1
+
+        assert reviews[0].resulting_result_id == versions[1].id
+        assert reviews[0].review_trace_id == human_traces[0].id
+        assert versions[1].trace_id == human_traces[0].id
