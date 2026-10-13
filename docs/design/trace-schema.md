@@ -4,8 +4,8 @@
 | --- | --- |
 | Jira | AGRC-15 (E0-06), AGRC-24 |
 | Author | Abedin Orahovac |
-| Version | 0.2 (2026-10-10) |
-| Status | Draft v0.2, aligned with the agent proof of concept (PR #6). Review by the agent developers (Natalia, Juan) |
+| Version | 0.3 (2026-10-13) |
+| Status | v0.3, aligned with the agent proof of concept (PR #6) and the assessments tables (PR #15). Reviewed by Natalia, Juan and Miloš |
 
 ## 1. Purpose
 
@@ -107,7 +107,7 @@ erDiagram
     DECISION_TRACE ||--o{ DECISION_TRACE : "reviewed or superseded by"
 ```
 
-The trace references the existing `organizations` table. The `assessments` table does not exist yet, so `assessment_id` is stored without a foreign key until it does (see section 10).
+The trace references the `organizations` and `assessments` tables. `(organization_id, assessment_id)` is a composite foreign key to `assessments (organization_id, id)`, so a trace can only point to an assessment of its own organization (migration 0007, PR #15).
 
 `control_ids` stores NIST CSF 2.0 codes rather than foreign keys, because codes are stable and readable. They are validated against the knowledge base.
 
@@ -193,7 +193,7 @@ CREATE TYPE review_outcome AS ENUM ('accepted', 'modified', 'rejected');
 CREATE TABLE decision_traces (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id       UUID NOT NULL REFERENCES organizations(id),
-  assessment_id         UUID NOT NULL,  -- foreign key added when the assessments table exists
+  assessment_id         UUID NOT NULL,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),  -- keeps order within one transaction
   decision_type         decision_type NOT NULL,
   control_ids           TEXT[] NOT NULL DEFAULT '{}',
@@ -218,6 +218,8 @@ CREATE TABLE decision_traces (
 
   -- a review or a replacement must point to a trace of the same organization and assessment
   UNIQUE (organization_id, assessment_id, id),
+  FOREIGN KEY (organization_id, assessment_id)
+    REFERENCES assessments (organization_id, id),
   FOREIGN KEY (organization_id, assessment_id, reviews_trace_id)
     REFERENCES decision_traces (organization_id, assessment_id, id),
   FOREIGN KEY (organization_id, assessment_id, supersedes_trace_id)
@@ -249,7 +251,7 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 2. **Redaction:** whether `excerpt` must be shortened or masked for sensitive data. Decision gate before real data is processed.
 3. Resolved: organization representatives do not see traces (HU-03, section 7).
 4. How the agent computes `confidence` (agent developers).
-5. Add the foreign key on `assessment_id` once the `assessments` table exists. Enforce that the assessment belongs to the same organization with a composite foreign key `(organization_id, assessment_id)` → `assessments(organization_id, id)`.
+5. Resolved: migration 0007 (PR #15) adds the composite foreign key `fk_decision_traces_assessment_same_org`, `(organization_id, assessment_id)` → `assessments (organization_id, id)`.
 6. Normalizing `sources` and `control_ids` into separate tables (as in the team schema v0.3) is deferred until the tables they would reference (`interview_turns`, `document_chunks`, `configuration_items`, `framework_nodes`) exist. Until then they stay as JSONB and `TEXT[]` columns.
 7. Agent integration: the backend `DecisionTrace` model is the single source of truth. When the agent moves into the backend, it replaces its JSONL `TraceRecorder` with the backend's `record_trace()` function. `record_trace()` only flushes; the caller commits, so a decision and the data it explains (for example an expert review) are saved in one transaction.
 
@@ -263,3 +265,4 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 | 0.2 | 2026-10-12 | Review by Miloš: reviews and replacements must reference a trace of the same organization and assessment (composite foreign keys); `record_trace()` leaves the commit to the caller. |
 | 0.2 | 2026-10-12 | Review by Natalia: control status values listed in snake_case, `not_applicable` added, fallback review required only when a control is closed, `attestation` recommended for interview-based decisions. |
 | 0.2 | 2026-10-10 | Access rules aligned with HU-03 (representatives have no access), append-only enforced by trigger, JSON export, `created_at` uses `clock_timestamp()`. Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
+| 0.3 | 2026-10-13 | Open question 5 resolved: `assessment_id` is a composite foreign key to `assessments` (migration 0007, PR #15). |
