@@ -23,6 +23,8 @@ from app.services.reports.builder import build_report_view
 from app.services.reports.pdf import render_report_pdf
 from app.services.reports.source import (
     DEMO_ASSESSMENT_ID,
+    CompositeReportSource,
+    DbReportSource,
     DemoReportSource,
     get_report_source,
 )
@@ -923,3 +925,49 @@ def test_demo_source_unknown_assessment_returns_none():
     source = DemoReportSource()
     res = source.load(FakeDB(), MEMBER_ORG_ID, uuid4())
     assert res is None
+
+
+# --- 6. Composite Source Tests ---
+
+def test_composite_source_disallows_demo_outside_allowed():
+    source = CompositeReportSource(allow_demo=False)
+    res = source.load(None, MEMBER_ORG_ID, DEMO_ASSESSMENT_ID)
+    assert res is None
+
+
+def test_composite_source_allows_demo_when_enabled():
+    class FakeSector:
+        label = "Financial services"
+
+    class FakeSize:
+        label = "51-250 employees"
+
+    class FakeOrg:
+        name = "Demo Corp"
+        industry_sector = FakeSector()
+        organization_size = FakeSize()
+
+    class FakeDB:
+        def get(self, model, ident):
+            if ident == MEMBER_ORG_ID:
+                return FakeOrg()
+            return None
+
+    source = CompositeReportSource(allow_demo=True)
+    res = source.load(FakeDB(), MEMBER_ORG_ID, DEMO_ASSESSMENT_ID)
+    assert res is not None
+    assert res.is_demo_data is True
+    assert res.organization.name == "Demo Corp"
+
+
+def test_composite_source_delegates_non_demo_to_db_source(monkeypatch):
+    sentinel = make_test_report_input()
+    source = CompositeReportSource(allow_demo=True)
+
+    def fake_db_load(self, db, org_id, assess_id):
+        return sentinel
+
+    monkeypatch.setattr(DbReportSource, "load", fake_db_load)
+    res = source.load(None, MEMBER_ORG_ID, KNOWN_ASSESSMENT_ID)
+    assert res is sentinel
+
