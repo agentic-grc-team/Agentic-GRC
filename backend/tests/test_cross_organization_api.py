@@ -14,8 +14,9 @@ from app.db.models import ControlResultReview
 from app.db.session import get_engine
 from app.main import app
 from app.schemas.assessments import DEFAULT_KB_VERSION
+from app.schemas.report import AssessmentInfo, OrganizationInfo, ReportInput
 from app.security.auth import get_current_user
-from app.services.reports.source import DEMO_ASSESSMENT_ID
+from app.services.reports.source import DEMO_ASSESSMENT_ID, get_report_source
 from tests.test_expert_review_db import make_review_context
 
 
@@ -154,6 +155,61 @@ def test_own_traces_are_readable(as_user_a, two_organizations):
     assert [item["id"] for item in response.json()] == [str(two_organizations.trace_a.id)]
 
 
+class MatchingReportSource:
+    """Serves a report only when organization and assessment IDs match a known pair."""
+
+    def __init__(self, known):
+        self.known = known
+
+    def load(self, db, organization_id, assessment_id):
+        if (organization_id, assessment_id) not in self.known:
+            return None
+        organization, assessment = self.known[(organization_id, assessment_id)]
+        return ReportInput(
+            organization=OrganizationInfo(
+                id=organization.id,
+                name=organization.name,
+                sector="other",
+                size="unknown",
+            ),
+            assessment=AssessmentInfo(
+                id=assessment.id,
+                title=assessment.title,
+                framework="NIST CSF 2.0",
+                kb_version=assessment.kb_version,
+                status=assessment.status,
+                started_at=assessment.started_at,
+                completed_at=assessment.completed_at,
+            ),
+            controls=[],
+            is_demo_data=False,
+        )
+
+
+@pytest.fixture
+def matching_report_source(two_organizations):
+    saved = app.dependency_overrides.get(get_report_source)
+    app.dependency_overrides[get_report_source] = lambda: MatchingReportSource(
+        {
+            (two_organizations.org_a.id, two_organizations.assessment_a.id): (
+                two_organizations.org_a,
+                two_organizations.assessment_a,
+            ),
+            (two_organizations.org_b.id, two_organizations.assessment_b.id): (
+                two_organizations.org_b,
+                two_organizations.assessment_b,
+            ),
+        }
+    )
+    try:
+        yield
+    finally:
+        if saved is None:
+            app.dependency_overrides.pop(get_report_source, None)
+        else:
+            app.dependency_overrides[get_report_source] = saved
+
+
 @pytest.mark.parametrize("suffix", ["/report", "/report.pdf"])
 def test_report_of_another_organization_is_not_found(as_user_a, two_organizations, suffix):
     response = as_user_a.get(org_url(two_organizations.org_b, f"/assessments/{DEMO_ASSESSMENT_ID}{suffix}"))
@@ -162,12 +218,28 @@ def test_report_of_another_organization_is_not_found(as_user_a, two_organization
 
 
 @pytest.mark.parametrize("suffix", ["/report", "/report.pdf"])
-def test_report_for_foreign_assessment_is_not_found_through_own_organization(as_user_a, two_organizations, suffix):
-    foreign_id = two_organizations.assessment_b.id
+def test_own_assessment_report_is_readable_and_foreign_assessment_is_not(
+    as_user_a, two_organizations, matching_report_source, suffix
+):
+    own = as_user_a.get(
+        org_url(two_organizations.org_a, f"/assessments/{two_organizations.assessment_a.id}{suffix}")
+    )
+    foreign = as_user_a.get(
+        org_url(two_organizations.org_a, f"/assessments/{two_organizations.assessment_b.id}{suffix}")
+    )
+    other_org = as_user_a.get(
+        org_url(two_organizations.org_b, f"/assessments/{two_organizations.assessment_b.id}{suffix}")
+    )
 
-    response = as_user_a.get(org_url(two_organizations.org_a, f"/assessments/{foreign_id}{suffix}"))
+    assert own.status_code == 200
+    if suffix == "/report":
+        assert own.json()["assessment"]["id"] == str(two_organizations.assessment_a.id)
+    else:
+        assert own.headers["content-type"] == "application/pdf"
+        assert own.content.startswith(b"%PDF")
 
-    assert response.status_code == 404
+    assert foreign.status_code == 404
+    assert other_org.status_code == 404
 
 
 def test_pending_reviews_contain_only_own_results(as_user_a, two_organizations):
