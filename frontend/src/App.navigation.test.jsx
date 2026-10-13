@@ -22,6 +22,9 @@ vi.mock("./features/organizations/OrganizationWorkspace.jsx", () => ({
 vi.mock("./features/expertReviews/ExpertReviewWorkspace.jsx", () => ({
   default: () => <div>Expert reviews view</div>,
 }));
+vi.mock("./features/reports/ReportWorkspace.jsx", () => ({
+  default: () => <div>Reports view</div>,
+}));
 vi.mock("./features/organizations/EvidencePage.jsx", () => ({
   default: ({ onNavigate }) => (
     <div>
@@ -47,6 +50,7 @@ describe("App navigation", () => {
     expect(Array.from(items).map((node) => node.getAttribute("aria-label"))).toEqual([
       "Client onboarding",
       "Expert reviews",
+      "Reports",
       "Evidence upload",
     ]);
     expect(screen.getAllByRole("button", { name: "Client onboarding" })).toHaveLength(1);
@@ -113,5 +117,31 @@ describe("App navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByText("Organizations view")).toBeInTheDocument();
+  });
+
+  it("opens the Reports workspace from the rail", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+
+    expect(screen.getByText("Reports view")).toBeInTheDocument();
+    expect(screen.queryByText("Organizations view")).not.toBeInTheDocument();
+    expect(breadcrumb()).toBe("Reports");
+    expect(screen.getByRole("button", { name: "Reports" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Client onboarding" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("navigates back to / and opens the Reports view when clicking Reports from the evidence page", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Evidence upload" }));
+    expect(screen.getByText("Evidence view")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/evidence");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    expect(screen.getByText("Reports view")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+    expect(breadcrumb()).toBe("Reports");
+    expect(screen.getByRole("button", { name: "Reports" })).toHaveAttribute("aria-current", "page");
   });
 });
