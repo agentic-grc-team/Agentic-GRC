@@ -3,6 +3,10 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import aliased
+
+from app.db.models import OrganizationMembership
+from app.schemas.expert_review import ReviewItem
 
 from app.db.models import (
     Assessment,
@@ -16,6 +20,8 @@ from app.security.expert_reviews import require_expert_review_access
 from app.schemas.decision_trace import DecisionTrace
 from app.schemas.expert_review import ReviewDecision
 from app.services.decision_traces import record_trace
+
+from copy import deepcopy
 
 def load_reviewable_result(
     db: Session,
@@ -104,12 +110,6 @@ def save_review_decision(
     decision: ReviewDecision,
     user: User,
 ) -> ControlResultReview:
-    if decision.outcome == "modified":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Modified result persistence is not implemented yet.",
-        )
-
     result = load_reviewable_result(db, result_id, user)
 
     assessment = db.get(Assessment, result.assessment_id)
@@ -146,6 +146,27 @@ def save_review_decision(
         )
 
     review_id = uuid4()
+    resulting_result_id = None
+    modified = decision.modified_result
+
+    output = {
+        "control_result_id": str(result.id),
+        "control_result_review_id": str(review_id),
+        "outcome": decision.outcome,
+        "comment": decision.comment,
+    }
+
+    if decision.outcome == "modified":
+        if modified is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A modified result is required.",
+            )
+
+        resulting_result_id = uuid4()
+        output["resulting_result_id"] = str(resulting_result_id)
+        output["modified_result"] = modified.model_dump(mode="json")
+
     rationale = decision.comment
 
     if not rationale:
@@ -161,17 +182,48 @@ def save_review_decision(
             actor_type="aligo_consultant",
             actor_user_id=user.id,
             kb_version=assessment.kb_version,
-            output={
-                "control_result_id": str(result.id),
-                "control_result_review_id": str(review_id),
-                "outcome": decision.outcome,
-                "comment": decision.comment,
-            },
+            output=output,
             rationale=rationale,
             reviews_trace_id=original_trace.id,
             review_outcome=decision.outcome,
         ),
     )
+
+    if decision.outcome == "modified":
+        justification = None
+        not_assessed_reason = None
+
+        if modified.control_status == "not_applicable":
+            justification = modified.justification
+
+        if modified.control_status == "not_assessed":
+            not_assessed_reason = modified.not_assessed_reason
+
+        new_result = ControlResult(
+            id=resulting_result_id,
+            organization_id=result.organization_id,
+            assessment_id=result.assessment_id,
+            assessment_control_id=result.assessment_control_id,
+            version_no=result.version_no + 1,
+            based_on_result_id=result.id,
+            author_actor="aligo_consultant",
+            author_user_id=user.id,
+            control_status=modified.control_status,
+            explanation=modified.explanation,
+            justification=justification,
+            not_assessed_reason=not_assessed_reason,
+            maturity_current=result.maturity_current,
+            maturity_target=result.maturity_target,
+            confidence=None,
+            requires_human_review=False,
+            evidence_pending=result.evidence_pending,
+            evidence_summary=result.evidence_summary,
+            evidence_refs=deepcopy(result.evidence_refs),
+            trace_id=trace.id,
+        )
+
+        db.add(new_result)
+        db.flush()
 
     review = ControlResultReview(
         id=review_id,
@@ -179,6 +231,7 @@ def save_review_decision(
         assessment_id=result.assessment_id,
         control_result_id=result.id,
         outcome=decision.outcome,
+        resulting_result_id=resulting_result_id,
         comment=decision.comment,
         reviewed_by_user_id=user.id,
         review_trace_id=trace.id,
@@ -188,3 +241,93 @@ def save_review_decision(
     db.flush()
 
     return review
+
+def list_pending_reviews(
+    db: Session,
+    user: User,
+) -> list[ReviewItem]:
+    newer_result = aliased(ControlResult)
+
+    has_newer_version = (
+        select(newer_result.id)
+        .where(
+            newer_result.assessment_control_id
+            == ControlResult.assessment_control_id,
+            newer_result.version_no > ControlResult.version_no,
+        )
+        .correlate(ControlResult)
+        .exists()
+    )
+
+    has_review = (
+        select(ControlResultReview.id)
+        .where(
+            ControlResultReview.control_result_id == ControlResult.id,
+        )
+        .correlate(ControlResult)
+        .exists()
+    )
+
+    statement = (
+        select(ControlResult, AssessmentControl)
+        .join(
+            AssessmentControl,
+            (AssessmentControl.id == ControlResult.assessment_control_id)
+            & (
+                AssessmentControl.organization_id
+                == ControlResult.organization_id
+            )
+            & (
+                AssessmentControl.assessment_id
+                == ControlResult.assessment_id
+            ),
+        )
+        .where(
+            AssessmentControl.in_scope.is_(True),
+            ControlResult.author_actor == "agent",
+            ~has_newer_version,
+            ~has_review,
+        )
+        .order_by(ControlResult.created_at, ControlResult.id)
+    )
+
+    if not user.is_platform_admin:
+        has_access = (
+            select(OrganizationMembership.id)
+            .where(
+                OrganizationMembership.organization_id
+                == ControlResult.organization_id,
+                OrganizationMembership.user_id == user.id,
+                OrganizationMembership.status == "active",
+                OrganizationMembership.role.in_(
+                    ("administrator", "consultant")
+                ),
+            )
+            .correlate(ControlResult)
+            .exists()
+        )
+
+        statement = statement.where(has_access)
+
+    rows = db.execute(statement).all()
+    items = []
+
+    for result, control in rows:
+        items.append(
+            ReviewItem(
+                result_id=str(result.id),
+                assessment_id=str(result.assessment_id),
+                control_code=control.control_code,
+                control_title=control.control_title,
+                control_status=result.control_status,
+                maturity_current=result.maturity_current,
+                confidence=result.confidence,
+                explanation=result.explanation,
+                evidence_summary=result.evidence_summary or "",
+                requires_human_review=result.requires_human_review,
+                justification=result.justification,
+                not_assessed_reason=result.not_assessed_reason,
+            )
+        )
+
+    return items

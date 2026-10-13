@@ -271,12 +271,14 @@ export default function ExpertReviewWorkspace({ accessToken }) {
 
         <p>
           <strong>Current maturity:</strong>{" "}
-          {review.maturity_current}
+          {review.maturity_current ?? "Not assessed"}
         </p>
 
         <p>
           <strong>AI confidence:</strong>{" "}
-          {Math.round(review.confidence * 100)}%
+          {review.confidence == null
+            ? "Not available"
+            : `${Math.round(review.confidence * 100)}%`}
         </p>
       </div>
 

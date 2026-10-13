@@ -18,11 +18,13 @@ class ReviewItem(BaseModel):
     control_code: str
     control_title: str
     control_status: str
-    maturity_current: int
-    confidence: float
+    maturity_current: int | None = None
+    confidence: float | None = None
     explanation: str
     evidence_summary: str
     requires_human_review: bool
+    justification: str | None = None
+    not_assessed_reason: str | None = None
 
 
 class ModifiedResult(BaseModel):

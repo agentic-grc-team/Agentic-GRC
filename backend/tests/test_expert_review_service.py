@@ -212,6 +212,18 @@ def persistence_context(monkeypatch):
         assessment_id=assessment_id,
         assessment_control_id=control_id,
         trace_id=trace_id,
+        version_no=1,
+        maturity_current=2,
+        maturity_target=4,
+        evidence_pending=True,
+        evidence_summary="MFA configuration evidence.",
+        evidence_refs=[
+            {
+                "source_type": "document_span",
+                "reference": "doc:1",
+                "nature": "implementation",
+            }
+        ],
     )
 
     assessment = SimpleNamespace(
@@ -418,3 +430,103 @@ def test_does_not_add_review_when_trace_creation_fails(
 
     context.db.add.assert_not_called()
     context.db.commit.assert_not_called()
+
+def test_modified_review_creates_consultant_version(
+    persistence_context,
+):
+    context = persistence_context
+
+    decision = ReviewDecision(
+        outcome="modified",
+        comment="Corrected after checking the evidence.",
+        modified_result={
+            "control_status": "not_implemented",
+            "explanation": "Privileged accounts do not enforce MFA.",
+        },
+    )
+
+    review = save_review_decision(
+        context.db,
+        context.result.id,
+        decision,
+        context.user,
+    )
+
+    assert context.db.add.call_count == 2
+
+    new_result = context.db.add.call_args_list[0].args[0]
+    saved_review = context.db.add.call_args_list[1].args[0]
+
+    assert saved_review is review
+    assert new_result.id == review.resulting_result_id
+    assert new_result.id != context.result.id
+    assert new_result.organization_id == context.result.organization_id
+    assert new_result.assessment_id == context.result.assessment_id
+    assert new_result.assessment_control_id == (
+        context.result.assessment_control_id
+    )
+    assert new_result.version_no == 2
+    assert new_result.based_on_result_id == context.result.id
+    assert new_result.author_actor == "aligo_consultant"
+    assert new_result.author_user_id == context.user.id
+    assert new_result.control_status == "not_implemented"
+    assert new_result.explanation == (
+        "Privileged accounts do not enforce MFA."
+    )
+    assert new_result.confidence is None
+    assert new_result.maturity_current == 2
+    assert new_result.maturity_target == 4
+    assert new_result.evidence_pending is True
+    assert new_result.evidence_refs == context.result.evidence_refs
+    assert new_result.evidence_refs is not context.result.evidence_refs
+    assert new_result.trace_id == context.saved_trace.id
+    assert new_result.justification is None
+    assert new_result.not_assessed_reason is None
+
+    trace = context.save_trace.call_args.args[1]
+
+    assert trace.review_outcome == "modified"
+    assert trace.output["resulting_result_id"] == str(new_result.id)
+    assert trace.output["modified_result"]["control_status"] == (
+        "not_implemented"
+    )
+
+    assert context.result.version_no == 1
+    context.db.flush.assert_called()
+    context.db.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "control_status,reason_field",
+    [
+        ("not_applicable", "justification"),
+        ("not_assessed", "not_assessed_reason"),
+    ],
+)
+def test_modified_version_preserves_required_reason(
+    persistence_context,
+    control_status,
+    reason_field,
+):
+    context = persistence_context
+
+    modified_result = {
+        "control_status": control_status,
+        "explanation": "Consultant explanation.",
+        reason_field: "Confirmed reason.",
+    }
+
+    save_review_decision(
+        context.db,
+        context.result.id,
+        ReviewDecision(
+            outcome="modified",
+            comment="Updated after review.",
+            modified_result=modified_result,
+        ),
+        context.user,
+    )
+
+    new_result = context.db.add.call_args_list[0].args[0]
+
+    assert getattr(new_result, reason_field) == "Confirmed reason."
