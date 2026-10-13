@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    assessments,
     auth,
     evidence,
     expert_reviews,
@@ -17,6 +18,7 @@ api_router.include_router(auth.router)
 api_router.include_router(health.router)
 api_router.include_router(reference_data.router)
 api_router.include_router(organizations.router)
+api_router.include_router(assessments.router)
 api_router.include_router(traces.router)
 api_router.include_router(
     evidence.router,

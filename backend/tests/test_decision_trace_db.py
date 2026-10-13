@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.models import DecisionTraceRecord, Organization, User
+from app.db.models import Assessment, DecisionTraceRecord, Organization, User
 from app.db.session import get_engine
 from app.schemas.decision_trace import DecisionTrace
 from app.services.decision_traces import list_traces, record_trace
@@ -39,6 +39,17 @@ def make_organization(db: Session) -> Organization:
     db.add(organization)
     db.commit()
     return organization
+
+
+def make_assessment(db: Session, organization: Organization) -> uuid.UUID:
+    assessment = Assessment(
+        organization_id=organization.id,
+        title="Test assessment",
+        kb_version="csf2.0-kb-0.1",
+    )
+    db.add(assessment)
+    db.commit()
+    return assessment.id
 
 
 def make_user(db: Session) -> User:
@@ -85,7 +96,7 @@ def make_trace(organization_id, assessment_id, **changes) -> DecisionTrace:
 def test_recorded_trace_is_stored_with_all_fields(db):
     # Arrange
     organization = make_organization(db)
-    assessment_id = uuid.uuid4()
+    assessment_id = make_assessment(db, organization)
 
     # Act
     record = record_trace(db, make_trace(organization.id, assessment_id))
@@ -101,7 +112,7 @@ def test_recorded_trace_is_stored_with_all_fields(db):
 
 def test_trace_is_readable_from_a_new_session(db):
     organization = make_organization(db)
-    assessment_id = uuid.uuid4()
+    assessment_id = make_assessment(db, organization)
     saved = record_trace(db, make_trace(organization.id, assessment_id))
 
     with Session(bind=db.connection()) as new_session:
@@ -112,7 +123,7 @@ def test_trace_is_readable_from_a_new_session(db):
 
 def test_traces_are_listed_oldest_first(db):
     organization = make_organization(db)
-    assessment_id = uuid.uuid4()
+    assessment_id = make_assessment(db, organization)
     first = record_trace(db, make_trace(organization.id, assessment_id, decision_type="answer_interpreted",
                                         prompt_id="interpret_answer", model_name="llama3.1:8b"))
     second = record_trace(db, make_trace(organization.id, assessment_id))
@@ -127,7 +138,7 @@ def test_traces_are_listed_oldest_first(db):
 def test_traces_of_another_organization_are_not_listed(db):
     organization_a = make_organization(db)
     organization_b = make_organization(db)
-    assessment_id = uuid.uuid4()
+    assessment_id = make_assessment(db, organization_a)
     record_trace(db, make_trace(organization_a.id, assessment_id))
 
     traces_for_b = list_traces(db, organization_b.id, assessment_id)
@@ -144,7 +155,7 @@ def test_trace_for_unknown_organization_is_rejected(db):
 
 def test_update_of_a_trace_is_rejected(db):
     organization = make_organization(db)
-    record = record_trace(db, make_trace(organization.id, uuid.uuid4()))
+    record = record_trace(db, make_trace(organization.id, make_assessment(db, organization)))
 
     with pytest.raises(DBAPIError, match="append-only"):
         db.execute(text("UPDATE decision_traces SET rationale = 'changed' WHERE id = :id"), {"id": record.id})
@@ -152,7 +163,7 @@ def test_update_of_a_trace_is_rejected(db):
 
 def test_delete_of_a_trace_is_rejected(db):
     organization = make_organization(db)
-    record = record_trace(db, make_trace(organization.id, uuid.uuid4()))
+    record = record_trace(db, make_trace(organization.id, make_assessment(db, organization)))
 
     with pytest.raises(DBAPIError, match="append-only"):
         db.execute(text("DELETE FROM decision_traces WHERE id = :id"), {"id": record.id})
@@ -160,17 +171,19 @@ def test_delete_of_a_trace_is_rejected(db):
 
 def test_truncate_of_traces_is_rejected(db):
     organization = make_organization(db)
-    record_trace(db, make_trace(organization.id, uuid.uuid4()))
+    record_trace(db, make_trace(organization.id, make_assessment(db, organization)))
 
+    # CASCADE: since 0007, control_results and control_result_reviews reference decision_traces, so a
+    # plain TRUNCATE is refused by the foreign key before the append-only trigger can run.
     with pytest.raises(DBAPIError, match="append-only"):
-        db.execute(text("TRUNCATE decision_traces"))
+        db.execute(text("TRUNCATE decision_traces CASCADE"))
 
 
 # --- transactions -------------------------------------------------------------
 
 def test_record_trace_leaves_commit_to_caller(db):
     organization = make_organization(db)
-    assessment_id = uuid.uuid4()
+    assessment_id = make_assessment(db, organization)
     record_trace(db, make_trace(organization.id, assessment_id))
 
     db.rollback()
@@ -192,7 +205,7 @@ def make_review(organization_id, assessment_id, reviewed_trace_id, reviewer: Use
 
 def test_review_of_trace_in_same_assessment_is_accepted(db):
     organization = make_organization(db)
-    assessment_id = uuid.uuid4()
+    assessment_id = make_assessment(db, organization)
     reviewed = record_trace(db, make_trace(organization.id, assessment_id))
 
     review = record_trace(db, make_review(organization.id, assessment_id, reviewed.id, make_user(db)))
@@ -203,37 +216,39 @@ def test_review_of_trace_in_same_assessment_is_accepted(db):
 def test_review_of_trace_from_another_organization_is_rejected(db):
     organization_a = make_organization(db)
     organization_b = make_organization(db)
-    assessment_id = uuid.uuid4()
-    reviewed = record_trace(db, make_trace(organization_a.id, assessment_id))
+    assessment_a = make_assessment(db, organization_a)
+    assessment_b = make_assessment(db, organization_b)
+    reviewed = record_trace(db, make_trace(organization_a.id, assessment_a))
 
     with pytest.raises(IntegrityError, match="reviews_same_assessment"):
-        record_trace(db, make_review(organization_b.id, assessment_id, reviewed.id, make_user(db)))
+        record_trace(db, make_review(organization_b.id, assessment_b, reviewed.id, make_user(db)))
 
 
 def test_review_of_trace_from_another_assessment_is_rejected(db):
     organization = make_organization(db)
-    reviewed = record_trace(db, make_trace(organization.id, uuid.uuid4()))
+    reviewed = record_trace(db, make_trace(organization.id, make_assessment(db, organization)))
 
     with pytest.raises(IntegrityError, match="reviews_same_assessment"):
-        record_trace(db, make_review(organization.id, uuid.uuid4(), reviewed.id, make_user(db)))
+        record_trace(db, make_review(organization.id, make_assessment(db, organization), reviewed.id, make_user(db)))
 
 
 def test_replacement_of_trace_from_another_organization_is_rejected(db):
     organization_a = make_organization(db)
     organization_b = make_organization(db)
-    assessment_id = uuid.uuid4()
-    old = record_trace(db, make_trace(organization_a.id, assessment_id))
+    assessment_a = make_assessment(db, organization_a)
+    assessment_b = make_assessment(db, organization_b)
+    old = record_trace(db, make_trace(organization_a.id, assessment_a))
 
     with pytest.raises(IntegrityError, match="supersedes_same_assessment"):
-        record_trace(db, make_trace(organization_b.id, assessment_id, supersedes_trace_id=old.id))
+        record_trace(db, make_trace(organization_b.id, assessment_b, supersedes_trace_id=old.id))
 
 
 def test_replacement_of_trace_from_another_assessment_is_rejected(db):
     organization = make_organization(db)
-    old = record_trace(db, make_trace(organization.id, uuid.uuid4()))
+    old = record_trace(db, make_trace(organization.id, make_assessment(db, organization)))
 
     with pytest.raises(IntegrityError, match="supersedes_same_assessment"):
-        record_trace(db, make_trace(organization.id, uuid.uuid4(), supersedes_trace_id=old.id))
+        record_trace(db, make_trace(organization.id, make_assessment(db, organization), supersedes_trace_id=old.id))
 
 
 # --- database rules (second line of defence behind Pydantic) -----------------
@@ -242,7 +257,7 @@ def test_database_rejects_human_decision_without_user(db):
     organization = make_organization(db)
     row = DecisionTraceRecord(
         organization_id=organization.id,
-        assessment_id=uuid.uuid4(),
+        assessment_id=make_assessment(db, organization),
         decision_type="status_assessed",
         actor_type="aligo_consultant",
         kb_version="csf2.0-kb-0.1",
@@ -259,7 +274,7 @@ def test_database_rejects_llm_decision_without_model(db):
     organization = make_organization(db)
     row = DecisionTraceRecord(
         organization_id=organization.id,
-        assessment_id=uuid.uuid4(),
+        assessment_id=make_assessment(db, organization),
         decision_type="answer_interpreted",
         sources=[{"type": "interview_turn", "ref": "interview_turn:1"}],
         actor_type="agent",
@@ -279,7 +294,7 @@ def test_database_rejects_unknown_decision_type(db):
     organization = make_organization(db)
     row = DecisionTraceRecord(
         organization_id=organization.id,
-        assessment_id=uuid.uuid4(),
+        assessment_id=make_assessment(db, organization),
         decision_type="guessed",
         actor_type="aligo_consultant",
         actor_user_id=make_user(db).id,
