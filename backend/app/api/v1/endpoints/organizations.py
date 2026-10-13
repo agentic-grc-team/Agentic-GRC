@@ -194,6 +194,7 @@ def create_organization(
 def list_organizations(
     db: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
+    active_memberships_only: bool = False,
 ) -> list[OrganizationSummary]:
     statement = (
         select(Organization, OrganizationMembership.role)
@@ -205,7 +206,7 @@ def list_organizations(
         )
         .order_by(Organization.created_at.desc())
     )
-    if not user.is_platform_admin:
+    if active_memberships_only or not user.is_platform_admin:
         statement = statement.where(OrganizationMembership.id.is_not(None))
     rows = db.execute(statement).all()
     return [

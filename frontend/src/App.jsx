@@ -120,7 +120,11 @@ function App() {
   } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
   const [pathname, setPathname] = useState(window.location.pathname);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
   const isEvidencePage = pathname === EVIDENCE_PATH;
+  const evidencePath = selectedOrganizationId
+    ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
+    : EVIDENCE_PATH;
 
   useEffect(() => {
     const syncPath = () => setPathname(window.location.pathname);
@@ -135,6 +139,9 @@ function App() {
 
   function navLink(path) {
     return (event) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+        return;
+      }
       event.preventDefault();
       navigate(path);
     };
@@ -161,6 +168,7 @@ function App() {
   }, [isLoading, user]);
 
   function handleSignOut() {
+    setSelectedOrganizationId("");
     signOut();
   }
 
@@ -186,6 +194,7 @@ function App() {
           className={`rail-link${isEvidencePage ? "" : " is-active"}`}
           href="/"
           onClick={navLink("/")}
+          aria-label="Client onboarding"
           aria-current={isEvidencePage ? undefined : "page"}
         >
           <span className="rail-current-icon" aria-hidden="true">⌂</span>
@@ -194,8 +203,9 @@ function App() {
         {user?.accessToken && (
           <a
             className={`rail-link${isEvidencePage ? " is-active" : ""}`}
-            href={EVIDENCE_PATH}
-            onClick={navLink(EVIDENCE_PATH)}
+            href={evidencePath}
+            onClick={navLink(evidencePath)}
+            aria-label="Evidence upload"
             aria-current={isEvidencePage ? "page" : undefined}
           >
             <span className="rail-current-icon" aria-hidden="true">⇪</span>
@@ -234,15 +244,21 @@ function App() {
         {isLoading ? (
           <div className="loading-screen" role="status"><span className="loading-orb" />Loading secure workspace…</div>
         ) : user?.accessToken && isEvidencePage ? (
-          <EvidencePage accessToken={user.accessToken} onNavigate={navigate} />
+          <EvidencePage
+            accessToken={user.accessToken}
+            onNavigate={navigate}
+            onOrganizationChange={setSelectedOrganizationId}
+          />
         ) : user?.accessToken ? (
           <>
-            <a className="primary-button evidence-home-link" href={EVIDENCE_PATH} onClick={navLink(EVIDENCE_PATH)}>
+            <a className="primary-button evidence-home-link" href={evidencePath} onClick={navLink(evidencePath)}>
               Upload evidence <span aria-hidden="true">→</span>
             </a>
             <OrganizationWorkspace
               accessToken={user.accessToken}
               isPlatformAdmin={user.is_platform_admin}
+              initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
             />
           </>
         ) : (

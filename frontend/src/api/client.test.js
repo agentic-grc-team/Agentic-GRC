@@ -37,4 +37,17 @@ describe("apiRequest", () => {
       body: { detail: { code: "duplicate_name_requires_confirmation" } },
     });
   });
+
+  it("lets the browser set the multipart boundary and preserves authentication", async () => {
+    fetch.mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({}) });
+    const body = new FormData();
+    body.append("organization_id", "alpha");
+    body.append("file", new File(["evidence"], "policy.txt"));
+    await apiRequest("/evidence/", { method: "POST", accessToken: "signed-token", body, headers: { "Content-Type": "application/json" } });
+    const [, options] = fetch.mock.calls[0];
+    expect(options.body).toBe(body);
+    expect(options.headers.has("Content-Type")).toBe(false);
+    expect(options.headers.get("Authorization")).toBe("Bearer signed-token");
+    expect(options.credentials).toBe("omit");
+  });
 });

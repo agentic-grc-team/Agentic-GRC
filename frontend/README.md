@@ -36,6 +36,8 @@ The app stores Supabase sessions in the current browser tab and sends the access
 - Organization creation uses server-provided sector and size catalogs; fallback values are temporary until client-approved catalogs are supplied.
 - Duplicate organization names require explicit confirmation.
 - Administrators invite consultants or representatives. The backend sends a one-use link that expires after seven days through the configured SMTP server.
-- Organization data is scoped through application memberships and FastAPI authorization. Assessment, evidence upload, and AI analysis workflows are not part of this screen yet.
+- Organization data is scoped through application memberships and FastAPI authorization. Assessment and AI analysis workflows are not part of this screen yet.
+- Evidence uploads require active organization membership, including for platform administrators. The evidence page requests `GET /organizations?active_memberships_only=true` and preserves an eligible workspace through `/evidence?organization_id=<id>`.
+- Opening evidence without workspace context requires selecting an organization before uploading. The target organization is displayed beside the upload area; switching organizations clears previous results and cancels the previous client request. Canceling a client request does not undo an upload already processed by the server.
 
 Run frontend checks with `npm test` and `npm run build`.

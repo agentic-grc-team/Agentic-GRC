@@ -1,7 +1,15 @@
 import { apiRequest } from "../../api/client.js";
 
-export function listOrganizations(accessToken) {
-  return apiRequest("/organizations", { accessToken });
+export function listOrganizations(accessToken, { activeMembershipsOnly = false } = {}) {
+  const path = activeMembershipsOnly ? "/organizations?active_memberships_only=true" : "/organizations";
+  return apiRequest(path, { accessToken });
+}
+
+export function uploadEvidence(organizationId, file, accessToken, signal) {
+  const body = new FormData();
+  body.append("organization_id", organizationId);
+  body.append("file", file);
+  return apiRequest("/evidence/", { method: "POST", accessToken, body, signal });
 }
 
 export function listIndustrySectors(accessToken) {

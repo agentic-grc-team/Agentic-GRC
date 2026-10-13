@@ -307,3 +307,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .rail-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 7px; color: #b5bdc6; font-size: 11px; text-decoration: none; }
 .rail-link:hover, .rail-link.is-active { background: #1a211d; color: var(--mint); }
 .evidence-home-link { align-self: flex-start; margin: 16px 35px 0; }
+.evidence-target { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); }
+.evidence-target strong { color: var(--mint); }
+.evidence-dropzone.is-disabled { cursor: not-allowed; opacity: .55; }
+
+@media (max-width: 700px) {
+  .rail-link { width: 38px; min-height: 40px; justify-content: center; padding: 0; }
+  .rail-link > span:not(:first-child) { display: none; }
+  .evidence-page { max-width: 100%; padding: 18px 15px; }
+  .evidence-home-link { margin-inline: 15px; }
+}

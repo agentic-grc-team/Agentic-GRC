@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "");
-const EVIDENCE_URL = `${apiBaseUrl}/evidence/`;
+import { uploadEvidence } from "./api.js";
+
 const ALLOWED_EXTENSIONS = [".pdf", ".txt", ".docx", ".csv", ".xlsx"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -29,16 +29,33 @@ function describeError(status, detail) {
   return `Upload failed (${status}).`;
 }
 
-export default function EvidenceUpload({ organizationId, accessToken }) {
+export default function EvidenceUpload({ organizationId, accessToken, disabled = false }) {
   const inputRef = useRef(null);
+  const requestRef = useRef(null);
+  const uploadingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState(null);
 
   const isUploading = status === "uploading";
+  const isDisabled = disabled || !organizationId || !accessToken || isUploading;
+
+  useEffect(() => {
+    setStatus("idle");
+    setMessage("");
+    setResult(null);
+    return () => {
+      requestRef.current?.abort();
+      requestRef.current = null;
+      uploadingRef.current = false;
+    };
+  }, [organizationId]);
 
   async function uploadFile(file) {
+    if (isDisabled || uploadingRef.current) {
+      return;
+    }
     const validationError = validateFile(file);
     if (validationError) {
       setStatus("error");
@@ -47,41 +64,40 @@ export default function EvidenceUpload({ organizationId, accessToken }) {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("organization_id", organizationId);
-    formData.append("file", file);
+    const controller = new AbortController();
+    requestRef.current = controller;
+    uploadingRef.current = true;
 
     setStatus("uploading");
     setMessage(`Uploading ${file.name}...`);
     setResult(null);
 
     try {
-      const response = await fetch(EVIDENCE_URL, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
-        body: formData,
-        credentials: "omit",
-      });
-      const body = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        setStatus("error");
-        setMessage(describeError(response.status, body?.detail));
+      const body = await uploadEvidence(organizationId, file, accessToken, controller.signal);
+      if (controller.signal.aborted) {
         return;
       }
 
       setStatus("success");
       setMessage(body.info || "File uploaded and parsed successfully.");
       setResult(body);
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
       setStatus("error");
-      setMessage("Could not reach the API. Check that the backend is running.");
+      setMessage(describeError(error?.status, error?.message));
+    } finally {
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        uploadingRef.current = false;
+      }
     }
   }
 
   function handleFiles(files) {
     const file = files?.[0];
-    if (file && !isUploading) {
+    if (file && !isDisabled) {
       void uploadFile(file);
     }
   }
@@ -100,7 +116,9 @@ export default function EvidenceUpload({ organizationId, accessToken }) {
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      inputRef.current?.click();
+      if (!isDisabled) {
+        inputRef.current?.click();
+      }
     }
   }
 
@@ -115,11 +133,11 @@ export default function EvidenceUpload({ organizationId, accessToken }) {
       </div>
 
       <div
-        className={`evidence-dropzone${isDragging ? " is-dragging" : ""}${isUploading ? " is-busy" : ""}`}
+        className={`evidence-dropzone${isDragging ? " is-dragging" : ""}${isUploading ? " is-busy" : ""}${isDisabled ? " is-disabled" : ""}`}
         role="button"
-        tabIndex={0}
-        aria-disabled={isUploading}
-        onClick={() => !isUploading && inputRef.current?.click()}
+        tabIndex={isDisabled ? -1 : 0}
+        aria-disabled={isDisabled}
+        onClick={() => !isDisabled && inputRef.current?.click()}
         onKeyDown={handleKeyDown}
         onDragOver={handleDragOver}
         onDragLeave={() => setIsDragging(false)}
@@ -131,6 +149,7 @@ export default function EvidenceUpload({ organizationId, accessToken }) {
           ref={inputRef}
           type="file"
           hidden
+          disabled={isDisabled}
           accept={ALLOWED_EXTENSIONS.join(",")}
           onChange={(event) => {
             handleFiles(event.target.files);

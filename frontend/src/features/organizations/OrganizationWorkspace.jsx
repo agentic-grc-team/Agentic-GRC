@@ -206,12 +206,17 @@ function InvitationInbox({ invitations, onAccept, acceptingId }) {
   );
 }
 
-export default function OrganizationWorkspace({ accessToken, isPlatformAdmin = false }) {
+export default function OrganizationWorkspace({
+  accessToken,
+  isPlatformAdmin = false,
+  initialOrganizationId = "",
+  onOrganizationChange,
+}) {
   const [organizations, setOrganizations] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [sectors, setSectors] = useState([]);
   const [sizes, setSizes] = useState([]);
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
   const [duplicateMatches, setDuplicateMatches] = useState([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("consultant");
@@ -227,6 +232,10 @@ export default function OrganizationWorkspace({ accessToken, isPlatformAdmin = f
     [organizations, selectedOrganizationId],
   );
   const canCreateOrganization = isPlatformAdmin || organizations.some((organization) => organization.role === "administrator");
+
+  useEffect(() => {
+    onOrganizationChange?.(selectedOrganizationId);
+  }, [onOrganizationChange, selectedOrganizationId]);
 
   const refreshWorkspace = useCallback(async (preferredOrganizationId = "") => {
     setError("");
