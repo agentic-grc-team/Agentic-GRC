@@ -137,12 +137,31 @@ const mockReportView = {
     finalized: 3,
     pending: 3,
     coverage_pct: 50.0,
+    final_with_evidence_pending: 0,
     status_counts: {
       implemented: 1,
       partially_implemented: 1,
       not_implemented: 0,
       not_assessed: 0,
     },
+  },
+};
+
+const mockReportViewWithEvidencePending = {
+  ...mockReportView,
+  results: [
+    {
+      ...mockReportView.results[0],
+      evidence_pending: true,
+    },
+    {
+      ...mockReportView.results[1],
+      evidence_pending: false,
+    },
+  ],
+  summary: {
+    ...mockReportView.summary,
+    final_with_evidence_pending: 1,
   },
 };
 
@@ -397,7 +416,10 @@ describe("ReportWorkspace", () => {
 
     await screen.findByText("Report downloaded.");
     expect(clickSpy).toHaveBeenCalledTimes(1);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test");
+    await waitFor(() => {
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test");
+    });
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(downloadBtn).not.toBeDisabled();
     expect(downloadBtn).toHaveTextContent("Download PDF");
   });
@@ -713,4 +735,146 @@ describe("ReportWorkspace", () => {
     expect(getReportPreview).not.toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-2");
     expect(getReportPreview).toHaveBeenCalledTimes(2);
   });
+
+  it("shows 'Evidence pending' badge only on rows where evidence_pending is true", async () => {
+    getReportPreview.mockResolvedValueOnce(mockReportViewWithEvidencePending);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const table = await screen.findByRole("table", { name: "Reviewed results" });
+    const row1 = within(table).getByText("PR.AA-01").closest("tr");
+    const row2 = within(table).getByText("PR.AA-03").closest("tr");
+
+    expect(within(row1).getByText("Implemented")).toBeInTheDocument();
+    const badge = within(row1).getByText("Evidence pending");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass("report-evidence-badge");
+
+    expect(within(row2).getByText("Partially implemented")).toBeInTheDocument();
+    expect(within(row2).queryByText("Evidence pending")).not.toBeInTheDocument();
+  });
+
+  it("renders the 'Final results with evidence pending' summary tile", async () => {
+    const { unmount } = render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const defaultSummary = screen.getByText("Controls in scope").closest("dl");
+    expect(
+      within(defaultSummary).getByText("Final results with evidence pending").parentElement
+    ).toHaveTextContent("0");
+
+    unmount();
+
+    getReportPreview.mockResolvedValueOnce(mockReportViewWithEvidencePending);
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const variantSummary = screen.getByText("Controls in scope").closest("dl");
+    expect(
+      within(variantSummary).getByText("Final results with evidence pending").parentElement
+    ).toHaveTextContent("1");
+  });
+
+  it("renders the explanatory note only when final_with_evidence_pending > 0", async () => {
+    const { unmount } = render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    expect(
+      screen.queryByText(/Results marked “Evidence pending” were accepted by an Aligo consultant/)
+    ).not.toBeInTheDocument();
+
+    unmount();
+
+    getReportPreview.mockResolvedValueOnce(mockReportViewWithEvidencePending);
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const note = screen.getByText(
+      /Results marked “Evidence pending” were accepted by an Aligo consultant on the basis of the participant's statement; the supporting evidence has not been validated yet\./
+    );
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveClass("report-evidence-note");
+  });
+
+  it("tolerates missing final_with_evidence_pending in summary and renders 0", async () => {
+    const { final_with_evidence_pending: _discarded, ...summaryWithoutField } =
+      mockReportView.summary;
+    const previewWithoutField = {
+      ...mockReportView,
+      summary: summaryWithoutField,
+    };
+    getReportPreview.mockResolvedValueOnce(previewWithoutField);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const summary = screen.getByText("Controls in scope").closest("dl");
+    expect(
+      within(summary).getByText("Final results with evidence pending").parentElement
+    ).toHaveTextContent("0");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("revokes the download object URL after click via timer, exactly once, and never for stale downloads", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:test-timer");
+    URL.revokeObjectURL = vi.fn();
+    let clicked = false;
+    let revokedBeforeTimers = null;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {
+      clicked = true;
+      // A microtask runs after the rest of the synchronous code but before any setTimeout callback,
+      // so this is true only if the URL was revoked synchronously right after the click.
+      queueMicrotask(() => {
+        revokedBeforeTimers = URL.revokeObjectURL.mock.calls.length > 0;
+      });
+    });
+
+    const downloadDeferred = deferred();
+    downloadReportPdf.mockReturnValueOnce(downloadDeferred.promise);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
+    fireEvent.click(downloadBtn);
+
+    downloadDeferred.resolve({
+      blob: new Blob(["%PDF-1.4 demo"]),
+      filename: "agentic-grc-report.pdf",
+    });
+
+    await waitFor(() => {
+      expect(clicked).toBe(true);
+      expect(revokedBeforeTimers).not.toBeNull();
+    });
+    expect(revokedBeforeTimers).toBe(false);
+
+    await waitFor(() => {
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test-timer");
+    });
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+
+    URL.revokeObjectURL.mockClear();
+    URL.createObjectURL.mockClear();
+
+    const staleDeferred = deferred();
+    downloadReportPdf.mockReturnValueOnce(staleDeferred.promise);
+
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+
+    fireEvent.change(screen.getByLabelText("Organization"), {
+      target: { value: "org-2" },
+    });
+
+    await act(async () => {
+      staleDeferred.resolve({
+        blob: new Blob(["%PDF-1.4 demo"]),
+        filename: "stale.pdf",
+      });
+    });
+
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
 });
+

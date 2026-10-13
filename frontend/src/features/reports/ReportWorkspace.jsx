@@ -160,7 +160,7 @@ export default function ReportWorkspace({ accessToken }) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
 
       setDownloadStatus("Report downloaded.");
     } catch (err) {
@@ -294,6 +294,10 @@ export default function ReportWorkspace({ accessToken }) {
               <dd>{preview.results?.length ?? 0}</dd>
             </div>
             <div>
+              <dt>Final results with evidence pending</dt>
+              <dd>{preview.summary?.final_with_evidence_pending ?? 0}</dd>
+            </div>
+            <div>
               <dt>Pending review</dt>
               <dd>{preview.summary?.pending ?? 0}</dd>
             </div>
@@ -313,6 +317,11 @@ export default function ReportWorkspace({ accessToken }) {
 
           <div className="report-section">
             <h3>Reviewed results</h3>
+            {preview.summary?.final_with_evidence_pending > 0 && (
+              <p className="report-evidence-note">
+                Results marked “Evidence pending” were accepted by an Aligo consultant on the basis of the participant's statement; the supporting evidence has not been validated yet.
+              </p>
+            )}
             {!preview.results || preview.results.length === 0 ? (
               <p>No reviewed results yet.</p>
             ) : (
@@ -344,6 +353,11 @@ export default function ReportWorkspace({ accessToken }) {
                             >
                               {result.status_label}
                             </span>
+                            {result.evidence_pending && (
+                              <span className="report-evidence-badge">
+                                Evidence pending
+                              </span>
+                            )}
                           </td>
                           <td>{reviewerText}</td>
                         </tr>
