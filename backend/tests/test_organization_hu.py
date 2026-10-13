@@ -144,10 +144,19 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
 
         self.assertEqual(invitation.delivery_status, "sent")
         send_email.assert_called_once()
-        accept = auth_endpoint.accept_invitation_and_create_profile(
-            InvitationAccept(token=raw_token, password="a-secure-test-password-12"),
-            self.session,
-        )
+        with patch.object(
+            auth_endpoint,
+            "create_invited_identity",
+            return_value=SupabaseIdentity(invitee_id, invitee_email, True),
+        ):
+            accept = auth_endpoint.accept_invitation_and_create_profile(
+                InvitationAccept(
+                    token=raw_token,
+                    password="a-secure-test-password-12",
+                ),
+                self.session,
+                Settings(),
+            )
         self.assertEqual(accept.role, "representative")
 
         user = self.session.scalar(select(User).where(User.email == invitation.email))
@@ -156,8 +165,12 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
 
         with self.assertRaises(HTTPException) as replay:
             auth_endpoint.accept_invitation_and_create_profile(
-                InvitationAccept(token=raw_token, password="another-secure-password-12"),
+                InvitationAccept(
+                    token=raw_token,
+                    password="another-secure-password-12",
+                ),
                 self.session,
+                Settings(),
             )
         self.assertIn(replay.exception.status_code, (404, 410))
 

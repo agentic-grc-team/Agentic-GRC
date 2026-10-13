@@ -5,6 +5,7 @@ import { useAuth } from "./auth/AuthProvider.jsx";
 import InvitationActivation from "./auth/InvitationActivation.jsx";
 import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
+import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
 
 const EVIDENCE_PATH = "/evidence";
 
@@ -146,6 +147,7 @@ function App() {
       navigate(path);
     };
   }
+  const [currentView, setCurrentView] = useState("organizations");
 
   async function refreshApiStatus() {
     setApiStatus("checking");
@@ -217,6 +219,38 @@ function App() {
           <span>Assessments</span>
           <small>Later</small>
         </div>
+        <button 
+          className={`rail-navigation-item ${
+            currentView === "organizations" ? "is-active" : ""
+          }`}
+          type="button"
+          onClick={() => setCurrentView("organizations")}
+          disabled={!user?.accessToken}
+        >
+          <span className="rail-current-icon" aria-hidden="true">⌂</span>
+          <span>Client onboarding</span>
+
+          {currentView === "organizations" && (
+            <span className="rail-active-dot" />
+          )}
+        </button>
+        
+        <button
+          className={`rail-navigation-item ${
+            currentView === "expert-reviews" ? "is-active" : ""
+          }`}
+          type="button"
+          onClick={() => setCurrentView("expert-reviews")}
+          disabled={!user?.accessToken}
+        >
+          <span className="rail-current-icon" aria-hidden="true">✓</span>
+          <span>Expert reviews</span>
+
+          {currentView === "expert-reviews" && (
+            <span className="rail-active-dot" />
+          )}
+
+        </button>
 
         <div className="rail-bottom">
           <div className="rail-help-mark" aria-hidden="true">?</div>
@@ -227,6 +261,15 @@ function App() {
       <section className="app-main">
         <header className="topbar">
           <div className="breadcrumb"><span>Platform</span><span aria-hidden="true">/</span><strong>{isEvidencePage ? "Evidence upload" : "Organization setup"}</strong></div>
+          <div className="breadcrumb">
+            <span>Platform</span>
+            <span aria-hidden="true">/</span>
+            <strong>
+              {currentView === "expert-reviews"
+                ? "Expert reviews"
+                : "Organization setup"}
+            </strong>
+          </div>
           <div className="topbar-actions">
             <ApiStatus status={apiStatus} onRetry={refreshApiStatus} />
             {user && (
@@ -262,6 +305,17 @@ function App() {
               onOrganizationChange={setSelectedOrganizationId}
             />
           </>
+        ) : user?.accessToken ? (
+          currentView === "expert-reviews" ? (
+            <ExpertReviewWorkspace
+              accessToken={user.accessToken}
+            />
+          ) : (
+            <OrganizationWorkspace
+              accessToken={user.accessToken}
+              isPlatformAdmin={user.is_platform_admin}
+            />
+          )
         ) : (
           <LoginPanel
             authError={authError}
