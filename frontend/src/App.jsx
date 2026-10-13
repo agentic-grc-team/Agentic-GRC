@@ -3,8 +3,11 @@ import { useEffect, useState } from "react";
 import { checkApiHealth } from "./api/client.js";
 import { useAuth } from "./auth/AuthProvider.jsx";
 import InvitationActivation from "./auth/InvitationActivation.jsx";
+import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
+
+const EVIDENCE_PATH = "/evidence";
 
 function ApiStatus({ status, onRetry }) {
   const labels = {
@@ -117,6 +120,33 @@ function App() {
     isSupabaseConfigured,
   } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
+  const [pathname, setPathname] = useState(window.location.pathname);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const isEvidencePage = pathname === EVIDENCE_PATH;
+  const evidencePath = selectedOrganizationId
+    ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
+    : EVIDENCE_PATH;
+
+  useEffect(() => {
+    const syncPath = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", syncPath);
+    return () => window.removeEventListener("popstate", syncPath);
+  }, []);
+
+  function navigate(path) {
+    window.history.pushState({}, "", path);
+    setPathname(window.location.pathname);
+  }
+
+  function navLink(path) {
+    return (event) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      navigate(path);
+    };
+  }
   const [currentView, setCurrentView] = useState("organizations");
 
   async function refreshApiStatus() {
@@ -140,6 +170,7 @@ function App() {
   }, [isLoading, user]);
 
   function handleSignOut() {
+    setSelectedOrganizationId("");
     signOut();
   }
 
@@ -161,6 +192,33 @@ function App() {
 
         <div className="rail-divider" />
         <p className="rail-label">WORKSPACE</p>
+        <a
+          className={`rail-link${isEvidencePage ? "" : " is-active"}`}
+          href="/"
+          onClick={navLink("/")}
+          aria-label="Client onboarding"
+          aria-current={isEvidencePage ? undefined : "page"}
+        >
+          <span className="rail-current-icon" aria-hidden="true">⌂</span>
+          <span>Client onboarding</span>
+        </a>
+        {user?.accessToken && (
+          <a
+            className={`rail-link${isEvidencePage ? " is-active" : ""}`}
+            href={evidencePath}
+            onClick={navLink(evidencePath)}
+            aria-label="Evidence upload"
+            aria-current={isEvidencePage ? "page" : undefined}
+          >
+            <span className="rail-current-icon" aria-hidden="true">⇪</span>
+            <span>Evidence upload</span>
+          </a>
+        )}
+        <div className="rail-disabled" aria-label="Assessment workspace coming soon">
+          <span aria-hidden="true">◌</span>
+          <span>Assessments</span>
+          <small>Later</small>
+        </div>
         <button 
           className={`rail-navigation-item ${
             currentView === "organizations" ? "is-active" : ""
@@ -202,6 +260,7 @@ function App() {
 
       <section className="app-main">
         <header className="topbar">
+          <div className="breadcrumb"><span>Platform</span><span aria-hidden="true">/</span><strong>{isEvidencePage ? "Evidence upload" : "Organization setup"}</strong></div>
           <div className="breadcrumb">
             <span>Platform</span>
             <span aria-hidden="true">/</span>
@@ -227,6 +286,25 @@ function App() {
 
         {isLoading ? (
           <div className="loading-screen" role="status"><span className="loading-orb" />Loading secure workspace…</div>
+        ) : user?.accessToken && isEvidencePage ? (
+          <EvidencePage
+            accessToken={user.accessToken}
+            sessionId={user.id}
+            onNavigate={navigate}
+            onOrganizationChange={setSelectedOrganizationId}
+          />
+        ) : user?.accessToken ? (
+          <>
+            <a className="primary-button evidence-home-link" href={evidencePath} onClick={navLink(evidencePath)}>
+              Upload evidence <span aria-hidden="true">→</span>
+            </a>
+            <OrganizationWorkspace
+              accessToken={user.accessToken}
+              isPlatformAdmin={user.is_platform_admin}
+              initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
+            />
+          </>
         ) : user?.accessToken ? (
           currentView === "expert-reviews" ? (
             <ExpertReviewWorkspace

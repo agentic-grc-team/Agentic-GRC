@@ -25,8 +25,9 @@ app.dependency_overrides[get_db_session] = mock_get_db_session
 app.dependency_overrides[get_current_user] = mock_get_current_user
 
 @pytest.fixture(autouse=True)
-def patch_auth(monkeypatch):
+def patch_auth(monkeypatch, tmp_path):
     monkeypatch.setattr("app.api.v1.endpoints.evidence._active_membership", mock_active_membership)
+    monkeypatch.setattr("app.api.v1.endpoints.evidence.UPLOAD_DIR", str(tmp_path))
 
 def test_unauthorized_access():
     app.dependency_overrides.pop(get_current_user, None)

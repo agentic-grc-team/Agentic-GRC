@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.endpoints import auth as auth_endpoint
 from app.api.v1.endpoints import organizations as organization_endpoints
 from app.core.config import Settings
-from app.db.models import IndustrySector, OrganizationSize, User
+from app.db.models import IndustrySector, OrganizationMembership, OrganizationSize, User
 from app.db.session import get_engine
 from app.schemas.organizations import InvitationAccept, InvitationCreate, OrganizationCreate
 from app.security.invitations import hash_invitation_token
@@ -99,6 +99,24 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
             self.admin,
         )
         self.assertEqual(confirmed.role, "administrator")
+
+    def test_platform_admin_membership_filter_excludes_non_member_organizations(self) -> None:
+        eligible = self._create_organization(f"Eligible {uuid4()}")
+        unavailable = self._create_organization(f"Unavailable {uuid4()}")
+        membership = self.session.scalar(select(OrganizationMembership).where(
+            OrganizationMembership.organization_id == unavailable.id,
+            OrganizationMembership.user_id == self.admin.id,
+        ))
+        self.session.delete(membership)
+        self.session.flush()
+
+        all_ids = {org.id for org in organization_endpoints.list_organizations(self.session, self.admin)}
+        eligible_ids = {org.id for org in organization_endpoints.list_organizations(
+            self.session, self.admin, active_memberships_only=True,
+        )}
+        self.assertIn(unavailable.id, all_ids)
+        self.assertIn(eligible.id, eligible_ids)
+        self.assertNotIn(unavailable.id, eligible_ids)
 
     def test_invitation_email_creates_verified_user_and_membership(self) -> None:
         organization = self._create_organization(f"Client {uuid4()}")
