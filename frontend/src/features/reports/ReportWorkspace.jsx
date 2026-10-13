@@ -40,15 +40,43 @@ export default function ReportWorkspace({ accessToken }) {
   const isMountedRef = useRef(true);
   const previewRequestRef = useRef(0);
   const orgsRequestRef = useRef(0);
+  const downloadRequestRef = useRef(0);
+  const prevTokenRef = useRef(accessToken);
+  const prevSelectedOrgIdRef = useRef(selectedOrgId);
+  const lastLoadedTokenRef = useRef(accessToken);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      ++downloadRequestRef.current;
     };
   }, []);
 
   useEffect(() => {
+    if (prevSelectedOrgIdRef.current !== selectedOrgId) {
+      prevSelectedOrgIdRef.current = selectedOrgId;
+      ++downloadRequestRef.current;
+      setIsDownloading(false);
+      setDownloadStatus(null);
+      setDownloadError(null);
+    }
+  }, [selectedOrgId]);
+
+  useEffect(() => {
+    if (prevTokenRef.current !== accessToken) {
+      prevTokenRef.current = accessToken;
+      setOrganizations([]);
+      setSelectedOrgId(null);
+      setPreview(null);
+      setPreviewError(null);
+      setDownloadStatus(null);
+      setDownloadError(null);
+      setIsDownloading(false);
+      ++previewRequestRef.current;
+      ++downloadRequestRef.current;
+    }
+
     const requestId = ++orgsRequestRef.current;
     setIsLoadingOrgs(true);
     setOrgsError(null);
@@ -56,6 +84,7 @@ export default function ReportWorkspace({ accessToken }) {
     listOrganizations(accessToken)
       .then((orgs) => {
         if (!isMountedRef.current || requestId !== orgsRequestRef.current) return;
+        lastLoadedTokenRef.current = accessToken;
         const orgList = Array.isArray(orgs) ? orgs : [];
         setOrganizations(orgList);
         setIsLoadingOrgs(false);
@@ -67,6 +96,7 @@ export default function ReportWorkspace({ accessToken }) {
       })
       .catch((err) => {
         if (!isMountedRef.current || requestId !== orgsRequestRef.current) return;
+        lastLoadedTokenRef.current = accessToken;
         setOrganizations([]);
         setOrgsError(err);
         setIsLoadingOrgs(false);
@@ -75,7 +105,8 @@ export default function ReportWorkspace({ accessToken }) {
   }, [accessToken, orgsRetryCounter]);
 
   useEffect(() => {
-    if (!selectedOrgId) {
+    if (!selectedOrgId || lastLoadedTokenRef.current !== accessToken) {
+      ++previewRequestRef.current;
       setPreview(null);
       setIsLoadingPreview(false);
       setPreviewError(null);
@@ -105,16 +136,22 @@ export default function ReportWorkspace({ accessToken }) {
   async function handleDownload() {
     if (!selectedOrgId || isDownloading) return;
 
+    const orgId = selectedOrgId;
+    const token = accessToken;
+    const downloadId = ++downloadRequestRef.current;
+
     setIsDownloading(true);
     setDownloadStatus(null);
     setDownloadError(null);
 
     try {
       const { blob, filename } = await downloadReportPdf(
-        selectedOrgId,
+        orgId,
         DEMO_ASSESSMENT_ID,
-        accessToken
+        token
       );
+
+      if (!isMountedRef.current || downloadId !== downloadRequestRef.current) return;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -125,15 +162,13 @@ export default function ReportWorkspace({ accessToken }) {
       a.remove();
       URL.revokeObjectURL(url);
 
-      if (isMountedRef.current) {
-        setDownloadStatus("Report downloaded.");
-      }
+      setDownloadStatus("Report downloaded.");
     } catch (err) {
-      if (isMountedRef.current) {
-        setDownloadError(describeReportError(err));
-      }
+      if (!isMountedRef.current || downloadId !== downloadRequestRef.current) return;
+      setDownloadError(describeReportError(err));
     } finally {
-      if (isMountedRef.current) {
+      // No return here: a return inside finally would swallow any error thrown above.
+      if (isMountedRef.current && downloadId === downloadRequestRef.current) {
         setIsDownloading(false);
       }
     }
