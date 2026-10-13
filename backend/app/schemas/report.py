@@ -19,6 +19,13 @@ EvidenceSourceType = Literal[
 ]
 EvidenceNature = Literal["intent", "implementation", "attestation"]
 
+ASSESSMENT_STATUS_LABELS: dict[str, str] = {
+    "draft": "Draft",
+    "in_progress": "In progress",
+    "awaiting_review": "Awaiting review",
+    "completed": "Completed",
+}
+
 STATUS_LABELS: dict[str, str] = {
     "implemented": "Implemented",
     "partially_implemented": "Partially implemented",
@@ -30,6 +37,7 @@ STATUS_LABELS: dict[str, str] = {
 PENDING_REASON_LABELS: dict[str, str] = {
     "awaiting_review": "Awaiting expert review",
     "rejected_awaiting_new_version": "Rejected by reviewer — new assessment required",
+    "modified_awaiting_consultant_version": "Modified by reviewer — consultant version pending",
     "no_result": "Not yet assessed",
 }
 
@@ -113,6 +121,13 @@ class ControlInScope(BaseModel):
     title: str
     versions: list[ResultVersion] = []  # any order; builder sorts by version_no
 
+    @model_validator(mode="after")
+    def validate_unique_versions(self) -> "ControlInScope":
+        version_nos = [v.version_no for v in self.versions]
+        if len(version_nos) != len(set(version_nos)):
+            raise ValueError(f"Control {self.code} has duplicate version_no values.")
+        return self
+
 
 class ReportInput(BaseModel):
     organization: OrganizationInfo
@@ -122,7 +137,12 @@ class ReportInput(BaseModel):
 
 
 FinalBasis = Literal["accepted_agent_result", "consultant_version"]
-PendingReason = Literal["awaiting_review", "rejected_awaiting_new_version", "no_result"]
+PendingReason = Literal[
+    "awaiting_review",
+    "rejected_awaiting_new_version",
+    "modified_awaiting_consultant_version",
+    "no_result",
+]
 
 
 class FinalResult(BaseModel):
@@ -158,6 +178,7 @@ class ReportSummary(BaseModel):
     controls_in_scope: int
     finalized: int  # final results + exclusions
     pending: int
+    final_with_evidence_pending: int = 0
     coverage_pct: float  # finalized / controls_in_scope * 100, rounded to 1 decimal; 0.0 if no controls
     status_counts: dict[str, int]  # keys: implemented, partially_implemented, not_implemented, not_assessed (always all 4, zero if none). Excludes not_applicable.
 

@@ -1,3 +1,15 @@
+"""Report view builder for Agentic GRC assessments.
+
+Resolution rule:
+    For each control in scope, the version with the highest version_no decides its state.
+
+Evidence-pending rule:
+    Consultant acceptance (or a consultant-authored version) is enough to make a result final.
+    If the result's evidence_pending flag is True, it stays final but is always marked "evidence pending"
+    wherever it appears, and counted separately. Evidence validation (E3, HU-13/HU-14) will later clear the
+    flag; until then the report must never present such a result as evidence-backed.
+"""
+
 from datetime import datetime
 
 from app.schemas.report import (
@@ -120,8 +132,8 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
                     PendingItem(
                         code=ctrl.code,
                         title=ctrl.title,
-                        reason="awaiting_review",
-                        reason_label=PENDING_REASON_LABELS["awaiting_review"],
+                        reason="modified_awaiting_consultant_version",
+                        reason_label=PENDING_REASON_LABELS["modified_awaiting_consultant_version"],
                     )
                 )
 
@@ -134,6 +146,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
     controls_in_scope = len(data.controls)
     finalized = len(results) + len(exclusions)
     pending_count = len(pending)
+    final_with_evidence_pending = sum(1 for res in results if res.evidence_pending)
     coverage_pct = round(finalized / controls_in_scope * 100, 1) if controls_in_scope > 0 else 0.0
 
     status_counts: dict[str, int] = {
@@ -150,6 +163,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
         controls_in_scope=controls_in_scope,
         finalized=finalized,
         pending=pending_count,
+        final_with_evidence_pending=final_with_evidence_pending,
         coverage_pct=coverage_pct,
         status_counts=status_counts,
     )

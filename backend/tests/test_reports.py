@@ -178,6 +178,31 @@ def test_schema_invalid_control_code_raises():
         ControlInScope(code="PRAA03", title="Users authenticated")
 
 
+def test_schema_control_with_duplicate_version_no_raises():
+    with pytest.raises(ValidationError, match="duplicate version_no"):
+        ControlInScope(
+            code="PR.AA-01",
+            title="Identities and credentials",
+            versions=[
+                ResultVersion(
+                    version_no=2,
+                    author_actor="agent",
+                    control_status="implemented",
+                    explanation="First version with version_no=2",
+                    created_at=FIXED_DT,
+                ),
+                ResultVersion(
+                    version_no=2,
+                    author_actor="aligo_consultant",
+                    author_name="Alice",
+                    control_status="implemented",
+                    explanation="Second version with version_no=2",
+                    created_at=FIXED_DT,
+                ),
+            ],
+        )
+
+
 # --- 2. Builder Tests ---
 
 def test_builder_agent_version_accepted_becomes_final_result():
@@ -466,6 +491,70 @@ def test_builder_draft_text_never_leaks_into_report_view():
     assert draft_marker not in json_data
 
 
+def test_builder_evidence_pending_accepted_result():
+    ctrl = ControlInScope(
+        code="PR.AA-01",
+        title="Identities and credentials",
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation="Identities managed based on participant statement.",
+                created_at=FIXED_DT,
+                evidence_pending=True,
+                review=ResultReview(
+                    outcome="accepted",
+                    reviewer_name="Consultant Alice",
+                    reviewed_at=FIXED_DT,
+                ),
+            )
+        ],
+    )
+    inp = make_test_report_input(controls=[ctrl])
+    view = build_report_view(inp, FIXED_DT)
+
+    assert len(view.results) == 1
+    res = view.results[0]
+    assert res.basis == "accepted_agent_result"
+    assert res.evidence_pending is True
+    assert view.summary.final_with_evidence_pending == 1
+
+
+def test_builder_agent_version_modified_without_consultant_version_is_pending_modified():
+    secret_draft = "SECRET-AGENT-DRAFT-12345"
+    ctrl = ControlInScope(
+        code="PR.AA-03",
+        title="Authentication",
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation=secret_draft,
+                created_at=FIXED_DT,
+                review=ResultReview(
+                    outcome="modified",
+                    reviewer_name="Consultant Jane",
+                    reviewed_at=FIXED_DT,
+                ),
+            )
+        ],
+    )
+    inp = make_test_report_input(controls=[ctrl])
+    view = build_report_view(inp, FIXED_DT)
+
+    assert len(view.results) == 0
+    assert len(view.pending) == 1
+    item = view.pending[0]
+    assert item.code == "PR.AA-03"
+    assert item.reason == "modified_awaiting_consultant_version"
+    assert item.reason_label == "Modified by reviewer — consultant version pending"
+
+    json_data = view.model_dump_json()
+    assert secret_draft not in json_data
+
+
 # --- 3. PDF Tests ---
 
 def test_pdf_starts_with_pdf_magic_bytes():
@@ -614,6 +703,114 @@ def test_pdf_with_demo_data_shows_notice():
     text = extract_pdf_text(pdf_bytes)
 
     assert "DEMO DATA" in text
+
+
+EVIDENCE_PENDING_PARAGRAPH = (
+    "Results marked “evidence pending” were accepted by an Aligo consultant on the basis of the "
+    "participant's statement; the supporting evidence has not been validated yet."
+)
+
+
+def test_pdf_preserves_spanish_characters():
+    ctrl = ControlInScope(
+        code="PR.AA-01",
+        title="Identities and credentials",
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation="Política de contraseñas con autenticación multifactor; ¿cobertura total? ¡Aún no!",
+                created_at=FIXED_DT,
+                review=ResultReview(
+                    outcome="accepted",
+                    reviewer_name="José Muñoz Güell",
+                    reviewed_at=FIXED_DT,
+                ),
+            )
+        ],
+    )
+    inp = ReportInput(
+        organization=OrganizationInfo(
+            id=MEMBER_ORG_ID,
+            name="Compañía Ñandú Ltda.",
+            sector="Financial services",
+            size="51-250 employees",
+        ),
+        assessment=AssessmentInfo(
+            id=KNOWN_ASSESSMENT_ID,
+            title="Evaluación de Seguridad",
+            framework="NIST CSF 2.0",
+            kb_version="kb-1.0",
+            status="completed",
+            started_at=FIXED_DT,
+        ),
+        controls=[ctrl],
+    )
+    view = build_report_view(inp, FIXED_DT)
+    pdf_bytes = render_report_pdf(view)
+    text = extract_pdf_text(pdf_bytes)
+
+    assert "Compañía Ñandú Ltda." in text
+    assert "José Muñoz Güell" in text
+    assert "autenticación" in text
+    assert "¿cobertura total?" in text
+    assert "¡Aún no!" in text
+
+
+def test_pdf_with_evidence_pending_contains_notice_and_row():
+    ctrl = ControlInScope(
+        code="PR.AA-01",
+        title="Identities and credentials",
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation="Identities managed based on statement.",
+                created_at=FIXED_DT,
+                evidence_pending=True,
+                review=ResultReview(
+                    outcome="accepted",
+                    reviewer_name="Consultant Alice",
+                    reviewed_at=FIXED_DT,
+                ),
+            )
+        ],
+    )
+    inp = make_test_report_input(controls=[ctrl])
+    view = build_report_view(inp, FIXED_DT)
+    pdf_bytes = render_report_pdf(view)
+    text = extract_pdf_text(pdf_bytes)
+
+    # Only the Status cell uses parentheses; the paragraph uses quotes and the detail notice neither.
+    assert "(evidence pending)" in text
+    assert "Final results with evidence pending 1" in text
+    assert EVIDENCE_PENDING_PARAGRAPH in text
+
+
+def test_pdf_without_evidence_pending_does_not_contain_explanatory_paragraph():
+    inp = make_test_report_input()
+    view = build_report_view(inp, FIXED_DT)
+    assert view.summary.final_with_evidence_pending == 0
+    pdf_bytes = render_report_pdf(view)
+    text = extract_pdf_text(pdf_bytes)
+
+    assert EVIDENCE_PENDING_PARAGRAPH not in text
+    assert "(evidence pending)" not in text
+    # The summary row is always present, with a zero count.
+    assert "Final results with evidence pending 0" in text
+
+
+def test_pdf_assessment_status_label_rendered_instead_of_raw_value():
+    inp = make_test_report_input()
+    assert inp.assessment.status == "awaiting_review"
+    view = build_report_view(inp, FIXED_DT)
+    pdf_bytes = render_report_pdf(view)
+    text = extract_pdf_text(pdf_bytes)
+
+    assert "Awaiting review" in text
+    assert "awaiting_review" not in text
 
 
 # --- 4. API Tests ---

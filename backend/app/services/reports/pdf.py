@@ -1,3 +1,5 @@
+# Standard Helvetica fonts cover Windows-1252 (all Spanish characters). Characters outside it (e.g. "ć", "č") would need an embedded TTF font — follow-up if client names require it.
+
 from io import BytesIO
 from datetime import datetime, timezone
 import xml.sax.saxutils as saxutils
@@ -15,7 +17,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from app.schemas.report import ReportView
+from app.schemas.report import ASSESSMENT_STATUS_LABELS, ReportView
 
 
 def _escape(text: str | None) -> str:
@@ -231,6 +233,8 @@ def render_report_pdf(view: ReportView) -> bytes:
     started_str = _fmt_timestamp(view.assessment.started_at) if view.assessment.started_at else "—"
     completed_str = _fmt_timestamp(view.assessment.completed_at) if view.assessment.completed_at else "—"
 
+    status_label = ASSESSMENT_STATUS_LABELS.get(view.assessment.status, view.assessment.status)
+
     org_assessment_data = [
         [Paragraph("Organization", table_cell_bold), Paragraph(_escape(view.organization.name), table_cell_style)],
         [Paragraph("Sector", table_cell_bold), Paragraph(_escape(view.organization.sector), table_cell_style)],
@@ -238,7 +242,7 @@ def render_report_pdf(view: ReportView) -> bytes:
         [Paragraph("Assessment", table_cell_bold), Paragraph(_escape(view.assessment.title), table_cell_style)],
         [Paragraph("Framework", table_cell_bold), Paragraph(_escape(view.assessment.framework), table_cell_style)],
         [Paragraph("Knowledge base version", table_cell_bold), Paragraph(_escape(view.assessment.kb_version), table_cell_style)],
-        [Paragraph("Assessment status", table_cell_bold), Paragraph(_escape(view.assessment.status), table_cell_style)],
+        [Paragraph("Assessment status", table_cell_bold), Paragraph(_escape(status_label), table_cell_style)],
         [Paragraph("Started", table_cell_bold), Paragraph(_escape(started_str), table_cell_style)],
         [Paragraph("Completed", table_cell_bold), Paragraph(_escape(completed_str), table_cell_style)],
     ]
@@ -275,6 +279,7 @@ def render_report_pdf(view: ReportView) -> bytes:
     summary_data = [
         [Paragraph("Controls in scope", table_cell_bold), Paragraph(str(view.summary.controls_in_scope), table_cell_style)],
         [Paragraph("Final results", table_cell_bold), Paragraph(str(len(view.results)), table_cell_style)],
+        [Paragraph("Final results with evidence pending", table_cell_bold), Paragraph(str(view.summary.final_with_evidence_pending), table_cell_style)],
         [Paragraph("Exclusions", table_cell_bold), Paragraph(str(len(view.exclusions)), table_cell_style)],
         [Paragraph("Pending review", table_cell_bold), Paragraph(str(view.summary.pending), table_cell_style)],
         [Paragraph("Coverage", table_cell_bold), Paragraph(f"{view.summary.coverage_pct}%", table_cell_style)],
@@ -293,6 +298,13 @@ def render_report_pdf(view: ReportView) -> bytes:
     if not view.results:
         story.append(Paragraph("No reviewed results yet.", italic_style))
     else:
+        if view.summary.final_with_evidence_pending > 0:
+            story.append(
+                Paragraph(
+                    "Results marked “evidence pending” were accepted by an Aligo consultant on the basis of the participant's statement; the supporting evidence has not been validated yet.",
+                    body_style,
+                )
+            )
         results_data = [
             [
                 Paragraph("Control", table_header_style),
@@ -305,12 +317,17 @@ def render_report_pdf(view: ReportView) -> bytes:
             basis_text = "accepted" if res.basis == "accepted_agent_result" else "consultant version"
             rev_date = _fmt_date(res.reviewed_at)
             reviewed_by_str = f"{res.reviewed_by} ({basis_text}), {rev_date}"
+            status_text = (
+                f"{res.status_label} (evidence\u00A0pending)"
+                if res.evidence_pending
+                else res.status_label
+            )
 
             results_data.append(
                 [
                     Paragraph(_escape(res.code), table_cell_bold),
                     Paragraph(_escape(res.title), table_cell_style),
-                    Paragraph(_escape(res.status_label), table_cell_style),
+                    Paragraph(_escape(status_text), table_cell_style),
                     Paragraph(_escape(reviewed_by_str), table_cell_style),
                 ]
             )
