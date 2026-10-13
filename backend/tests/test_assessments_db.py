@@ -1,8 +1,4 @@
-"""Integration tests for assessments, controls, results and reviews on a real PostgreSQL database (AGRC-61).
-
-They run in CI against a temporary database. Locally they are skipped unless
-backend/.env points to a database with the migrations applied.
-"""
+"""Assessment and database constraint integration tests."""
 
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -23,8 +19,11 @@ from app.db.models import (
 )
 from app.db.session import get_engine
 from app.schemas.assessments import AssessmentCreate
-from app.services.assessments import get_assessment, list_assessments, start_assessment
-
+from app.services.assessments import (
+    get_assessment,
+    list_assessments,
+    start_assessment,
+)
 
 @pytest.fixture
 def db():
@@ -148,8 +147,6 @@ def make_trace(db: Session, organization: Organization, assessment: Assessment, 
     return trace
 
 
-# --- assessments --------------------------------------------------------------
-
 def test_start_assessment_stores_all_fields(db):
     organization = make_organization(db)
     user = make_user(db)
@@ -235,8 +232,6 @@ def test_completed_at_before_started_at_rejected(db):
         db.commit()
 
 
-# --- trace FK -----------------------------------------------------------------
-
 def test_trace_for_assessment_of_same_organization_accepted(db):
     org = make_organization(db)
     assessment = make_assessment(db, org)
@@ -286,8 +281,6 @@ def test_trace_with_mismatched_organization_assessment_rejected(db):
     with pytest.raises(IntegrityError, match="assessment_same_org"):
         db.commit()
 
-
-# --- assessment controls ------------------------------------------------------
 
 def test_assessment_control_stored_and_duplicate_code_rejected(db):
     org = make_organization(db)
@@ -353,8 +346,6 @@ def test_control_with_mismatched_organization_assessment_rejected(db):
     with pytest.raises(IntegrityError, match="assessment_same_org"):
         db.commit()
 
-
-# --- control results ----------------------------------------------------------
 
 def test_agent_result_stored_with_evidence_refs_roundtrip(db):
     org = make_organization(db)
@@ -497,8 +488,6 @@ def test_result_with_mismatched_organization_control_rejected(db):
     with pytest.raises(IntegrityError, match="control_same_assessment"):
         db.commit()
 
-
-# --- reviews ------------------------------------------------------------------
 
 def test_accepted_review_stored_with_empty_comment(db):
     org = make_organization(db)
@@ -673,8 +662,6 @@ def test_review_with_mismatched_organization_result_rejected(db):
     with pytest.raises(IntegrityError, match="result_same_assessment"):
         db.commit()
 
-
-# --- composite trace and assessment FKs (AGRC-61 fix) ------------------------
 
 def test_result_with_trace_of_same_assessment_accepted(db):
     org = make_organization(db)

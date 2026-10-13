@@ -15,7 +15,11 @@ def get_engine() -> Engine:
         raise RuntimeError(
             "PostgreSQL is not configured. Set DB_HOST and DB_USER in backend/.env."
         ) from exc
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10},
+    )
 
 
 def get_db_session() -> Generator[Session, None, None]:
