@@ -170,6 +170,7 @@ Three of the four E0-04 criteria are met; the cost estimate closes once the know
 Open questions for the team and Aligo:
 
 - Rule for an unsupported "yes": after 3 follow-ups it closes as `not_assessed` with human review, never as compliant. Does Aligo agree?
+- Every detailed "yes" gets one evidence request before the control is closed, even when the participant already named some evidence. This adds a turn to the interview. Does Aligo agree with that experience?
 - The backlog and brief assumed Spanish; the interview is now English. Do reports follow the interview language?
 - Labels in the evaluation set need review by someone with GRC experience.
 - Demo hardware: which machine runs Ollama for the recorded demo (HU-27)?
