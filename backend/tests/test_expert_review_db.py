@@ -151,7 +151,8 @@ def make_trace(db: Session, organization: Organization, assessment: Assessment, 
     return trace
 
 
-def make_review_context(db, role="consultant"):
+def make_assessment_context(db, role="consultant"):
+    """Create the assessment context without an agent result or trace."""
     organization = make_organization(db)
     user = make_user(db)
 
@@ -166,7 +167,21 @@ def make_review_context(db, role="consultant"):
     db.commit()
 
     assessment = make_assessment(db, organization)
-    control = make_control(db, organization, assessment)
+    control = make_control(
+        db,
+        organization,
+        assessment,
+        control_code="PR.AA-03",
+        control_title="Users, services, and hardware are authenticated",
+    )
+
+    return organization, user, assessment, control
+
+
+def make_review_context(db, role="consultant"):
+    organization, user, assessment, control = (
+        make_assessment_context(db, role=role)
+    )
 
     trace = make_trace(
         db,
@@ -186,7 +201,6 @@ def make_review_context(db, role="consultant"):
     )
 
     return organization, user, assessment, control, result, trace
-
 
 @pytest.mark.parametrize("outcome", ["accepted", "rejected"])
 def test_expert_review_saves_decision_and_trace(db, outcome):
