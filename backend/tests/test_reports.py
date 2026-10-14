@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.api.v1.dependencies import get_db_session
+from app.core.config import Settings
 from app.main import app
 from app.schemas.report import (
     AssessmentInfo,
@@ -970,4 +971,75 @@ def test_composite_source_delegates_non_demo_to_db_source(monkeypatch):
     monkeypatch.setattr(DbReportSource, "load", fake_db_load)
     res = source.load(None, MEMBER_ORG_ID, KNOWN_ASSESSMENT_ID)
     assert res is sentinel
+
+
+def test_get_report_source_default_settings_disallows_demo(monkeypatch):
+    class FakeSector:
+        label = "Financial services"
+
+    class FakeSize:
+        label = "51-250 employees"
+
+    class FakeOrg:
+        name = "Demo Corp"
+        industry_sector = FakeSector()
+        organization_size = FakeSize()
+
+    class FakeDB:
+        def get(self, model, ident):
+            if ident == MEMBER_ORG_ID:
+                return FakeOrg()
+            return None
+
+    dev_settings = Settings(_env_file=None, app_environment="development")
+    monkeypatch.setattr("app.services.reports.source.get_settings", lambda: dev_settings)
+
+    source = get_report_source()
+    res = source.load(FakeDB(), MEMBER_ORG_ID, DEMO_ASSESSMENT_ID)
+    assert res is None
+
+
+def test_get_report_source_allow_demo_report_returns_demo_data(monkeypatch):
+    class FakeSector:
+        label = "Financial services"
+
+    class FakeSize:
+        label = "51-250 employees"
+
+    class FakeOrg:
+        name = "Demo Corp"
+        industry_sector = FakeSector()
+        organization_size = FakeSize()
+
+    class FakeDB:
+        def get(self, model, ident):
+            if ident == MEMBER_ORG_ID:
+                return FakeOrg()
+            return None
+
+    dev_settings = Settings(_env_file=None, app_environment="development", allow_demo_report=True)
+    monkeypatch.setattr("app.services.reports.source.get_settings", lambda: dev_settings)
+
+    source = get_report_source()
+    res = source.load(FakeDB(), MEMBER_ORG_ID, DEMO_ASSESSMENT_ID)
+    assert res is not None
+    assert res.is_demo_data is True
+    assert res.organization.name == "Demo Corp"
+
+
+def test_settings_production_refuses_allow_demo_report():
+    with pytest.raises(ValidationError, match="ALLOW_DEMO_REPORT"):
+        Settings(
+            _env_file=None,
+            app_environment="production",
+            allow_demo_report=True,
+            app_base_url="https://app.example.com",
+            supabase_url="https://project.example.supabase.co/",
+            supabase_publishable_key="sb_publishable_public-key",
+            supabase_secret_key="sb_secret_server-key",
+            smtp_host="smtp.example.com",
+            smtp_sender_email="noreply@example.com",
+            smtp_starttls=True,
+        )
+
 

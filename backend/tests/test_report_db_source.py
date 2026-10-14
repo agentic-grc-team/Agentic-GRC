@@ -3,7 +3,9 @@
 import logging
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
 
+import pdfplumber
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,6 +22,7 @@ from app.db.models import (
 )
 from app.db.session import get_engine
 from app.services.reports.builder import build_report_view
+from app.services.reports.pdf import render_report_pdf
 from app.services.reports.source import DbReportSource
 from scripts.seed_demo_assessment import seed_demo_assessment_data
 
@@ -391,12 +394,12 @@ def test_report_db_source_table_mapping(db):
     # Check results
     res_aa01 = next(r for r in view.results if r.code == "PR.AA-01")
     assert res_aa01.basis == "accepted_agent_result"
-    assert res_aa01.reviewed_by == user_a.email
+    assert res_aa01.reviewed_by == "Aligo consultant"
     assert res_aa01.control_status == "implemented"
 
     res_aa03 = next(r for r in view.results if r.code == "PR.AA-03")
     assert res_aa03.basis == "consultant_version"
-    assert res_aa03.reviewed_by == user_a.email
+    assert res_aa03.reviewed_by == "Aligo consultant"
     assert res_aa03.control_status == "partially_implemented"
 
     # Check pending
@@ -412,7 +415,7 @@ def test_report_db_source_table_mapping(db):
     # Check exclusions
     ex_ps06 = next(e for e in view.exclusions if e.code == "PR.PS-06")
     assert ex_ps06.justification == "Organization does not develop software in-house."
-    assert ex_ps06.reviewed_by == user_a.email
+    assert ex_ps06.reviewed_by == "Aligo consultant"
 
     # Check GV.OC-01 is not anywhere in the report
     all_report_codes = (
@@ -612,8 +615,8 @@ def test_seed_demo_assessment_data_builds_the_expected_report(db):
         "PR.PS-06",
     ]
     assert [(r.code, r.control_status, r.basis, r.reviewed_by) for r in view.results] == [
-        ("PR.AA-01", "implemented", "accepted_agent_result", reviewer.email),
-        ("PR.AA-03", "partially_implemented", "consultant_version", reviewer.email),
+        ("PR.AA-01", "implemented", "accepted_agent_result", "Aligo consultant"),
+        ("PR.AA-03", "partially_implemented", "consultant_version", "Aligo consultant"),
     ]
     assert [(p.code, p.reason) for p in view.pending] == [
         ("DE.CM-01", "no_result"),
@@ -638,3 +641,195 @@ def test_seed_demo_assessment_data_builds_the_expected_report(db):
         )
     ).all()
     assert len(review_traces) == 3
+
+
+def test_report_never_contains_user_emails(db):
+    """Client-facing report and PDF must never reveal consultant user emails."""
+    org = make_organization(db)
+    user_a = make_user(db)
+    assess = make_assessment(db, org)
+
+    # 1. PR.AA-01: agent v1 implemented + review accepted by user A
+    c_aa01 = make_control(
+        db,
+        org,
+        assess,
+        control_code="PR.AA-01",
+        control_title="Identities and credentials",
+        in_scope=True,
+    )
+    r_aa01 = make_result(
+        db,
+        org,
+        c_aa01,
+        version_no=1,
+        author_actor="agent",
+        author_user_id=None,
+        control_status="implemented",
+        explanation="Identities managed centrally.",
+    )
+    make_review(
+        db,
+        org,
+        r_aa01,
+        user_a,
+        outcome="accepted",
+        comment="Confirmed by user A.",
+    )
+
+    # 2. PR.AA-03: agent v1 + review modified (resulting v2) + consultant v2 partially_implemented by user A
+    c_aa03 = make_control(
+        db,
+        org,
+        assess,
+        control_code="PR.AA-03",
+        control_title="Users authenticated",
+        in_scope=True,
+    )
+    r_aa03_v1 = make_result(
+        db,
+        org,
+        c_aa03,
+        version_no=1,
+        author_actor="agent",
+        author_user_id=None,
+        control_status="implemented",
+        explanation="Agent proposal.",
+    )
+    r_aa03_v2 = make_result(
+        db,
+        org,
+        c_aa03,
+        version_no=2,
+        based_on_result_id=r_aa03_v1.id,
+        author_actor="aligo_consultant",
+        author_user_id=user_a.id,
+        control_status="partially_implemented",
+        explanation="Consultant modified: MFA partial.",
+    )
+    make_review(
+        db,
+        org,
+        r_aa03_v1,
+        user_a,
+        outcome="modified",
+        resulting_result_id=r_aa03_v2.id,
+        comment="Modified to partially implemented.",
+    )
+
+    # 3. PR.AA-05: agent v1 implemented, evidence_pending=True, no review
+    c_aa05 = make_control(
+        db,
+        org,
+        assess,
+        control_code="PR.AA-05",
+        control_title="Access permissions defined",
+        in_scope=True,
+    )
+    make_result(
+        db,
+        org,
+        c_aa05,
+        version_no=1,
+        author_actor="agent",
+        author_user_id=None,
+        control_status="implemented",
+        explanation="Access managed.",
+        evidence_pending=True,
+    )
+
+    # 4. ID.AM-01: agent v1 not_implemented + review rejected
+    c_am01 = make_control(
+        db,
+        org,
+        assess,
+        control_code="ID.AM-01",
+        control_title="Inventories maintained",
+        in_scope=True,
+    )
+    r_am01 = make_result(
+        db,
+        org,
+        c_am01,
+        version_no=1,
+        author_actor="agent",
+        author_user_id=None,
+        control_status="not_implemented",
+        explanation="No inventory.",
+    )
+    make_review(
+        db,
+        org,
+        r_am01,
+        user_a,
+        outcome="rejected",
+        comment="Rejected: inventory exists.",
+    )
+
+    # 5. PR.PS-06: consultant v1 not_applicable with justification
+    c_ps06 = make_control(
+        db,
+        org,
+        assess,
+        control_code="PR.PS-06",
+        control_title="Secure software development",
+        in_scope=True,
+    )
+    make_result(
+        db,
+        org,
+        c_ps06,
+        version_no=1,
+        author_actor="aligo_consultant",
+        author_user_id=user_a.id,
+        control_status="not_applicable",
+        explanation="No internal dev.",
+        justification="Organization does not develop software in-house.",
+    )
+
+    # 6. DE.CM-01: in_scope=True, no results
+    make_control(
+        db,
+        org,
+        assess,
+        control_code="DE.CM-01",
+        control_title="Network monitoring",
+        in_scope=True,
+    )
+
+    # 7. GV.OC-01: in_scope=False with rationale
+    make_control(
+        db,
+        org,
+        assess,
+        control_code="GV.OC-01",
+        control_title="Organizational context",
+        in_scope=False,
+        scope_rationale="Out of scope for this assessment.",
+    )
+
+    source = DbReportSource()
+    report_input = source.load(db, org.id, assess.id)
+    assert report_input is not None
+
+    view = build_report_view(report_input, datetime.now(timezone.utc))
+    pdf_bytes = render_report_pdf(view)
+
+    with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+        pdf_text = " ".join((page.extract_text() or "") for page in pdf.pages)
+
+    view_json = view.model_dump_json()
+    assert user_a.email not in view_json
+    assert user_a.email not in pdf_text
+
+    # A long email can wrap inside a PDF table cell and stop being one contiguous string, so also
+    # check for what survives wrapping: no "@" at all, and no trace of the address in the compact text.
+    compact_pdf_text = "".join(pdf_text.split())
+    assert "@" not in view_json
+    assert "@" not in pdf_text
+    assert "example.com" not in compact_pdf_text
+    assert str(user_a.id) not in view_json
+
+    # The neutral label is what the client sees instead.
+    assert {r.reviewed_by for r in view.results} == {"Aligo consultant"}
+    assert "Aligo consultant" in pdf_text

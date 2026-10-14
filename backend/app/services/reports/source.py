@@ -14,7 +14,6 @@ from app.db.models import (
     ControlResult,
     ControlResultReview,
     Organization,
-    User,
 )
 from app.schemas.report import (
     AssessmentInfo,
@@ -29,6 +28,7 @@ from app.schemas.report import (
 logger = logging.getLogger(__name__)
 
 DEMO_ASSESSMENT_ID = UUID("00000000-0000-4000-8000-000000000014")
+CONSULTANT_DISPLAY_NAME = "Aligo consultant"
 
 
 class ReportDataSource(Protocol):
@@ -219,7 +219,7 @@ class DbReportSource:
         if db is None:
             return None
 
-        # 1. Assessment, filtered by BOTH ids (Abedin's note on #12)
+        # 1. Filter by BOTH ids so another organization's assessment can never be read.
         assessment = db.scalar(
             select(Assessment).where(
                 Assessment.id == assessment_id,
@@ -270,7 +270,7 @@ class DbReportSource:
             )
         )
 
-        # 5. Versions without N+1 — 3 queries total for steps 4–6
+        # 5. Results and reviews in bulk (no per-control queries).
         control_ids = [c.id for c in controls]
         if control_ids:
             results = list(
@@ -303,37 +303,22 @@ class DbReportSource:
 
         reviews_by_result_id = {rev.control_result_id: rev for rev in reviews}
 
-        user_ids = {
-            r.author_user_id for r in results if r.author_user_id is not None
-        } | {
-            rev.reviewed_by_user_id for rev in reviews if rev.reviewed_by_user_id is not None
-        }
-        if user_ids:
-            users = list(db.scalars(select(User).where(User.id.in_(user_ids))))
-            users_by_id = {u.id: u for u in users}
-        else:
-            users_by_id = {}
-
         # 6. Map each ControlResult to ResultVersion
         versions_by_control_id: dict[UUID, list[ResultVersion]] = {c.id: [] for c in controls}
 
         for result in results:
-            # Users have no display name in the schema yet, so the email is used as the reviewer/author name.
-            if result.author_actor == "aligo_consultant":
-                author_user = users_by_id.get(result.author_user_id) if result.author_user_id else None
-                author_name = author_user.email if author_user else "Aligo consultant"
-            else:
-                author_name = None
+            # Reports go to the client: show a neutral label, never the consultant's email. Use a display name here once users have one.
+            author_name = (
+                CONSULTANT_DISPLAY_NAME if result.author_actor == "aligo_consultant" else None
+            )
 
             review = None
             if result.author_actor == "agent":
                 rev = reviews_by_result_id.get(result.id)
                 if rev is not None:
-                    reviewer_user = users_by_id.get(rev.reviewed_by_user_id) if rev.reviewed_by_user_id else None
-                    reviewer_name = reviewer_user.email if reviewer_user else "Aligo consultant"
                     review = ResultReview(
                         outcome=rev.outcome,
-                        reviewer_name=reviewer_name,
+                        reviewer_name=CONSULTANT_DISPLAY_NAME,
                         reviewed_at=rev.reviewed_at,
                         comment=rev.comment or "",
                     )
@@ -419,5 +404,8 @@ class CompositeReportSource:
 
 
 def get_report_source() -> ReportDataSource:
-    return CompositeReportSource(allow_demo=get_settings().app_environment != "production")
+    settings = get_settings()
+    return CompositeReportSource(
+        allow_demo=settings.allow_demo_report and settings.app_environment != "production"
+    )
 

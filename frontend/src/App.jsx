@@ -299,7 +299,12 @@ function App() {
           />
         ) : user?.accessToken ? (
           currentView === "reports" ? (
-            <ReportWorkspace accessToken={user.accessToken} />
+            <ReportWorkspace
+              accessToken={user.accessToken}
+              sessionId={user.id}
+              initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
+            />
           ) : currentView === "expert-reviews" ? (
             <ExpertReviewWorkspace
               accessToken={user.accessToken}
