@@ -29,10 +29,9 @@ def test_graph_interrupts_and_resumes(kb):
         detailed,
         detailed,
     ])
-    questions = iter(["Which accounts does it apply to?", "Could we see the policy that enforces it?"])
     llm = FakeLLM({
         "interpret_answer": lambda _u: next(answers),
-        "generate_follow_up": lambda _u: FollowUpQuestion(question=next(questions)),
+        "generate_follow_up": lambda _u: FollowUpQuestion(question="Which accounts does it apply to?"),
     })
     graph = build_graph(Deps(llm=llm, kb=kb, tracer=TraceRecorder()), checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": "t1"}}
@@ -44,7 +43,7 @@ def test_graph_interrupts_and_resumes(kb):
     assert pending(graph, config)["message"] == "Which accounts does it apply to?"
 
     graph.invoke(Command(resume="All of them, with Authenticator"), config)
-    assert pending(graph, config)["message"] == "Could we see the policy that enforces it?"
+    assert "What could we look at to confirm it?" in pending(graph, config)["message"]
 
     graph.invoke(Command(resume="Yes, the conditional access policy"), config)
     assert pending(graph, config) is None

@@ -1,6 +1,6 @@
 """End-to-end interview flow with a fake LLM (no Ollama needed)."""
 
-from conftest import run_scripted
+from conftest import run_scripted, run_scripted_more
 
 from agentic_grc_agent.fallback import heuristic_interpret
 from agentic_grc_agent.llm import FakeLLM
@@ -67,26 +67,43 @@ def test_detailed_yes_gets_one_evidence_request_before_closing():
     detailed = I(category="yes", specificity="detailed", mentions_scope=True)
     llm = FakeLLM({
         "interpret_answer": lambda _u: detailed,
-        "generate_follow_up": lambda _u: FollowUpQuestion(question="Could we see the conditional access policy?"),
     })
     nodes, tracer = make(llm)
-    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]),
-                     ["Yes, all 365 admins, enforced centrally", "I can't share anything right now"])
+    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["Yes, all 365 admins, enforced centrally"])
+    # the request is a template with the knowledge-base examples: no model call to phrase it
+    assert "Conditional access policy" in s["pending_message"]
+    assert [prompt_id for prompt_id, _ in llm.calls] == ["interpret_answer"]
+
+    s = run_scripted_more(nodes, s, ["I can't share anything right now"])
 
     r = s["results"]["IAM-01"]
     assert r["status"] == "implemented" and r["evidence_pending"] and r["follow_ups_used"] == 1
     assert "evidence was requested" in r["reason"]
     kinds = [t.decision_type for t in tracer.records]
     assert kinds == ["answer_interpreted", "evidence_requested", "answer_interpreted", "status_assessed"]
-    # the request shows the participant what would count as evidence
-    assert "Conditional access policy" in llm.calls[1][1]
+
+
+def test_evidence_is_requested_once_even_if_the_answer_turns_vague():
+    """Regression: detailed "yes", then vague "yes" answers, must not ask for evidence again."""
+    yes = dict(category="yes", mentions_scope=True)
+    llm = FakeLLM({
+        "interpret_answer": scripted_interpretations(I(**yes, specificity="detailed"), I(**yes), I(**yes), I(**yes)),
+        "generate_follow_up": lambda _u: FollowUpQuestion(question="How is it enforced?"),
+    })
+    nodes, tracer = make(llm)
+    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["a", "b", "c", "d"])
+
+    assert [t.decision_type for t in tracer.records].count("evidence_requested") == 1
+    follow_ups = [t["content"] for t in s["turns"] if t["turn_type"] == "follow_up"]
+    assert follow_ups[1:] == ["How is it enforced?", "How is it enforced?"]  # asks for detail instead
+    r = s["results"]["IAM-01"]
+    assert r["status"] == "not_assessed" and r["requires_human_review"]  # still vague at the limit
 
 
 def test_evidence_request_flag_resets_on_the_next_question():
     detailed = I(category="yes", specificity="detailed", mentions_scope=True)
     llm = FakeLLM({
         "interpret_answer": lambda _u: detailed,
-        "generate_follow_up": lambda _u: FollowUpQuestion(question="What could we look at?"),
     })
     nodes, tracer = make(llm)
     run_scripted(nodes, initial_state("org", "a1", ["IAM-01", "IAM-02"]), ["a", "b", "c", "d"])
@@ -146,13 +163,11 @@ def test_llm_down_degrades_to_heuristic_and_templates():
 
 
 def test_evidence_request_is_traced():
-    llm = FakeLLM({
-        "interpret_answer": lambda _u: I(category="yes", mentions_scope=True),
-        "generate_follow_up": lambda _u: FollowUpQuestion(question="Could we see the conditional access policy?"),
-    })
+    llm = FakeLLM({"interpret_answer": lambda _u: I(category="yes", mentions_scope=True)})
     nodes, tracer = make(llm)
     run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["Yes, all of them"])
-    assert "evidence_requested" in [t.decision_type for t in tracer.records]
+    request = next(t for t in tracer.records if t.decision_type == "evidence_requested")
+    assert request.model_name is None and request.prompt_id == "rule:yes_vague_ask_evidence"
 
 
 def test_heuristic_examples():

@@ -75,7 +75,12 @@ def _decide(i: AnswerInterpretation, can_follow_up: bool, evidence_asked: bool) 
                           "Affirmative answer with scope described; the follow-up limit was reached before evidence could be requested.",
                           "rule:yes_detailed_limit")
         if can_follow_up:
-            missing = Missing.evidence if i.mentions_scope else Missing.scope
+            if not i.mentions_scope:
+                missing = Missing.scope
+            elif not evidence_asked:
+                missing = Missing.evidence
+            else:  # evidence is requested once per question; after that, ask for the missing detail
+                missing = Missing.detail
             return _ask(missing, "Affirmative answer without enough detail.", f"rule:yes_vague_ask_{missing.value}")
         # An unsupported "yes" is an attestation, not proof: do not mark it compliant.
         return _close(ControlStatus.not_assessed, "Affirmative answer with no verifiable detail after the maximum number of follow-ups.",

@@ -179,17 +179,20 @@ class InterviewNodes:
         step = NextStep.model_validate(s["last_step"])
         missing = step.missing or Missing.redirect
         quote = s["last_interpretation"].get("key_quote") or self._turns_for(s, q.code)[-1]["content"][:80]
-        system, user = prompts.follow_up(q, self._turns_for(s, q.code), quote, missing)
-        try:
-            out, _ = self.d.llm.structured(
-                prompt_id=prompts.FOLLOW_UP_ID, prompt_version=prompts.FOLLOW_UP_VERSION,
-                system=system, user=user, schema=FollowUpQuestion,
-            )
-            text = out.question.strip()
-            if not text.endswith("?") or len(text) > 400:
-                raise LLMError("follow-up is not a single short question")
-        except LLMError:
-            text = prompts.FALLBACK_FOLLOW_UPS[missing].format(quote=quote, question=q.text)
+        if missing is Missing.evidence:
+            text = prompts.evidence_request(q, quote)
+        else:
+            system, user = prompts.follow_up(q, self._turns_for(s, q.code), quote, missing)
+            try:
+                out, _ = self.d.llm.structured(
+                    prompt_id=prompts.FOLLOW_UP_ID, prompt_version=prompts.FOLLOW_UP_VERSION,
+                    system=system, user=user, schema=FollowUpQuestion,
+                )
+                text = out.question.strip()
+                if not text.endswith("?") or len(text) > 400:
+                    raise LLMError("follow-up is not a single short question")
+            except LLMError:
+                text = prompts.FALLBACK_FOLLOW_UPS[missing].format(quote=quote, question=q.text)
 
         if missing is Missing.evidence:
             self._trace(

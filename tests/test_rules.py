@@ -48,6 +48,13 @@ def test_evidence_request_does_not_depend_on_the_model_flag():
     assert decide_next_step(named, 0, 3).missing is Missing.evidence
 
 
+def test_vague_yes_after_evidence_request_asks_for_detail_not_evidence_again():
+    vague_with_scope = interp(category="yes", scope=True)
+    assert decide_next_step(vague_with_scope, 0, 3).missing is Missing.evidence
+    step = decide_next_step(vague_with_scope, 1, 3, evidence_asked=True)
+    assert step.missing is Missing.detail and step.rule_id == "rule:yes_vague_ask_detail"
+
+
 def test_detailed_yes_closes_when_no_follow_ups_left():
     step = decide_next_step(interp(category="yes", specificity="detailed", scope=True), 3, 3)
     assert step.status is ControlStatus.implemented and step.rule_id == "rule:yes_detailed_limit"
@@ -96,4 +103,5 @@ def test_eval_labels_agree_with_rules(case, kb):
     i = interp(intent=e["intent"], category=e.get("category", "unsure"),
                specificity="detailed" if detailed else "vague", scope=detailed,
                evidence=e.get("mentions_evidence", False))
-    assert decide_next_step(i, 0, 3).action.value == e["action"]
+    step = decide_next_step(i, 0, 3, evidence_asked=case.get("evidence_asked", False))
+    assert step.action.value == e["action"]

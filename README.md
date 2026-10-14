@@ -50,9 +50,14 @@ START → ask_question → wait_for_answer → interpret ─┬─ clarify ─�
 Rules worth discussing with the team / Aligo (`rules.py`):
 
 - A plain "no" closes as `not_implemented` without a follow-up (HU-06).
-- A "yes" closes as `implemented` only with scope described, and only after one evidence request
-  (`rule:yes_detailed_ask_evidence`). The request never repeats, and evidence stays pending: an answer is an
-  attestation, not proof. The rule does not use the model's `mentions_evidence` flag, which is right only half the time.
+- A "yes" closes as `implemented` only with scope described, and only after one evidence request.
+  Evidence is requested once per question, whatever the later answers look like; if the answer is still
+  vague after that, the agent asks for the missing detail instead. Evidence stays pending: an answer is an
+  attestation, not proof.
+- The evidence request is a template built from the knowledge-base `evidence_examples`, not an LLM call,
+  so that turn costs one model call instead of two.
+- The rule does not use the model's `mentions_evidence` flag: `llama3.1:8b` got it right in 4 of 6 labelled
+  cases, a sample too small to rely on.
 - Every result is preliminary (`is_preliminary: true`) until an expert reviews it, and carries the confidence
   and the mapped control ids.
 - After 3 follow-ups an unsupported "yes" closes as `not_assessed` + human review — never as compliant.
