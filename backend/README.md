@@ -44,6 +44,7 @@ FastAPI validates each bearer token with Supabase Auth's user endpoint and uses 
 - Invitation links: `APP_BASE_URL`.
 - Outbound organization email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`.
 - Runtime mode: `APP_ENVIRONMENT`.
+- Demo report: `ALLOW_DEMO_REPORT` (default false; refused in production).
 
 The old `JWT_SECRET` and local password-hash settings are no longer used. Remove the temporary JWT secret from your local environment once this branch is adopted. Supabase email/password sign-in and Google OAuth are authenticated by Supabase; the current app SMTP server only sends organization invitations.
 
