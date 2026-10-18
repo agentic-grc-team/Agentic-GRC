@@ -271,7 +271,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
 
         <p>
           <strong>Current maturity:</strong>{" "}
-          {review.maturity_current ?? "Not assessed"}
+          {review.maturity_current ?? "Not available"}
         </p>
 
         <p>

@@ -611,8 +611,7 @@ describe("ExpertReviewWorkspace", () => {
 
     await screen.findByRole("heading", { name: "PR.AA-03" });
 
-    expect(screen.getByText("Not assessed")).toBeInTheDocument();
-    expect(screen.getByText("Not available")).toBeInTheDocument();
+    expect(screen.getAllByText("Not available")).toHaveLength(2);
     expect(
       screen.getByText("No evidence summary available."),
     ).toBeInTheDocument();
