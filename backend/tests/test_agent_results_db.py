@@ -224,3 +224,134 @@ def test_refuses_an_assessment_of_another_organization(db):
 def test_contract_rejects_incomplete_agent_results(changes):
     with pytest.raises(ValidationError):
         AgentControlResult.from_agent_output(agent_output(**changes))
+
+def test_saved_agent_result_can_be_rejected(db):
+    organization, user, assessment, _ = setup_assessment(db)
+
+    (result,) = save(
+        db,
+        organization,
+        assessment,
+        agent_output(),
+    )
+    db.commit()
+    result_id = result.id
+    original_trace_id = result.trace_id
+
+    review = save_review_decision(
+        db,
+        result_id,
+        ReviewDecision(
+            outcome="rejected",
+            comment="The proposal is not supported by the evidence.",
+        ),
+        user,
+    )
+    review_id = review.id
+    db.commit()
+    db.expire_all()
+
+    stored_review = db.get(ControlResultReview, review_id)
+    original_result = db.get(ControlResult, result_id)
+    review_trace = db.get(
+        DecisionTraceRecord,
+        stored_review.review_trace_id,
+    )
+
+    assert stored_review.outcome == "rejected"
+    assert stored_review.control_result_id == result_id
+    assert stored_review.resulting_result_id is None
+    assert stored_review.reviewed_by_user_id == user.id
+
+    assert original_result.control_status == "implemented"
+    assert original_result.trace_id == original_trace_id
+    assert original_result.version_no == 1
+
+    assert review_trace.decision_type == "human_review"
+    assert review_trace.review_outcome == "rejected"
+    assert review_trace.reviews_trace_id == original_trace_id
+    assert review_trace.actor_user_id == user.id
+
+    versions = db.scalars(
+        select(ControlResult).where(
+            ControlResult.assessment_control_id
+            == original_result.assessment_control_id,
+        )
+    ).all()
+
+    assert [version.id for version in versions] == [result_id]
+    assert list_pending_reviews(db, user) == []
+
+
+def test_saved_agent_result_can_be_modified_without_maturity(db):
+    organization, user, assessment, _ = setup_assessment(db)
+
+    (result,) = save(
+        db,
+        organization,
+        assessment,
+        agent_output(),
+    )
+    db.commit()
+    result_id = result.id
+    original_trace_id = result.trace_id
+
+    review = save_review_decision(
+        db,
+        result_id,
+        ReviewDecision(
+            outcome="modified",
+            comment="Corrected after checking the configuration.",
+            modified_result={
+                "control_status": "partially_implemented",
+                "explanation": "MFA covers only some administrator accounts.",
+            },
+        ),
+        user,
+    )
+    review_id = review.id
+    db.commit()
+    db.expire_all()
+
+    stored_review = db.get(ControlResultReview, review_id)
+    original_result = db.get(ControlResult, result_id)
+    corrected_result = db.get(
+        ControlResult,
+        stored_review.resulting_result_id,
+    )
+    review_trace = db.get(
+        DecisionTraceRecord,
+        stored_review.review_trace_id,
+    )
+
+    assert stored_review.outcome == "modified"
+    assert stored_review.control_result_id == result_id
+    assert stored_review.reviewed_by_user_id == user.id
+
+    assert corrected_result.version_no == 2
+    assert corrected_result.based_on_result_id == result_id
+    assert corrected_result.organization_id == organization.id
+    assert corrected_result.assessment_id == assessment.id
+    assert (
+        corrected_result.assessment_control_id
+        == original_result.assessment_control_id
+    )
+    assert corrected_result.author_actor == "aligo_consultant"
+    assert corrected_result.author_user_id == user.id
+    assert corrected_result.control_status == "partially_implemented"
+    assert corrected_result.maturity_current is None
+    assert corrected_result.maturity_target is None
+    assert corrected_result.confidence is None
+    assert corrected_result.evidence_refs == []
+    assert corrected_result.evidence_pending is True
+    assert corrected_result.trace_id == review_trace.id
+
+    assert original_result.version_no == 1
+    assert original_result.control_status == "implemented"
+    assert original_result.author_actor == "agent"
+    assert original_result.trace_id == original_trace_id
+
+    assert review_trace.review_outcome == "modified"
+    assert review_trace.reviews_trace_id == original_trace_id
+    assert review_trace.actor_user_id == user.id
+    assert list_pending_reviews(db, user) == []
