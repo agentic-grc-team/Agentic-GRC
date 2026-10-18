@@ -22,10 +22,12 @@ def pending(graph, config):
 
 
 def test_graph_interrupts_and_resumes(kb):
+    detailed = AnswerInterpretation(intent="answer", category="yes", specificity="detailed", mentions_scope=True,
+                                    summary="s", rationale="r", confidence=0.9)
     answers = iter([
         AnswerInterpretation(intent="answer", category="yes", summary="s", rationale="r", confidence=0.9),
-        AnswerInterpretation(intent="answer", category="yes", specificity="detailed", mentions_scope=True,
-                             summary="s", rationale="r", confidence=0.9),
+        detailed,
+        detailed,
     ])
     llm = FakeLLM({
         "interpret_answer": lambda _u: next(answers),
@@ -41,5 +43,9 @@ def test_graph_interrupts_and_resumes(kb):
     assert pending(graph, config)["message"] == "Which accounts does it apply to?"
 
     graph.invoke(Command(resume="All of them, with Authenticator"), config)
+    assert "What could we look at to confirm it?" in pending(graph, config)["message"]
+
+    graph.invoke(Command(resume="Yes, the conditional access policy"), config)
     assert pending(graph, config) is None
-    assert graph.get_state(config).values["results"]["IAM-01"]["status"] == "implemented"
+    result = graph.get_state(config).values["results"]["IAM-01"]
+    assert result["status"] == "implemented" and result["is_preliminary"] and result["evidence_pending"]

@@ -6,7 +6,7 @@ from __future__ import annotations
 from .schemas import Missing, Question
 
 INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.2.0"
-FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.2.0"
+FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.3.0"
 CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.2.0"
 
 _ROLE = (
@@ -50,6 +50,7 @@ def interpret(question: Question, turns: list[dict]) -> tuple[str, str]:
 _MISSING_GOAL = {
     Missing.scope: "find out exactly which accounts or systems it applies to (all of them? cloud included?)",
     Missing.evidence: "ask for something verifiable that shows it (configuration, policy, screenshot, report)",
+    Missing.detail: "ask for the specific detail that is still missing",
     Missing.gap: "find out which part is missing or not yet covered",
     Missing.justification: "ask why the control does not apply to their context",
     Missing.knowledge_owner: "ask who in the organization would know, or what they know for sure",
@@ -63,9 +64,12 @@ def follow_up(question: Question, turns: list[dict], key_quote: str, missing: Mi
         "participant just said. Do not repeat the original question word for word. "
         "Give no opinions or conclusions. Return JSON with the field 'question'."
     )
+    goal = _MISSING_GOAL[missing]
+    if missing is Missing.detail:
+        goal += f": {question.detail_needed}"
     user = (
         f"Original question: {question.text}\n"
-        f"Goal of the follow-up: {_MISSING_GOAL[missing]}\n"
+        f"Goal of the follow-up: {goal}\n"
         f"What the participant said (to quote): \"{key_quote}\"\n\n"
         f"Conversation:\n{_dialogue(turns)}"
     )
@@ -89,8 +93,18 @@ def clarify(question: Question, participant_message: str) -> tuple[str, str]:
 FALLBACK_FOLLOW_UPS = {
     Missing.scope: "You mentioned \"{quote}\". Which accounts or systems does it apply to exactly? Does it include cloud services?",
     Missing.evidence: "Understood: \"{quote}\". What could we look at to confirm it, for example a configuration or a policy?",
+    Missing.detail: "You mentioned \"{quote}\". Could you describe how it works in practice?",
     Missing.gap: "You said \"{quote}\". Which part is not covered yet?",
     Missing.justification: "You mentioned \"{quote}\". Why does this control not apply to your organization?",
     Missing.knowledge_owner: "No problem. Who in the organization could confirm this?",
     Missing.redirect: "Let's go back to the question: {question}",
 }
+
+
+def evidence_request(question: Question, key_quote: str) -> str:
+    """Evidence requests are templates, not LLM calls: the turn that asks for evidence
+    already costs one interpretation call, and a second call breaks the 10 s turn limit."""
+    if not question.evidence_examples:
+        return FALLBACK_FOLLOW_UPS[Missing.evidence].format(quote=key_quote)
+    examples = "; ".join(question.evidence_examples)
+    return f"Understood: \"{key_quote}\". What could we look at to confirm it? For example: {examples}."

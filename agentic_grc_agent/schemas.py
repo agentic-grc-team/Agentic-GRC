@@ -7,6 +7,7 @@ rest of the code never parses free text.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -119,6 +120,7 @@ class Missing(str, Enum):
 
     scope = "scope"
     evidence = "evidence"
+    detail = "detail"
     gap = "gap"
     justification = "justification"
     knowledge_owner = "knowledge_owner"
@@ -135,8 +137,13 @@ class NextStep(BaseModel):
 
 
 class ControlResult(BaseModel):
+    """Status proposed by the agent for one question. A draft until an expert reviews it."""
+
     question_code: str
+    control_ids: list[str]  # NIST CSF 2.0 subcategories the question maps to
     status: ControlStatus
+    is_preliminary: Literal[True] = True  # review state lives with the expert reviews, not here
+    confidence: float = Field(ge=0, le=1)  # of the interpretation the status is based on
     reason: str
     summary: str
     follow_ups_used: int
