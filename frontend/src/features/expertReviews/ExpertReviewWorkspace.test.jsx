@@ -595,4 +595,49 @@ describe("ExpertReviewWorkspace", () => {
 
     expect(submitReviewDecision).not.toHaveBeenCalled();
   });
+
+    it("shows placeholders for missing agent assessment values", async () => {
+      listPendingReviews.mockResolvedValueOnce([
+        {
+          ...pendingReview,
+          maturity_current: null,
+          confidence: null,
+          evidence_summary: "",
+          requires_human_review: false,
+        },
+      ]);
+
+      render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+      await screen.findByRole("heading", { name: "PR.AA-03" });
+
+      expect(screen.getByText("Not assessed")).toBeInTheDocument();
+      expect(screen.getByText("Not available")).toBeInTheDocument();
+      expect(
+        screen.getByText("No evidence summary available."),
+      ).toBeInTheDocument();
+
+      expect(screen.queryByText("0%")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Accept" }),
+      ).toBeEnabled();
+    });
+
+    it("displays zero confidence as a valid value", async () => {
+      listPendingReviews.mockResolvedValueOnce([
+        {
+          ...pendingReview,
+          confidence: 0,
+        },
+      ]);
+
+      render(<ExpertReviewWorkspace accessToken="test-token" />);
+
+      await screen.findByRole("heading", { name: "PR.AA-03" });
+
+      expect(screen.getByText("0%")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Not available"),
+      ).not.toBeInTheDocument();
+    });
 });
