@@ -21,10 +21,10 @@ LOW_CONFIDENCE = 0.5
 
 
 def decide_next_step(
-    interp: AnswerInterpretation, follow_ups_used: int, max_follow_ups: int
+    interp: AnswerInterpretation, follow_ups_used: int, max_follow_ups: int, evidence_asked: bool = False
 ) -> NextStep:
     can_follow_up = follow_ups_used < max_follow_ups
-    step = _decide(interp, can_follow_up)
+    step = _decide(interp, can_follow_up, evidence_asked)
 
     # A closing decision built on a shaky interpretation goes to a human.
     if step.action is Action.close and interp.confidence < LOW_CONFIDENCE:
@@ -43,7 +43,7 @@ def _ask(missing: Missing, reason: str, rule_id: str) -> NextStep:
     return NextStep(action=Action.follow_up, missing=missing, reason=reason, rule_id=rule_id)
 
 
-def _decide(i: AnswerInterpretation, can_follow_up: bool) -> NextStep:
+def _decide(i: AnswerInterpretation, can_follow_up: bool, evidence_asked: bool) -> NextStep:
     # Clarification does not count as a follow-up and never closes the control (HU-05).
     if i.intent is Intent.clarification_request:
         return NextStep(action=Action.clarify, reason="The participant asked what the question means.", rule_id="rule:clarify")
@@ -62,10 +62,25 @@ def _decide(i: AnswerInterpretation, can_follow_up: bool) -> NextStep:
 
     if c is AnswerCategory.yes:
         if detailed and i.mentions_scope:
+            # Every affirmative answer gets one evidence request before it is closed. This does not
+            # depend on mentions_evidence: the benchmark shows the model over-reports that field.
+            if evidence_asked:
+                return _close(ControlStatus.implemented,
+                              "Affirmative answer with scope described; evidence was requested and is still to be validated.",
+                              "rule:yes_detailed")
+            if can_follow_up:
+                return _ask(Missing.evidence, "Affirmative answer with scope described; evidence not requested yet.",
+                            "rule:yes_detailed_ask_evidence")
             return _close(ControlStatus.implemented,
-                          "Affirmative answer with scope described; evidence still to be validated.", "rule:yes_detailed")
+                          "Affirmative answer with scope described; the follow-up limit was reached before evidence could be requested.",
+                          "rule:yes_detailed_limit")
         if can_follow_up:
-            missing = Missing.evidence if i.mentions_scope else Missing.scope
+            if not i.mentions_scope:
+                missing = Missing.scope
+            elif not evidence_asked:
+                missing = Missing.evidence
+            else:  # evidence is requested once per question; after that, ask for the missing detail
+                missing = Missing.detail
             return _ask(missing, "Affirmative answer without enough detail.", f"rule:yes_vague_ask_{missing.value}")
         # An unsupported "yes" is an attestation, not proof: do not mark it compliant.
         return _close(ControlStatus.not_assessed, "Affirmative answer with no verifiable detail after the maximum number of follow-ups.",

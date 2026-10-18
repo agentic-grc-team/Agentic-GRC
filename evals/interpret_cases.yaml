@@ -1,13 +1,17 @@
 # Interpretation test set. Each case = one question + the dialogue so far.
 # `expected.action` is what the rules should decide with 0 follow-ups used.
 # Labels are the team's judgement: review them with Aligo when possible.
+# A detailed "yes" expects `follow_up`: the rules ask for evidence once before closing.
+# `mentions_evidence` is labelled on those cases only to measure the model; no rule depends on it
+# (4 labelled cases: too few to read the percentage as more than a warning).
+# `evidence_asked: true` marks dialogues where the evidence request was already made.
 # Quote "yes" / "no": unquoted, YAML loads them as booleans.
 cases:
   - id: mfa-yes-detailed
     question: IAM-01
     dialogue:
       - participant: "Yes, every administrator account in Microsoft 365 and on the servers has mandatory MFA with Microsoft Authenticator, enforced through a conditional access policy."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: true, action: follow_up}
 
   - id: mfa-yes-vague
     question: IAM-01
@@ -87,7 +91,7 @@ cases:
       - participant: "Yes."
       - agent: "You said yes. Which accounts does it apply to exactly? Does it include Microsoft 365?"
       - participant: "All accounts with the Global Administrator and Exchange Administrator roles in 365, using the Authenticator app."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: true, action: follow_up}
 
   - id: mfa-followup-reveals-gap
     question: IAM-01
@@ -101,13 +105,13 @@ cases:
     question: IAM-01
     dialogue:
       - participant: "Yes, every administrator gets an SMS code when signing in to 365 and the VPN."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: false, action: follow_up}
 
   - id: review-yes-detailed
     question: IAM-02
     dialogue:
       - participant: "Yes, every quarter the IT manager reviews access to the ERP and 365 with each department head, and unneeded access is removed."
-    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: false, action: follow_up}
 
   - id: review-only-when-asked
     question: IAM-02
@@ -126,3 +130,40 @@ cases:
     dialogue:
       - participant: "No, accounts stay active until someone remembers to close them."
     expected: {intent: answer, category: "no", action: close}
+
+  # Replies to an evidence request: the reply must not change what the participant already stated.
+  - id: mfa-evidence-refused
+    question: IAM-01
+    evidence_asked: true
+    dialogue:
+      - participant: "Yes, every administrator account in Microsoft 365 and on the servers has mandatory MFA with Microsoft Authenticator."
+      - agent: "Understood. What could we look at to confirm it? For example: Conditional access policy requiring MFA for administrative roles (Entra ID)."
+      - participant: "I can't share anything right now."
+    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+
+  - id: mfa-evidence-later
+    question: IAM-01
+    evidence_asked: true
+    dialogue:
+      - participant: "Yes, every administrator account in Microsoft 365 and on the servers has mandatory MFA with Microsoft Authenticator."
+      - agent: "Understood. What could we look at to confirm it? For example: Conditional access policy requiring MFA for administrative roles (Entra ID)."
+      - participant: "I'll ask IT and send you the export next week."
+    expected: {intent: answer, category: "yes", specificity: detailed, action: close}
+
+  - id: mfa-evidence-named
+    question: IAM-01
+    evidence_asked: true
+    dialogue:
+      - participant: "Yes, every administrator account in Microsoft 365 and on the servers has mandatory MFA with Microsoft Authenticator."
+      - agent: "Understood. What could we look at to confirm it? For example: Conditional access policy requiring MFA for administrative roles (Entra ID)."
+      - participant: "Sure, it's the conditional access policy called Require MFA for admins in Entra ID."
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: true, action: close}
+
+  - id: review-evidence-refused
+    question: IAM-02
+    evidence_asked: true
+    dialogue:
+      - participant: "Yes, every quarter the IT manager reviews access to the ERP and 365 with each department head, and unneeded access is removed."
+      - agent: "Understood. What could we look at to confirm it? For example: Record of the last access review with its date and owner."
+      - participant: "We don't keep a written record of it."
+    expected: {intent: answer, category: "yes", specificity: detailed, mentions_evidence: false, action: close}

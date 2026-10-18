@@ -30,7 +30,11 @@ def apply(state: dict, update: dict) -> dict:
 
 def run_scripted(nodes: InterviewNodes, state: dict, answers: list[str]) -> dict:
     """Drive the nodes in the same order as graph.py, feeding scripted answers."""
-    state = apply(state, nodes.ask_question(state))
+    return run_scripted_more(nodes, apply(state, nodes.ask_question(state)), answers)
+
+
+def run_scripted_more(nodes: InterviewNodes, state: dict, answers: list[str]) -> dict:
+    """Continue an interview that is waiting for an answer."""
     for answer in answers:
         state = apply(state, nodes.record_answer(state, answer))
         state = apply(state, nodes.interpret(state))

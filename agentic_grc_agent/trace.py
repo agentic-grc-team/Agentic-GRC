@@ -1,8 +1,8 @@
 """Decision traces (E0-06 / AGRC-15).
 
-Field names follow docs/design/trace-schema.md in feature/AGRC-15-trace-schema,
-so moving from this JSONL file to the `decision_traces` table is a mapping, not
-a redesign. Traces are append-only.
+Field names follow docs/design/trace-schema.md (v0.2), so moving from this JSONL
+file to the `decision_traces` table is a mapping, not a redesign. Traces are
+append-only.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ class DecisionTrace(BaseModel):
     control_ids: list[str]
     module: str | None = None
     sources: list[TraceSource]
+    evidence_nature: Literal["intent", "implementation", "attestation"] | None = None
     actor_type: Literal["agent", "assessed_org_representative", "aligo_consultant"] = "agent"
     model_name: str | None = None
     prompt_id: str | None = None  # an LLM prompt or a deterministic rule ("rule:...")
@@ -48,7 +49,6 @@ class DecisionTrace(BaseModel):
     rationale: str
     confidence: float | None = Field(default=None, ge=0, le=1)
     requires_human_review: bool = False
-    # Not in the DB draft yet; useful for the 10 s NFR and the model benchmark.
     latency_ms: int | None = None
     fallback_used: bool = False
 
