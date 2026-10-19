@@ -557,3 +557,24 @@ a.rail-navigation-item { text-decoration: none; }
   .evidence-page { max-width: 100%; padding: 18px 15px; }
   .evidence-home-link { margin-inline: 15px; }
 }
+
+.review-evidence h4 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+
+.review-evidence li {
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.review-evidence blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--mint);
+  white-space: pre-wrap;
+}
+
+.review-source-reference {
+  overflow-wrap: anywhere;
+}

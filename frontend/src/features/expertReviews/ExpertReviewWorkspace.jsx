@@ -5,6 +5,7 @@ import {
   submitReviewDecision,
 } from "./api.js";
 
+import ReviewEvidence from "./ReviewEvidence.jsx";
 
 function formatValue(value) {
   return value.replaceAll("_", " ");
@@ -294,6 +295,11 @@ export default function ExpertReviewWorkspace({ accessToken }) {
             "No evidence summary available."}
         </p>
       </div>
+
+      <ReviewEvidence
+        resultId={review.result_id}
+        accessToken={accessToken}
+      />
 
       {isEditing && (
         <div className="review-section">

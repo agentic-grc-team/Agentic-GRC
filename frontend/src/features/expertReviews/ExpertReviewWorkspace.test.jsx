@@ -16,6 +16,7 @@ import {
 import ExpertReviewWorkspace from "./ExpertReviewWorkspace.jsx";
 import {
   listPendingReviews,
+  getReviewEvidence,
   submitReviewDecision,
 } from "./api.js";
 
@@ -25,6 +26,11 @@ vi.mock("./api.js", () => ({
   submitReviewDecision: vi.fn(),
 }));
 
+vi.mock("./api.js", () => ({
+  listPendingReviews: vi.fn(),
+  getReviewEvidence: vi.fn(),
+  submitReviewDecision: vi.fn(),
+}));
 
 const pendingReview = {
   result_id: "result-demo-001",
@@ -45,6 +51,13 @@ describe("ExpertReviewWorkspace", () => {
     vi.resetAllMocks();
 
     listPendingReviews.mockResolvedValue([pendingReview]);
+
+    getReviewEvidence.mockResolvedValue({
+      sources: [],
+      linked_documents: [],
+      evidence_pending: false,
+      skipped_source_count: 0,
+    });
 
     submitReviewDecision.mockResolvedValue({
       result_id: "result-demo-001",

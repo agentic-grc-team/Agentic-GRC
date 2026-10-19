@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.schemas.evidence import EvidenceFileRead
 
 
 ControlStatus = Literal[
@@ -26,6 +28,19 @@ class ReviewItem(BaseModel):
     justification: str | None = None
     not_assessed_reason: str | None = None
 
+class ReviewEvidenceSource(BaseModel):
+    source_type: Literal["document_span", "interview_turn", "other"]
+    reference: str
+    excerpt: str | None = None
+    document: EvidenceFileRead | None = None
+
+
+class ReviewEvidence(BaseModel):
+    result_id: str
+    evidence_pending: bool
+    sources: list[ReviewEvidenceSource] = Field(default_factory=list)
+    linked_documents: list[EvidenceFileRead] = Field(default_factory=list)
+    skipped_source_count: int = 0
 
 class ModifiedResult(BaseModel):
     control_status: ControlStatus

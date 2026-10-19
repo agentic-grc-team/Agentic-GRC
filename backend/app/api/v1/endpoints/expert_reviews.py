@@ -10,6 +10,7 @@ from app.db.models import User
 from app.schemas.expert_review import (
     ReviewDecision,
     ReviewDecisionResponse,
+    ReviewEvidence,
     ReviewItem,
 )
 from app.security.auth import get_current_user
@@ -18,6 +19,7 @@ from app.services.expert_reviews import (
     save_review_decision,
 )
 
+from app.services.review_evidence import get_review_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +36,22 @@ def get_pending_reviews(
 ):
     return list_pending_reviews(db, user)
 
+@router.get(
+    "/{result_id}/evidence",
+    response_model=ReviewEvidence,
+)
+def read_review_evidence(
+    result_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    return get_review_evidence(db, result_id, user)
 
 @router.post(
     "/{result_id}/decision",
     response_model=ReviewDecisionResponse,
 )
+
 def submit_review_decision(
     result_id: UUID,
     decision: ReviewDecision,
