@@ -616,3 +616,53 @@ class ControlResultReview(Base):
         Uuid(as_uuid=True), nullable=True
     )
 
+
+EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
+
+
+class EvidenceFile(Base):
+    """Metadata and extracted text of one uploaded evidence document (0008)."""
+
+    __tablename__ = "evidence_files"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_evidence_files_assessment_same_org",
+        ),
+        CheckConstraint("length(btrim(original_filename)) > 0", name="filename_not_blank"),
+        CheckConstraint(
+            "file_extension IN ('.pdf', '.txt', '.docx', '.csv', '.xlsx')",
+            name="file_extension",
+        ),
+        CheckConstraint(
+            f"size_bytes > 0 AND size_bytes <= {EVIDENCE_MAX_BYTES}",
+            name="size_bytes",
+        ),
+        CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="sha256_format"),
+        UniqueConstraint("organization_id", "id", name="uq_evidence_files_org_id"),
+        Index("ix_evidence_files_org_created", "organization_id", "created_at"),
+        Index("ix_evidence_files_org_assessment", "organization_id", "assessment_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False
+    )
+    assessment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_extension: Mapped[str] = mapped_column(String(10), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
