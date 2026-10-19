@@ -130,8 +130,8 @@ def test_unlink_returns_204_or_404(client, monkeypatch, removed, expected):
 def test_list_by_control_uses_control_query_and_hides_extracted_text(client, monkeypatch):
     seen = []
 
-    def fake_list_for_control(db, organization_id, assessment_control_id):
-        seen.append((organization_id, assessment_control_id))
+    def fake_list_for_control(db, organization_id, assessment_control_id, assessment_id):
+        seen.append((organization_id, assessment_control_id, assessment_id))
         return [
             SimpleNamespace(
                 id=EVIDENCE_ID,
@@ -156,9 +156,31 @@ def test_list_by_control_uses_control_query_and_hides_extracted_text(client, mon
     )
 
     assert response.status_code == 200
-    assert seen == [(ORG_ID, CONTROL_ID)]
+    assert seen == [(ORG_ID, CONTROL_ID, None)]
     assert [item["id"] for item in response.json()] == [str(EVIDENCE_ID)]
     assert "extracted_text" not in response.json()[0]
+
+
+def test_list_by_control_passes_assessment_filter_to_the_lookup(client, monkeypatch):
+    seen = []
+
+    def fake_list_for_control(db, organization_id, assessment_control_id, assessment_id):
+        seen.append((organization_id, assessment_control_id, assessment_id))
+        return []
+
+    monkeypatch.setattr(f"{ENDPOINT}.list_evidence_for_control", fake_list_for_control)
+
+    response = client.get(
+        "/api/v1/evidence/",
+        params={
+            "organization_id": str(ORG_ID),
+            "assessment_id": str(ASSESSMENT_ID),
+            "assessment_control_id": str(CONTROL_ID),
+        },
+    )
+
+    assert response.status_code == 200
+    assert seen == [(ORG_ID, CONTROL_ID, ASSESSMENT_ID)]
 
 
 def test_document_reference_round_trip():

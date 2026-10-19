@@ -138,9 +138,15 @@ def unlink_evidence_from_control(
 
 
 def list_evidence_for_control(
-    db: Session, organization_id: UUID, assessment_control_id: UUID
+    db: Session,
+    organization_id: UUID,
+    assessment_control_id: UUID,
+    assessment_id: UUID | None = None,
 ) -> list[EvidenceFile]:
-    """Evidence files linked to one control, newest link first. Always filtered by organization."""
+    """Evidence files linked to one control, newest link first. Always filtered by organization.
+
+    When an assessment is given too, the control must belong to it; otherwise nothing is returned.
+    """
     statement = (
         select(EvidenceFile)
         .join(
@@ -154,4 +160,6 @@ def list_evidence_for_control(
         )
         .order_by(EvidenceControlLink.created_at.desc(), EvidenceFile.id)
     )
+    if assessment_id is not None:
+        statement = statement.where(EvidenceControlLink.assessment_id == assessment_id)
     return list(db.scalars(statement))

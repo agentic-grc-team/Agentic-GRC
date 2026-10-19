@@ -149,6 +149,24 @@ def test_list_for_control_returns_only_linked_evidence_of_the_organization(db):
     assert list_evidence_for_control(db, other_organization.id, control.id) == []
 
 
+def test_list_for_control_with_assessment_requires_the_control_to_belong_to_it(db):
+    organization, assessment_a, control_a = make_context(db)
+    assessment_b = make_assessment(db, organization)
+    control_b = make_control(db, organization, assessment_b)
+    evidence_a = store(db, organization, assessment_id=assessment_a.id)
+    evidence_b = store(db, organization, assessment_id=assessment_b.id)
+    link_evidence_to_control(db, organization.id, evidence_a.id, control_a.id, None)
+    link_evidence_to_control(db, organization.id, evidence_b.id, control_b.id, None)
+
+    matching = list_evidence_for_control(db, organization.id, control_a.id, assessment_a.id)
+    mismatched = list_evidence_for_control(db, organization.id, control_a.id, assessment_b.id)
+    without_assessment = list_evidence_for_control(db, organization.id, control_a.id)
+
+    assert [item.id for item in matching] == [evidence_a.id]
+    assert mismatched == []
+    assert [item.id for item in without_assessment] == [evidence_a.id]
+
+
 def test_unlink_removes_only_the_requested_link(db):
     organization, assessment, control = make_context(db)
     other_control = make_control(db, organization, assessment, control_code="PR.AA-05")

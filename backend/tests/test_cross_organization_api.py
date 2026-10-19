@@ -20,6 +20,7 @@ from app.security.auth import get_current_user
 from app.services.evidence import store_evidence_file
 from app.services.evidence_links import link_evidence_to_control
 from app.services.reports.source import DEMO_ASSESSMENT_ID, get_report_source
+from tests.test_assessments_db import make_assessment
 from tests.test_expert_review_db import make_review_context
 
 
@@ -385,6 +386,24 @@ def test_evidence_link_of_another_organization_cannot_be_removed_or_listed(db, a
     assert listed.status_code == 403
     assert removed_under_own_organization.status_code == 404
     assert db.query(EvidenceControlLink).count() == 1
+
+
+def test_evidence_list_by_control_respects_the_assessment_filter(db, as_user_a, two_organizations):
+    org_a = two_organizations.org_a
+    other_assessment = make_assessment(db, org_a)
+    evidence = store_evidence_for(db, org_a, two_organizations.assessment_a)
+    link_evidence_to_control(db, org_a.id, evidence.id, two_organizations.control_a.id, two_organizations.user_a.id)
+    base = {"organization_id": str(org_a.id), "assessment_control_id": str(two_organizations.control_a.id)}
+
+    matching = as_user_a.get(
+        "/api/v1/evidence/", params={**base, "assessment_id": str(two_organizations.assessment_a.id)}
+    )
+    mismatched = as_user_a.get("/api/v1/evidence/", params={**base, "assessment_id": str(other_assessment.id)})
+
+    assert matching.status_code == 200
+    assert [item["id"] for item in matching.json()] == [str(evidence.id)]
+    assert mismatched.status_code == 200
+    assert mismatched.json() == []
 
 
 def test_unknown_user_without_membership_sees_nothing(db, two_organizations):

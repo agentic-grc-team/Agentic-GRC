@@ -170,7 +170,7 @@ def read_evidence_files(
     if not _active_membership(db, organization_id, user.id):
         raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
     if assessment_control_id is not None:
-        return list_evidence_for_control(db, organization_id, assessment_control_id)
+        return list_evidence_for_control(db, organization_id, assessment_control_id, assessment_id)
     return list_evidence_files(db, organization_id, assessment_id)
 
 
