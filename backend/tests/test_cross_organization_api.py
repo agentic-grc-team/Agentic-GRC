@@ -1,5 +1,6 @@
 """A member of one organization must not read or change another organization's data through the API."""
 
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -10,12 +11,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_db_session
-from app.db.models import ControlResultReview
+from app.db.models import ControlResultReview, EvidenceControlLink
 from app.db.session import get_engine
 from app.main import app
 from app.schemas.assessments import DEFAULT_KB_VERSION
 from app.schemas.report import AssessmentInfo, OrganizationInfo, ReportInput
 from app.security.auth import get_current_user
+from app.services.evidence import store_evidence_file
+from app.services.evidence_links import link_evidence_to_control
 from app.services.reports.source import DEMO_ASSESSMENT_ID, get_report_source
 from tests.test_expert_review_db import make_review_context
 
@@ -39,11 +42,11 @@ def db():
 @pytest.fixture
 def two_organizations(db):
     """Organization A (the caller's) and organization B (somebody else's), each with a consultant and data."""
-    org_a, user_a, assessment_a, _, result_a, trace_a = make_review_context(db)
-    org_b, user_b, assessment_b, _, result_b, trace_b = make_review_context(db)
+    org_a, user_a, assessment_a, control_a, result_a, trace_a = make_review_context(db)
+    org_b, user_b, assessment_b, control_b, result_b, trace_b = make_review_context(db)
     return SimpleNamespace(
-        org_a=org_a, user_a=user_a, assessment_a=assessment_a, result_a=result_a, trace_a=trace_a,
-        org_b=org_b, user_b=user_b, assessment_b=assessment_b, result_b=result_b, trace_b=trace_b,
+        org_a=org_a, user_a=user_a, assessment_a=assessment_a, control_a=control_a, result_a=result_a, trace_a=trace_a,
+        org_b=org_b, user_b=user_b, assessment_b=assessment_b, control_b=control_b, result_b=result_b, trace_b=trace_b,
     )
 
 
@@ -273,6 +276,115 @@ def test_evidence_upload_to_another_organization_is_forbidden(as_user_a, two_org
 
     assert response.status_code == 403
     assert list(tmp_path.iterdir()) == []
+
+
+def store_evidence_for(db, organization, assessment):
+    content = b"Valid compliance rules."
+    return store_evidence_file(
+        db,
+        organization_id=organization.id,
+        uploaded_by_user_id=None,
+        assessment_id=assessment.id,
+        original_filename="policy.txt",
+        stored_filename=f"{organization.id}_{uuid.uuid4()}.txt",
+        content_type="text/plain",
+        file_extension=".txt",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        extracted_text=content.decode(),
+    )
+
+
+def link_url(evidence):
+    return f"/api/v1/evidence/{evidence.id}/controls"
+
+
+def test_own_evidence_can_be_linked_to_own_control(db, as_user_a, two_organizations):
+    evidence = store_evidence_for(db, two_organizations.org_a, two_organizations.assessment_a)
+
+    response = as_user_a.post(
+        link_url(evidence),
+        json={
+            "organization_id": str(two_organizations.org_a.id),
+            "assessment_control_id": str(two_organizations.control_a.id),
+        },
+    )
+
+    assert response.status_code == 201
+    assert db.query(EvidenceControlLink).filter_by(organization_id=two_organizations.org_a.id).count() == 1
+
+
+def test_evidence_link_in_another_organization_is_forbidden(db, as_user_a, two_organizations):
+    evidence_b = store_evidence_for(db, two_organizations.org_b, two_organizations.assessment_b)
+
+    response = as_user_a.post(
+        link_url(evidence_b),
+        json={
+            "organization_id": str(two_organizations.org_b.id),
+            "assessment_control_id": str(two_organizations.control_b.id),
+        },
+    )
+
+    assert response.status_code == 403
+    assert db.query(EvidenceControlLink).count() == 0
+
+
+def test_evidence_of_another_organization_is_not_found_under_own_organization(db, as_user_a, two_organizations):
+    evidence_b = store_evidence_for(db, two_organizations.org_b, two_organizations.assessment_b)
+
+    response = as_user_a.post(
+        link_url(evidence_b),
+        json={
+            "organization_id": str(two_organizations.org_a.id),
+            "assessment_control_id": str(two_organizations.control_a.id),
+        },
+    )
+
+    assert response.status_code == 404
+    assert db.query(EvidenceControlLink).count() == 0
+
+
+def test_control_of_another_organization_is_not_found_under_own_organization(db, as_user_a, two_organizations):
+    evidence_a = store_evidence_for(db, two_organizations.org_a, two_organizations.assessment_a)
+
+    response = as_user_a.post(
+        link_url(evidence_a),
+        json={
+            "organization_id": str(two_organizations.org_a.id),
+            "assessment_control_id": str(two_organizations.control_b.id),
+        },
+    )
+
+    assert response.status_code == 404
+    assert db.query(EvidenceControlLink).count() == 0
+
+
+def test_evidence_link_of_another_organization_cannot_be_removed_or_listed(db, as_user_a, two_organizations):
+    evidence_b = store_evidence_for(db, two_organizations.org_b, two_organizations.assessment_b)
+    link_evidence_to_control(
+        db, two_organizations.org_b.id, evidence_b.id, two_organizations.control_b.id, two_organizations.user_b.id
+    )
+
+    removed = as_user_a.delete(
+        f"{link_url(evidence_b)}/{two_organizations.control_b.id}",
+        params={"organization_id": str(two_organizations.org_b.id)},
+    )
+    listed = as_user_a.get(
+        "/api/v1/evidence/",
+        params={
+            "organization_id": str(two_organizations.org_b.id),
+            "assessment_control_id": str(two_organizations.control_b.id),
+        },
+    )
+    removed_under_own_organization = as_user_a.delete(
+        f"{link_url(evidence_b)}/{two_organizations.control_b.id}",
+        params={"organization_id": str(two_organizations.org_a.id)},
+    )
+
+    assert removed.status_code == 403
+    assert listed.status_code == 403
+    assert removed_under_own_organization.status_code == 404
+    assert db.query(EvidenceControlLink).count() == 1
 
 
 def test_unknown_user_without_membership_sees_nothing(db, two_organizations):
