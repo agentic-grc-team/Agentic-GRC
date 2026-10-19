@@ -271,7 +271,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
 
         <p>
           <strong>Current maturity:</strong>{" "}
-          {review.maturity_current ?? "Not assessed"}
+          {review.maturity_current ?? "Not available"}
         </p>
 
         <p>
@@ -289,7 +289,10 @@ export default function ExpertReviewWorkspace({ accessToken }) {
 
       <div className="review-section">
         <h3>Evidence summary</h3>
-        <p>{review.evidence_summary}</p>
+        <p>
+          {review.evidence_summary?.trim() ||
+            "No evidence summary available."}
+        </p>
       </div>
 
       {isEditing && (
