@@ -28,6 +28,7 @@ class ReviewItem(BaseModel):
     justification: str | None = None
     not_assessed_reason: str | None = None
 
+
 class ReviewEvidenceSource(BaseModel):
     source_type: Literal["document_span", "interview_turn", "other"]
     reference: str
@@ -41,6 +42,7 @@ class ReviewEvidence(BaseModel):
     sources: list[ReviewEvidenceSource] = Field(default_factory=list)
     linked_documents: list[EvidenceFileRead] = Field(default_factory=list)
     skipped_source_count: int = 0
+
 
 class ModifiedResult(BaseModel):
     control_status: ControlStatus

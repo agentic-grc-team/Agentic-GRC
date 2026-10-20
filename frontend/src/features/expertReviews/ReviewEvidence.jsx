@@ -1,11 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getReviewEvidence } from "./api.js";
 
+function formatFileSize(bytes) {
+  if (bytes < 1000) {
+    return `${bytes} bytes`;
+  }
 
-export default function ReviewEvidence({ resultId, accessToken }) {
+  if (bytes < 1000000) {
+    return `${(bytes / 1000).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / 1000000).toFixed(1)} MB`;
+}
+
+export default function ReviewEvidence({ resultId, accessToken, sessionId }) {
   const [response, setResponse] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  const accessTokenRef = useRef(accessToken);
+  const sessionKey = sessionId ?? accessToken;
+
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+  }, [accessToken]);
 
   useEffect(() => {
     let active = true;
@@ -15,15 +32,15 @@ export default function ReviewEvidence({ resultId, accessToken }) {
       try {
         const evidence = await getReviewEvidence(
           resultId,
-          accessToken,
+          accessTokenRef.current,
         );
 
         if (active) {
-          setResponse({ resultId, accessToken, evidence });
+          setResponse({ resultId, sessionKey, evidence });
         }
       } catch {
         if (active) {
-          setResponse({ resultId, accessToken, error: true });
+          setResponse({ resultId, sessionKey, error: true });
         }
       }
     }
@@ -33,14 +50,14 @@ export default function ReviewEvidence({ resultId, accessToken }) {
     return () => {
       active = false;
     };
-  }, [resultId, accessToken, attempt]);
+  }, [resultId, sessionKey, attempt]);
 
   // Hide old data immediately when the result or session changes.
   let current = null;
 
   if (
     response?.resultId === resultId &&
-    response?.accessToken === accessToken
+    response?.sessionKey === sessionKey
   ) {
     current = response;
   }
@@ -114,8 +131,8 @@ export default function ReviewEvidence({ resultId, accessToken }) {
             <li key={document.id}>
               <strong>{document.original_filename}</strong>{" "}
               <span>
-                ({document.size_bytes} bytes,{" "}
-                {document.content_type})
+                ({formatFileSize(document.size_bytes)}
+                {document.content_type && `, ${document.content_type}`})
               </span>
             </li>
           ))}

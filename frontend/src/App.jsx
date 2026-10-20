@@ -284,7 +284,9 @@ function App() {
         ) : user?.accessToken ? (
           currentView === "expert-reviews" ? (
             <ExpertReviewWorkspace
+              key={user.id}
               accessToken={user.accessToken}
+              sessionId={user.id}
             />
           ) : (
             <>

@@ -18,7 +18,6 @@ from app.services.expert_reviews import (
     list_pending_reviews,
     save_review_decision,
 )
-
 from app.services.review_evidence import get_review_evidence
 
 logger = logging.getLogger(__name__)
@@ -36,6 +35,7 @@ def get_pending_reviews(
 ):
     return list_pending_reviews(db, user)
 
+
 @router.get(
     "/{result_id}/evidence",
     response_model=ReviewEvidence,
@@ -47,11 +47,11 @@ def read_review_evidence(
 ):
     return get_review_evidence(db, result_id, user)
 
+
 @router.post(
     "/{result_id}/decision",
     response_model=ReviewDecisionResponse,
 )
-
 def submit_review_decision(
     result_id: UUID,
     decision: ReviewDecision,

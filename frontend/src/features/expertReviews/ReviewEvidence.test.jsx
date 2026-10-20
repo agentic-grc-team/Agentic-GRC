@@ -331,4 +331,154 @@ describe("ReviewEvidence", () => {
       screen.queryByRole("alert"),
     ).not.toBeInTheDocument();
   });
+    it("keeps loaded evidence when the token refreshes for the same user", async () => {
+      getReviewEvidence.mockResolvedValueOnce({
+        ...emptyEvidence,
+        linked_documents: [document],
+      });
+
+      const { rerender } = render(
+        <ReviewEvidence
+          resultId="result-1"
+          accessToken="old-token"
+          sessionId="user-1"
+        />,
+      );
+
+      await screen.findByText("MFA-policy.pdf");
+
+      rerender(
+        <ReviewEvidence
+          resultId="result-1"
+          accessToken="new-token"
+          sessionId="user-1"
+        />,
+      );
+
+      expect(screen.getByText("MFA-policy.pdf")).toBeInTheDocument();
+      expect(getReviewEvidence).toHaveBeenCalledTimes(1);
+      expect(
+        screen.queryByText("Loading evidence and sources..."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("uses the refreshed token when retrying", async () => {
+      getReviewEvidence.mockRejectedValueOnce(
+        new Error("Server unavailable"),
+      );
+
+      const { rerender } = render(
+        <ReviewEvidence
+          resultId="result-1"
+          accessToken="old-token"
+          sessionId="user-1"
+        />,
+      );
+
+      await screen.findByRole("alert");
+
+      rerender(
+        <ReviewEvidence
+          resultId="result-1"
+          accessToken="new-token"
+          sessionId="user-1"
+        />,
+      );
+
+      expect(getReviewEvidence).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Retry evidence" }),
+      );
+
+      await screen.findByText(
+        "No documents are currently linked to this control.",
+      );
+
+      expect(getReviewEvidence).toHaveBeenLastCalledWith(
+        "result-1",
+        "new-token",
+      );
+    });
+
+    it.each(["success", "failure"])(
+      "ignores stale %s when the user changes for the same result",
+      async (outcome) => {
+        let resolveOld;
+        let rejectOld;
+
+        getReviewEvidence.mockImplementationOnce(
+          () =>
+            new Promise((resolve, reject) => {
+              resolveOld = resolve;
+              rejectOld = reject;
+            }),
+        );
+
+        const { rerender } = render(
+          <ReviewEvidence
+            resultId="result-1"
+            accessToken="old-token"
+            sessionId="user-old"
+          />,
+        );
+
+        rerender(
+          <ReviewEvidence
+            resultId="result-1"
+            accessToken="new-token"
+            sessionId="user-new"
+          />,
+        );
+
+        await screen.findByText(
+          "No documents are currently linked to this control.",
+        );
+
+        await act(async () => {
+          if (outcome === "success") {
+            resolveOld({
+              ...emptyEvidence,
+              linked_documents: [document],
+            });
+          } else {
+            rejectOld(new Error("Old request failed"));
+          }
+        });
+
+        expect(
+          screen.queryByText("MFA-policy.pdf"),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        expect(getReviewEvidence).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it.each([
+      [23, null, "(23 bytes)"],
+      [24500, "application/pdf", "(24.5 KB, application/pdf)"],
+      [2500000, null, "(2.5 MB)"],
+    ])(
+      "formats a document of %i bytes with content type %s",
+      async (sizeBytes, contentType, expected) => {
+        getReviewEvidence.mockResolvedValueOnce({
+          ...emptyEvidence,
+          linked_documents: [
+            {
+              ...document,
+              size_bytes: sizeBytes,
+              content_type: contentType,
+            },
+          ],
+        });
+
+        render(
+          <ReviewEvidence resultId="result-1" accessToken="token" />,
+        );
+
+        expect(
+          await screen.findByText(expected),
+        ).toBeInTheDocument();
+      },
+    );
 });
