@@ -666,3 +666,40 @@ class EvidenceFile(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+
+# The evidence file's own assessment (when it has one) must match the control's assessment; checked in the service.
+class EvidenceControlLink(Base):
+    """Links one uploaded evidence file to one control of an assessment (0009)."""
+
+    __tablename__ = "evidence_control_links"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id", "assessment_control_id"],
+            ["assessment_controls.organization_id", "assessment_controls.assessment_id", "assessment_controls.id"],
+            name="fk_evidence_control_links_control_same_assessment",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "evidence_file_id"],
+            ["evidence_files.organization_id", "evidence_files.id"],
+            name="fk_evidence_control_links_evidence_same_org",
+        ),
+        UniqueConstraint(
+            "assessment_control_id", "evidence_file_id", name="uq_evidence_control_links_control_evidence"
+        ),
+        Index("ix_evidence_control_links_org_evidence", "organization_id", "evidence_file_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_control_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    linked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+

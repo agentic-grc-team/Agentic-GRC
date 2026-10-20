@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Form, Query
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Form, Query, Response
 from sqlalchemy.orm import Session
 import hashlib
 import shutil
@@ -10,11 +10,20 @@ from docx import Document
 
 from app.api.v1.dependencies import get_db_session
 from app.db.models import EVIDENCE_MAX_BYTES, User
-from app.schemas.evidence import EvidenceFileRead
+from app.schemas.evidence import EvidenceControlLinkCreate, EvidenceControlLinkRead, EvidenceFileRead
 from app.security.auth import get_current_user
 from app.api.v1.endpoints.organizations import _active_membership
 from app.services.assessments import get_assessment
 from app.services.evidence import list_evidence_files, store_evidence_file
+from app.services.evidence_links import (
+    ControlNotFoundError,
+    EvidenceAssessmentMismatchError,
+    EvidenceNotFoundError,
+    document_reference,
+    link_evidence_to_control,
+    list_evidence_for_control,
+    unlink_evidence_from_control,
+)
 
 router = APIRouter()
 
@@ -154,9 +163,62 @@ async def upload_evidence(
 def read_evidence_files(
     organization_id: uuid.UUID = Query(...),
     assessment_id: uuid.UUID | None = Query(None),
+    assessment_control_id: uuid.UUID | None = Query(None),
     db: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
 ):
     if not _active_membership(db, organization_id, user.id):
         raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
+    if assessment_control_id is not None:
+        return list_evidence_for_control(db, organization_id, assessment_control_id, assessment_id)
     return list_evidence_files(db, organization_id, assessment_id)
+
+
+def _link_read(link) -> EvidenceControlLinkRead:
+    return EvidenceControlLinkRead(
+        id=link.id,
+        organization_id=link.organization_id,
+        assessment_id=link.assessment_id,
+        assessment_control_id=link.assessment_control_id,
+        evidence_file_id=link.evidence_file_id,
+        linked_by_user_id=link.linked_by_user_id,
+        created_at=link.created_at,
+        reference=document_reference(link.evidence_file_id),
+    )
+
+
+@router.post("/{evidence_id}/controls", response_model=EvidenceControlLinkRead)
+def link_evidence(
+    evidence_id: uuid.UUID,
+    data: EvidenceControlLinkCreate,
+    response: Response,
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    if not _active_membership(db, data.organization_id, user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
+    try:
+        link, created = link_evidence_to_control(
+            db, data.organization_id, evidence_id, data.assessment_control_id, user.id
+        )
+    except (EvidenceNotFoundError, ControlNotFoundError) as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except EvidenceAssessmentMismatchError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    response.status_code = 201 if created else 200
+    return _link_read(link)
+
+
+@router.delete("/{evidence_id}/controls/{assessment_control_id}", status_code=204)
+def unlink_evidence(
+    evidence_id: uuid.UUID,
+    assessment_control_id: uuid.UUID,
+    organization_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    if not _active_membership(db, organization_id, user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
+    if not unlink_evidence_from_control(db, organization_id, evidence_id, assessment_control_id):
+        raise HTTPException(status_code=404, detail="Link not found.")
+    return Response(status_code=204)

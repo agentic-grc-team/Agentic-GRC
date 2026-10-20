@@ -17,3 +17,21 @@ class EvidenceFileRead(BaseModel):
     size_bytes: int
     sha256: str
     created_at: datetime
+
+
+class EvidenceControlLinkCreate(BaseModel):
+    organization_id: UUID
+    assessment_control_id: UUID
+
+
+class EvidenceControlLinkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    assessment_id: UUID
+    assessment_control_id: UUID
+    evidence_file_id: UUID
+    linked_by_user_id: UUID | None
+    created_at: datetime
+    reference: str
