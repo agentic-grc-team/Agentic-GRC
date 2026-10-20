@@ -6,6 +6,7 @@ import InvitationActivation from "./auth/InvitationActivation.jsx";
 import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
+import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
 
 const EVIDENCE_PATH = "/evidence";
 
@@ -225,6 +226,19 @@ function App() {
           {!isEvidencePage && currentView === "expert-reviews" && <span className="rail-active-dot" />}
         </button>
 
+        <button
+          className={`rail-navigation-item ${!isEvidencePage && currentView === "reports" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => showView("reports")}
+          disabled={!user?.accessToken}
+          aria-label="Reports"
+          aria-current={!isEvidencePage && currentView === "reports" ? "page" : undefined}
+        >
+          <span className="rail-current-icon" aria-hidden="true">▤</span>
+          <span>Reports</span>
+          {!isEvidencePage && currentView === "reports" && <span className="rail-active-dot" />}
+        </button>
+
         {user?.accessToken && (
           <a
             className={`rail-navigation-item ${isEvidencePage ? "is-active" : ""}`}
@@ -253,9 +267,11 @@ function App() {
             <strong>
               {isEvidencePage
                 ? "Evidence upload"
-                : currentView === "expert-reviews"
-                  ? "Expert reviews"
-                  : "Organization setup"}
+                : currentView === "reports"
+                  ? "Reports"
+                  : currentView === "expert-reviews"
+                    ? "Expert reviews"
+                    : "Organization setup"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -282,7 +298,14 @@ function App() {
             onOrganizationChange={setSelectedOrganizationId}
           />
         ) : user?.accessToken ? (
-          currentView === "expert-reviews" ? (
+          currentView === "reports" ? (
+            <ReportWorkspace
+              accessToken={user.accessToken}
+              sessionId={user.id}
+              initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
+            />
+          ) : currentView === "expert-reviews" ? (
             <ExpertReviewWorkspace
               accessToken={user.accessToken}
             />

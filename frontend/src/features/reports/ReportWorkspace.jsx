@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { listAssessments } from "../assessments/api.js";
 import { listOrganizations } from "../organizations/api.js";
 import { DEMO_ASSESSMENT_ID, downloadReportPdf, getReportPreview } from "./api.js";
 import "./ReportWorkspace.css";
@@ -21,12 +22,38 @@ function describeReportError(error) {
   return error?.message || "Something went wrong. Please try again.";
 }
 
-export default function ReportWorkspace({ accessToken }) {
+function formatAssessmentOptionText(assessment) {
+  const statusLabel =
+    ASSESSMENT_STATUS_LABELS[assessment.status] || assessment.status;
+  let text = `${assessment.title} · ${statusLabel}`;
+  if (assessment.started_at) {
+    try {
+      const dateStr = new Date(assessment.started_at).toISOString().slice(0, 10);
+      text += ` · ${dateStr}`;
+    } catch {
+      // ignore invalid date
+    }
+  }
+  return text;
+}
+
+export default function ReportWorkspace({
+  accessToken,
+  sessionId = "",
+  initialOrganizationId = "",
+  onOrganizationChange,
+}) {
   const [organizations, setOrganizations] = useState([]);
   const [isLoadingOrgs, setIsLoadingOrgs] = useState(true);
   const [selectedOrgId, setSelectedOrgId] = useState(null);
   const [orgsError, setOrgsError] = useState(null);
   const [orgsRetryCounter, setOrgsRetryCounter] = useState(0);
+
+  const [assessments, setAssessments] = useState([]);
+  const [isLoadingAssessments, setIsLoadingAssessments] = useState(false);
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState(null);
+  const [assessmentsError, setAssessmentsError] = useState(null);
+  const [assessmentsRetryCounter, setAssessmentsRetryCounter] = useState(0);
 
   const [preview, setPreview] = useState(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -40,10 +67,20 @@ export default function ReportWorkspace({ accessToken }) {
   const isMountedRef = useRef(true);
   const previewRequestRef = useRef(0);
   const orgsRequestRef = useRef(0);
+  const assessmentsRequestRef = useRef(0);
   const downloadRequestRef = useRef(0);
+  const tokenRef = useRef(accessToken);
   const prevTokenRef = useRef(accessToken);
+  const prevSessionIdRef = useRef(sessionId);
   const prevSelectedOrgIdRef = useRef(selectedOrgId);
-  const lastLoadedTokenRef = useRef(accessToken);
+  const prevSelectedAssessmentIdRef = useRef(selectedAssessmentId);
+  const lastLoadedSessionRef = useRef(sessionId);
+  // Organization whose assessment list produced the current selection. On an organization change the
+  // preview effect runs in the same render as the previous organization's assessment id, so it must
+  // wait until the new organization's list has loaded.
+  const assessmentsOrgIdRef = useRef(null);
+  const initialOrganizationIdRef = useRef(initialOrganizationId);
+  const onOrganizationChangeRef = useRef(onOrganizationChange);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -54,8 +91,49 @@ export default function ReportWorkspace({ accessToken }) {
   }, []);
 
   useEffect(() => {
+    initialOrganizationIdRef.current = initialOrganizationId;
+  }, [initialOrganizationId]);
+
+  useEffect(() => {
+    onOrganizationChangeRef.current = onOrganizationChange;
+  }, [onOrganizationChange]);
+
+  useEffect(() => {
+    if (selectedOrgId) {
+      onOrganizationChangeRef.current?.(selectedOrgId);
+    }
+  }, [selectedOrgId]);
+
+  useEffect(() => {
+    tokenRef.current = accessToken;
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (prevTokenRef.current !== accessToken) {
+      prevTokenRef.current = accessToken;
+      if (prevSessionIdRef.current === sessionId) {
+        if (orgsError) {
+          setOrgsRetryCounter((c) => c + 1);
+        } else if (assessmentsError) {
+          setAssessmentsRetryCounter((c) => c + 1);
+        } else if (previewError) {
+          setRetryCounter((c) => c + 1);
+        }
+      }
+    }
+  }, [accessToken, sessionId, orgsError, assessmentsError, previewError]);
+
+  useEffect(() => {
     if (prevSelectedOrgIdRef.current !== selectedOrgId) {
       prevSelectedOrgIdRef.current = selectedOrgId;
+      assessmentsOrgIdRef.current = null;
+      setAssessments([]);
+      setSelectedAssessmentId(null);
+      setAssessmentsError(null);
+      setPreview(null);
+      setPreviewError(null);
+      ++assessmentsRequestRef.current;
+      ++previewRequestRef.current;
       ++downloadRequestRef.current;
       setIsDownloading(false);
       setDownloadStatus(null);
@@ -64,15 +142,33 @@ export default function ReportWorkspace({ accessToken }) {
   }, [selectedOrgId]);
 
   useEffect(() => {
-    if (prevTokenRef.current !== accessToken) {
-      prevTokenRef.current = accessToken;
+    if (prevSelectedAssessmentIdRef.current !== selectedAssessmentId) {
+      prevSelectedAssessmentIdRef.current = selectedAssessmentId;
+      setPreview(null);
+      setPreviewError(null);
+      ++previewRequestRef.current;
+      ++downloadRequestRef.current;
+      setIsDownloading(false);
+      setDownloadStatus(null);
+      setDownloadError(null);
+    }
+  }, [selectedAssessmentId]);
+
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      prevSessionIdRef.current = sessionId;
+      assessmentsOrgIdRef.current = null;
       setOrganizations([]);
       setSelectedOrgId(null);
+      setAssessments([]);
+      setSelectedAssessmentId(null);
+      setAssessmentsError(null);
       setPreview(null);
       setPreviewError(null);
       setDownloadStatus(null);
       setDownloadError(null);
       setIsDownloading(false);
+      ++assessmentsRequestRef.current;
       ++previewRequestRef.current;
       ++downloadRequestRef.current;
     }
@@ -81,31 +177,84 @@ export default function ReportWorkspace({ accessToken }) {
     setIsLoadingOrgs(true);
     setOrgsError(null);
 
-    listOrganizations(accessToken)
+    listOrganizations(tokenRef.current)
       .then((orgs) => {
         if (!isMountedRef.current || requestId !== orgsRequestRef.current) return;
-        lastLoadedTokenRef.current = accessToken;
+        lastLoadedSessionRef.current = sessionId;
         const orgList = Array.isArray(orgs) ? orgs : [];
         setOrganizations(orgList);
         setIsLoadingOrgs(false);
         if (orgList.length > 0) {
-          setSelectedOrgId(orgList[0].id);
+          const matchedOrg = initialOrganizationIdRef.current
+            ? orgList.find((org) => org.id === initialOrganizationIdRef.current)
+            : null;
+          setSelectedOrgId(matchedOrg ? matchedOrg.id : orgList[0].id);
         } else {
           setSelectedOrgId(null);
         }
       })
       .catch((err) => {
         if (!isMountedRef.current || requestId !== orgsRequestRef.current) return;
-        lastLoadedTokenRef.current = accessToken;
+        lastLoadedSessionRef.current = sessionId;
         setOrganizations([]);
         setOrgsError(err);
         setIsLoadingOrgs(false);
         setSelectedOrgId(null);
       });
-  }, [accessToken, orgsRetryCounter]);
+  }, [sessionId, orgsRetryCounter]);
 
   useEffect(() => {
-    if (!selectedOrgId || lastLoadedTokenRef.current !== accessToken) {
+    if (!selectedOrgId || lastLoadedSessionRef.current !== sessionId) {
+      ++assessmentsRequestRef.current;
+      assessmentsOrgIdRef.current = null;
+      setAssessments([]);
+      setSelectedAssessmentId(null);
+      setIsLoadingAssessments(false);
+      setAssessmentsError(null);
+      return;
+    }
+
+    const requestId = ++assessmentsRequestRef.current;
+    setIsLoadingAssessments(true);
+    setAssessmentsError(null);
+
+    listAssessments(selectedOrgId, tokenRef.current)
+      .then((data) => {
+        if (!isMountedRef.current || requestId !== assessmentsRequestRef.current) return;
+        const list = Array.isArray(data) ? [...data] : [];
+        if (import.meta.env.VITE_SHOW_DEMO_REPORT === "true") {
+          list.push({
+            id: DEMO_ASSESSMENT_ID,
+            title: "Demo assessment (sample data)",
+            status: "awaiting_review",
+          });
+        }
+        assessmentsOrgIdRef.current = selectedOrgId;
+        setAssessments(list);
+        setIsLoadingAssessments(false);
+        if (list.length > 0) {
+          setSelectedAssessmentId(list[0].id);
+        } else {
+          setSelectedAssessmentId(null);
+        }
+      })
+      .catch((err) => {
+        if (!isMountedRef.current || requestId !== assessmentsRequestRef.current) return;
+        assessmentsOrgIdRef.current = null;
+        setAssessments([]);
+        setSelectedAssessmentId(null);
+        setAssessmentsError(err);
+        setIsLoadingAssessments(false);
+      });
+  }, [selectedOrgId, sessionId, assessmentsRetryCounter]);
+
+  useEffect(() => {
+    if (
+      !selectedOrgId ||
+      !selectedAssessmentId ||
+      lastLoadedSessionRef.current !== sessionId ||
+      assessmentsOrgIdRef.current !== selectedOrgId
+    ) {
       ++previewRequestRef.current;
       setPreview(null);
       setIsLoadingPreview(false);
@@ -119,7 +268,7 @@ export default function ReportWorkspace({ accessToken }) {
     setDownloadStatus(null);
     setDownloadError(null);
 
-    getReportPreview(selectedOrgId, DEMO_ASSESSMENT_ID, accessToken)
+    getReportPreview(selectedOrgId, selectedAssessmentId, tokenRef.current)
       .then((data) => {
         if (!isMountedRef.current || requestId !== previewRequestRef.current) return;
         setPreview(data);
@@ -131,13 +280,14 @@ export default function ReportWorkspace({ accessToken }) {
         setPreviewError(err);
         setIsLoadingPreview(false);
       });
-  }, [selectedOrgId, accessToken, retryCounter]);
+  }, [selectedOrgId, selectedAssessmentId, sessionId, retryCounter]);
 
   async function handleDownload() {
-    if (!selectedOrgId || isDownloading) return;
+    if (!selectedOrgId || !selectedAssessmentId || isDownloading) return;
 
     const orgId = selectedOrgId;
-    const token = accessToken;
+    const assessmentId = selectedAssessmentId;
+    const token = tokenRef.current;
     const downloadId = ++downloadRequestRef.current;
 
     setIsDownloading(true);
@@ -147,7 +297,7 @@ export default function ReportWorkspace({ accessToken }) {
     try {
       const { blob, filename } = await downloadReportPdf(
         orgId,
-        DEMO_ASSESSMENT_ID,
+        assessmentId,
         token
       );
 
@@ -208,6 +358,34 @@ export default function ReportWorkspace({ accessToken }) {
         <p className="report-org-text">Organization: {organizations[0].name}</p>
       )}
 
+      {selectedOrgId && !isLoadingOrgs && !orgsError && !isLoadingAssessments && !assessmentsError && (
+        <>
+          {assessments.length >= 2 && (
+            <label className="report-org-select">
+              Assessment
+              <select
+                value={selectedAssessmentId || ""}
+                onChange={(e) => setSelectedAssessmentId(e.target.value)}
+              >
+                {assessments.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {formatAssessmentOptionText(a)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {assessments.length === 1 && (
+            <p className="report-org-text">Assessment: {assessments[0].title}</p>
+          )}
+
+          {assessments.length === 0 && (
+            <p className="report-empty">No assessments yet for this organization.</p>
+          )}
+        </>
+      )}
+
       {showEmptyState && (
         <p className="report-empty">
           You are not a member of any organization yet. Ask your administrator for an invitation.
@@ -227,7 +405,20 @@ export default function ReportWorkspace({ accessToken }) {
         </div>
       )}
 
-      {(isLoadingOrgs || isLoadingPreview) && (
+      {!isLoadingAssessments && assessmentsError && (
+        <div role="alert" className="report-error-message">
+          <span>{describeReportError(assessmentsError)}</span>
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => setAssessmentsRetryCounter((c) => c + 1)}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {(isLoadingOrgs || isLoadingAssessments || isLoadingPreview) && (
         <p role="status">Loading report preview…</p>
       )}
 
@@ -429,3 +620,4 @@ export default function ReportWorkspace({ accessToken }) {
     </section>
   );
 }
+

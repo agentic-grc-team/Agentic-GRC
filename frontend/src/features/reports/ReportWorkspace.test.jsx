@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listAssessments } from "../assessments/api.js";
 import { listOrganizations } from "../organizations/api.js";
 import { DEMO_ASSESSMENT_ID, downloadReportPdf, getReportPreview } from "./api.js";
 import ReportWorkspace from "./ReportWorkspace.jsx";
@@ -13,6 +14,10 @@ vi.mock("./api.js", async (importOriginal) => ({
 
 vi.mock("../organizations/api.js", () => ({
   listOrganizations: vi.fn(),
+}));
+
+vi.mock("../assessments/api.js", () => ({
+  listAssessments: vi.fn(),
 }));
 
 function deferred() {
@@ -165,6 +170,15 @@ const mockReportViewWithEvidencePending = {
   },
 };
 
+const mockAssessments = [
+  {
+    id: "assess-1",
+    title: "Identity and access",
+    status: "in_progress",
+    started_at: "2026-10-13T09:00:00Z",
+  },
+];
+
 describe("ReportWorkspace", () => {
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -172,9 +186,11 @@ describe("ReportWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listOrganizations.mockReset();
+    listAssessments.mockReset();
     getReportPreview.mockReset();
     downloadReportPdf.mockReset();
     listOrganizations.mockResolvedValue(mockOrganizations);
+    listAssessments.mockResolvedValue(mockAssessments);
     getReportPreview.mockResolvedValue(mockReportView);
   });
 
@@ -184,7 +200,7 @@ describe("ReportWorkspace", () => {
     vi.restoreAllMocks();
   });
 
-  it("loads organizations, then requests the preview for the first organization with DEMO_ASSESSMENT_ID and the token", async () => {
+  it("loads organizations, then requests the preview for the first organization with assess-1 and the token", async () => {
     render(<ReportWorkspace accessToken="test-bearer-token" />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading report preview…");
@@ -192,9 +208,10 @@ describe("ReportWorkspace", () => {
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
 
     expect(listOrganizations).toHaveBeenCalledWith("test-bearer-token");
+    expect(listAssessments).toHaveBeenCalledWith("org-1", "test-bearer-token");
     expect(getReportPreview).toHaveBeenCalledWith(
       "org-1",
-      DEMO_ASSESSMENT_ID,
+      "assess-1",
       "test-bearer-token"
     );
   });
@@ -274,11 +291,13 @@ describe("ReportWorkspace", () => {
 
     fireEvent.change(select, { target: { value: "org-2" } });
 
-    expect(getReportPreview).toHaveBeenCalledWith(
-      "org-2",
-      DEMO_ASSESSMENT_ID,
-      "test-token"
-    );
+    await waitFor(() => {
+      expect(getReportPreview).toHaveBeenCalledWith(
+        "org-2",
+        "assess-1",
+        "test-token"
+      );
+    });
   });
 
   it("stale response: preview for org A resolves after the user switched to org B -> only org B's data is displayed", async () => {
@@ -444,7 +463,7 @@ describe("ReportWorkspace", () => {
   });
 
   it("token change clears the old screen while new session organizations are pending", async () => {
-    const { rerender } = render(<ReportWorkspace accessToken="token-1" />);
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
@@ -454,7 +473,7 @@ describe("ReportWorkspace", () => {
     const orgsPending = deferred();
     listOrganizations.mockReturnValueOnce(orgsPending.promise);
 
-    rerender(<ReportWorkspace accessToken="token-2" />);
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
     expect(screen.queryByText("Controls in scope")).not.toBeInTheDocument();
@@ -466,10 +485,10 @@ describe("ReportWorkspace", () => {
     const preview1 = deferred();
     getReportPreview.mockReturnValueOnce(preview1.promise);
 
-    const { rerender } = render(<ReportWorkspace accessToken="token-1" />);
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await waitFor(() => {
-      expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-1");
+      expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-1");
     });
 
     const token2Orgs = [
@@ -499,7 +518,7 @@ describe("ReportWorkspace", () => {
     listOrganizations.mockReturnValueOnce(token2OrgsPending.promise);
     getReportPreview.mockResolvedValueOnce(preview2);
 
-    rerender(<ReportWorkspace accessToken="token-2" />);
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     // The old response arrives while the new session's organizations are still loading: no newer
     // preview request exists yet, so only the invalidation on token change can keep it off screen.
@@ -533,14 +552,14 @@ describe("ReportWorkspace", () => {
     const preview1 = deferred();
     getReportPreview.mockReturnValueOnce(preview1.promise);
 
-    const { rerender } = render(<ReportWorkspace accessToken="token-1" />);
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await waitFor(() => {
-      expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-1");
+      expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-1");
     });
 
     listOrganizations.mockResolvedValueOnce([]);
-    rerender(<ReportWorkspace accessToken="token-2" />);
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     await screen.findByText(
       "You are not a member of any organization yet. Ask your administrator for an invitation."
@@ -565,14 +584,14 @@ describe("ReportWorkspace", () => {
     const preview1 = deferred();
     getReportPreview.mockReturnValueOnce(preview1.promise);
 
-    const { rerender } = render(<ReportWorkspace accessToken="token-1" />);
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await waitFor(() => {
-      expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-1");
+      expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-1");
     });
 
     listOrganizations.mockRejectedValueOnce({ status: 401, message: "Unauthorized" });
-    rerender(<ReportWorkspace accessToken="token-2" />);
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
@@ -632,7 +651,7 @@ describe("ReportWorkspace", () => {
     const downloadDeferred = deferred();
     downloadReportPdf.mockReturnValueOnce(downloadDeferred.promise);
 
-    const { rerender } = render(<ReportWorkspace accessToken="token-1" />);
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
 
     const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
@@ -641,7 +660,7 @@ describe("ReportWorkspace", () => {
     expect(downloadBtn).toBeDisabled();
     expect(downloadBtn).toHaveTextContent("Preparing PDF…");
 
-    rerender(<ReportWorkspace accessToken="token-2" />);
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     await act(async () => {
       downloadDeferred.resolve({
@@ -710,18 +729,18 @@ describe("ReportWorkspace", () => {
   });
 
   it("token change never requests the previous organization's preview with the new token", async () => {
-    const { rerender } = render(<ReportWorkspace accessToken="token-1" />);
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
-    expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-1");
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-1");
 
     const token2OrgsPending = deferred();
     listOrganizations.mockReturnValueOnce(token2OrgsPending.promise);
 
     // On the token change, the preview effect runs in the same render as the old selection (org-1).
-    rerender(<ReportWorkspace accessToken="token-2" />);
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
     await act(async () => {});
 
-    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-2");
+    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", "assess-1", "token-2");
     expect(getReportPreview).toHaveBeenCalledTimes(1);
 
     // The new session does not include org-1, so a call with org-1 and token-2 is never legitimate.
@@ -730,9 +749,9 @@ describe("ReportWorkspace", () => {
     });
 
     await waitFor(() => {
-      expect(getReportPreview).toHaveBeenCalledWith("org-2", DEMO_ASSESSMENT_ID, "token-2");
+      expect(getReportPreview).toHaveBeenCalledWith("org-2", "assess-1", "token-2");
     });
-    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "token-2");
+    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", "assess-1", "token-2");
     expect(getReportPreview).toHaveBeenCalledTimes(2);
   });
 
@@ -876,5 +895,550 @@ describe("ReportWorkspace", () => {
     expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
+
+  it("requests assessments for the selected organization, then the preview for the first assessment", async () => {
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    expect(listOrganizations).toHaveBeenCalledWith("test-token");
+    expect(listAssessments).toHaveBeenCalledWith("org-1", "test-token");
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "test-token");
+  });
+
+  it("with 2 assessments: the picker shows both labels (title · status · date); choosing the second requests its preview", async () => {
+    listAssessments.mockResolvedValueOnce([
+      {
+        id: "assess-1",
+        title: "Identity and access",
+        status: "in_progress",
+        started_at: "2026-10-13T09:00:00Z",
+      },
+      {
+        id: "assess-2",
+        title: "Network security",
+        status: "awaiting_review",
+        started_at: "2026-09-01T12:00:00Z",
+      },
+    ]);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const select = screen.getByLabelText("Assessment");
+    expect(select).toBeInTheDocument();
+
+    const options = within(select).getAllByRole("option");
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveTextContent("Identity and access · In progress · 2026-10-13");
+    expect(options[1]).toHaveTextContent("Network security · Awaiting review · 2026-09-01");
+
+    fireEvent.change(select, { target: { value: "assess-2" } });
+
+    await waitFor(() => {
+      expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-2", "test-token");
+    });
+  });
+
+  it("with 0 assessments: shows 'No assessments yet for this organization.' and getReportPreview is not called", async () => {
+    listAssessments.mockResolvedValueOnce([]);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    await screen.findByText("No assessments yet for this organization.");
+
+    expect(getReportPreview).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Assessment")).not.toBeInTheDocument();
+  });
+
+  it("exactly 1 assessment: shows 'Assessment: Identity and access' and no select", async () => {
+    listAssessments.mockResolvedValueOnce([
+      {
+        id: "assess-1",
+        title: "Identity and access",
+        status: "in_progress",
+        started_at: "2026-10-13T09:00:00Z",
+      },
+    ]);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    expect(screen.getByText("Assessment: Identity and access")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Assessment")).not.toBeInTheDocument();
+  });
+
+  it("assessment list error 401 -> session-expired alert; 'Try again' calls listAssessments again", async () => {
+    listAssessments.mockRejectedValueOnce({
+      status: 401,
+      message: "Could not validate credentials.",
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
+    expect(getReportPreview).not.toHaveBeenCalled();
+
+    listAssessments.mockResolvedValueOnce(mockAssessments);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    expect(listAssessments).toHaveBeenCalledTimes(2);
+  });
+
+  it("stale assessments: the list for org A resolves after switching to org B -> only B's assessments are shown and only B's preview is requested", async () => {
+    const assessmentsA = deferred();
+    const assessmentsB = deferred();
+
+    listAssessments.mockImplementation((orgId) => {
+      if (orgId === "org-1") return assessmentsA.promise;
+      if (orgId === "org-2") return assessmentsB.promise;
+      return Promise.reject(new Error("Unknown org"));
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const orgSelect = await screen.findByLabelText("Organization");
+    fireEvent.change(orgSelect, { target: { value: "org-2" } });
+
+    await act(async () => {
+      assessmentsB.resolve([
+        {
+          id: "assess-b",
+          title: "Org B Assessment",
+          status: "completed",
+        },
+      ]);
+    });
+
+    await screen.findByText("Assessment: Org B Assessment");
+
+    await act(async () => {
+      assessmentsA.resolve([
+        {
+          id: "assess-a",
+          title: "Org A Assessment",
+          status: "draft",
+        },
+      ]);
+    });
+
+    expect(screen.getByText("Assessment: Org B Assessment")).toBeInTheDocument();
+    expect(screen.queryByText("Assessment: Org A Assessment")).not.toBeInTheDocument();
+    expect(getReportPreview).toHaveBeenCalledWith("org-2", "assess-b", "test-token");
+    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", expect.anything(), expect.anything());
+    expect(getReportPreview).not.toHaveBeenCalledWith(expect.anything(), "assess-a", expect.anything());
+  });
+
+  it("organization change never requests the new organization's preview with the previous organization's assessment", async () => {
+    listAssessments.mockImplementation((orgId) =>
+      Promise.resolve(
+        orgId === "org-1"
+          ? [{ id: "assess-a", title: "Org A Assessment", status: "in_progress" }]
+          : [{ id: "assess-b", title: "Org B Assessment", status: "in_progress" }]
+      )
+    );
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    // Organization A is fully loaded (assessment selected, preview shown) before the switch.
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-a", "test-token");
+
+    fireEvent.change(screen.getByLabelText("Organization"), { target: { value: "org-2" } });
+
+    await waitFor(() => {
+      expect(getReportPreview).toHaveBeenCalledWith("org-2", "assess-b", "test-token");
+    });
+    expect(getReportPreview).not.toHaveBeenCalledWith("org-2", "assess-a", "test-token");
+    expect(getReportPreview).toHaveBeenCalledTimes(2);
+  });
+
+  it("stale preview on assessment change: preview for assessment 1 resolves after selecting assessment 2 -> only assessment 2's data is shown", async () => {
+    listAssessments.mockResolvedValueOnce([
+      {
+        id: "assess-1",
+        title: "Assessment 1",
+        status: "in_progress",
+      },
+      {
+        id: "assess-2",
+        title: "Assessment 2",
+        status: "in_progress",
+      },
+    ]);
+
+    const preview1 = deferred();
+    const preview2 = deferred();
+
+    getReportPreview.mockImplementation((_orgId, assessId) => {
+      if (assessId === "assess-1") return preview1.promise;
+      if (assessId === "assess-2") return preview2.promise;
+      return Promise.reject(new Error("Unknown assessment"));
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const assessSelect = await screen.findByLabelText("Assessment");
+    fireEvent.change(assessSelect, { target: { value: "assess-2" } });
+
+    await act(async () => {
+      preview2.resolve({
+        ...mockReportView,
+        assessment: {
+          ...mockReportView.assessment,
+          id: "assess-2",
+          title: "Assessment 2 Title",
+        },
+      });
+    });
+
+    await screen.findByRole("heading", { name: "Assessment 2 Title" });
+
+    await act(async () => {
+      preview1.resolve({
+        ...mockReportView,
+        assessment: {
+          ...mockReportView.assessment,
+          id: "assess-1",
+          title: "Assessment 1 Title",
+        },
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "Assessment 2 Title" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Assessment 1 Title" })).not.toBeInTheDocument();
+  });
+
+  it("stale download on assessment change: download pending for assessment 1 -> select assessment 2 -> resolve -> no createObjectURL, no click, no 'Report downloaded.'; button enabled", async () => {
+    listAssessments.mockResolvedValue([
+      {
+        id: "assess-1",
+        title: "Assessment 1",
+        status: "in_progress",
+      },
+      {
+        id: "assess-2",
+        title: "Assessment 2",
+        status: "in_progress",
+      },
+    ]);
+
+    URL.createObjectURL = vi.fn(() => "blob:test");
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const downloadDeferred = deferred();
+    downloadReportPdf.mockReturnValueOnce(downloadDeferred.promise);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
+    fireEvent.click(downloadBtn);
+
+    expect(downloadBtn).toBeDisabled();
+    expect(downloadBtn).toHaveTextContent("Preparing PDF…");
+
+    const select = screen.getByLabelText("Assessment");
+    fireEvent.change(select, { target: { value: "assess-2" } });
+
+    await act(async () => {
+      downloadDeferred.resolve({
+        blob: new Blob(["%PDF-1.4 demo"]),
+        filename: "agentic-grc-report-assess1.pdf",
+      });
+    });
+
+    expect(clickSpy).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(screen.queryByText("Report downloaded.")).not.toBeInTheDocument();
+
+    const currentDownloadBtn = await screen.findByRole("button", { name: "Download PDF" });
+    expect(currentDownloadBtn).not.toBeDisabled();
+    expect(currentDownloadBtn).toHaveTextContent("Download PDF");
+  });
+
+  it("download uses the selected assessment id", async () => {
+    listAssessments.mockResolvedValueOnce([
+      {
+        id: "assess-1",
+        title: "Assessment 1",
+        status: "in_progress",
+      },
+      {
+        id: "assess-2",
+        title: "Assessment 2",
+        status: "in_progress",
+      },
+    ]);
+
+    downloadReportPdf.mockResolvedValueOnce({
+      blob: new Blob(["%PDF-1.4 demo"]),
+      filename: "agentic-grc-report.pdf",
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const select = screen.getByLabelText("Assessment");
+    fireEvent.change(select, { target: { value: "assess-2" } });
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
+    fireEvent.click(downloadBtn);
+
+    expect(downloadReportPdf).toHaveBeenCalledWith("org-1", "assess-2", "test-token");
+  });
+
+  it("demo option: with VITE_SHOW_DEMO_REPORT='true' and 0 real assessments -> demo assessment shown and preview requested; unset -> empty message and no demo", async () => {
+    listAssessments.mockResolvedValue([]);
+
+    // 1. With variable unset
+    const { unmount } = render(<ReportWorkspace accessToken="test-token" />);
+
+    await screen.findByText("No assessments yet for this organization.");
+    expect(getReportPreview).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Demo assessment/)).not.toBeInTheDocument();
+
+    unmount();
+    getReportPreview.mockClear();
+    listAssessments.mockResolvedValue([]);
+
+    // 2. With VITE_SHOW_DEMO_REPORT = "true"
+    vi.stubEnv("VITE_SHOW_DEMO_REPORT", "true");
+    try {
+      render(<ReportWorkspace accessToken="test-token" />);
+
+      await screen.findByText("Assessment: Demo assessment (sample data)");
+      expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "test-token");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("Token refresh keeps the selection", async () => {
+    listAssessments.mockImplementation((orgId) =>
+      Promise.resolve([
+        { id: `${orgId}-assess-1`, title: `${orgId} Assess 1`, status: "in_progress" },
+        { id: `${orgId}-assess-2`, title: `${orgId} Assess 2`, status: "in_progress" },
+      ])
+    );
+    getReportPreview.mockImplementation((orgId, assessId) =>
+      Promise.resolve({
+        ...mockReportView,
+        organization: { ...mockReportView.organization, id: orgId },
+        assessment: { ...mockReportView.assessment, id: assessId, title: `Preview ${assessId}` },
+      })
+    );
+
+    const { rerender } = render(
+      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
+    );
+
+    await screen.findByRole("heading", { name: "Preview org-1-assess-1" });
+
+    // Select org-2 and its second assessment
+    fireEvent.change(screen.getByLabelText("Organization"), { target: { value: "org-2" } });
+    await screen.findByRole("heading", { name: "Preview org-2-assess-1" });
+
+    fireEvent.change(screen.getByLabelText("Assessment"), { target: { value: "org-2-assess-2" } });
+    await screen.findByRole("heading", { name: "Preview org-2-assess-2" });
+
+    const orgsCallsBefore = listOrganizations.mock.calls.length;
+    const assessmentsCallsBefore = listAssessments.mock.calls.length;
+    const previewCallsBefore = getReportPreview.mock.calls.length;
+
+    // Rerender with new token and same sessionId
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-1" />);
+
+    expect(listOrganizations).toHaveBeenCalledTimes(1);
+    expect(listOrganizations).toHaveBeenCalledTimes(orgsCallsBefore);
+    expect(listAssessments).toHaveBeenCalledTimes(assessmentsCallsBefore);
+    expect(getReportPreview).toHaveBeenCalledTimes(previewCallsBefore);
+
+    expect(screen.getByLabelText("Organization")).toHaveValue("org-2");
+    expect(screen.getByLabelText("Assessment")).toHaveValue("org-2-assess-2");
+    expect(
+      screen.getByRole("heading", { name: "Preview org-2-assess-2" })
+    ).toBeInTheDocument();
+  });
+
+  it("Token refresh uses the new token", async () => {
+    listAssessments.mockImplementation((orgId) =>
+      Promise.resolve([
+        { id: `${orgId}-assess-1`, title: `${orgId} Assess 1`, status: "in_progress" },
+        { id: `${orgId}-assess-2`, title: `${orgId} Assess 2`, status: "in_progress" },
+      ])
+    );
+    getReportPreview.mockImplementation((orgId, assessId) =>
+      Promise.resolve({
+        ...mockReportView,
+        organization: { ...mockReportView.organization, id: orgId },
+        assessment: { ...mockReportView.assessment, id: assessId, title: `Preview ${assessId}` },
+      })
+    );
+
+    URL.createObjectURL = vi.fn(() => "blob:test");
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    downloadReportPdf.mockResolvedValueOnce({
+      blob: new Blob(["%PDF-1.4 demo"]),
+      filename: "report.pdf",
+    });
+
+    const { rerender } = render(
+      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
+    );
+
+    await screen.findByRole("heading", { name: "Preview org-1-assess-1" });
+
+    fireEvent.change(screen.getByLabelText("Organization"), { target: { value: "org-2" } });
+    await screen.findByRole("heading", { name: "Preview org-2-assess-1" });
+
+    fireEvent.change(screen.getByLabelText("Assessment"), { target: { value: "org-2-assess-2" } });
+    await screen.findByRole("heading", { name: "Preview org-2-assess-2" });
+
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-1" />);
+
+    const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
+    fireEvent.click(downloadBtn);
+
+    expect(downloadReportPdf).toHaveBeenCalledWith("org-2", "org-2-assess-2", "token-2");
+  });
+
+  it("Token refresh during a pending download keeps it", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:test");
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const downloadDeferred = deferred();
+    downloadReportPdf.mockReturnValueOnce(downloadDeferred.promise);
+
+    const { rerender } = render(
+      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
+    );
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
+    fireEvent.click(downloadBtn);
+
+    expect(downloadBtn).toBeDisabled();
+    expect(downloadBtn).toHaveTextContent("Preparing PDF…");
+
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-1" />);
+
+    await act(async () => {
+      downloadDeferred.resolve({
+        blob: new Blob(["%PDF-1.4 demo"]),
+        filename: "agentic-grc-report.pdf",
+      });
+    });
+
+    await screen.findByText("Report downloaded.");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it("Token refresh retries a failed step", async () => {
+    getReportPreview.mockRejectedValueOnce({
+      status: 401,
+      message: "Could not validate credentials.",
+    });
+
+    const { rerender } = render(
+      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
+
+    getReportPreview.mockResolvedValueOnce(mockReportView);
+
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-1" />);
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-2");
+    expect(getReportPreview).toHaveBeenCalledTimes(2);
+  });
+
+  it("New session still resets", async () => {
+    const { rerender } = render(
+      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
+    );
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+
+    const orgsPending = deferred();
+    listOrganizations.mockReturnValueOnce(orgsPending.promise);
+
+    rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
+
+    expect(
+      screen.queryByRole("heading", { name: "Identity and access — demo assessment" })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenCalledWith("token-2");
+  });
+
+  it("initialOrganizationId", async () => {
+    const { unmount } = render(
+      <ReportWorkspace
+        accessToken="test-token"
+        sessionId="user-1"
+        initialOrganizationId="org-2"
+      />
+    );
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    // org-2 is requested first: the first organization (org-1) is never loaded on the way.
+    expect(listAssessments.mock.calls[0]).toEqual(["org-2", "test-token"]);
+    expect(listAssessments).not.toHaveBeenCalledWith("org-1", "test-token");
+    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", expect.anything(), expect.anything());
+    expect(screen.getByLabelText("Organization")).toHaveValue("org-2");
+
+    unmount();
+    listAssessments.mockClear();
+
+    render(
+      <ReportWorkspace
+        accessToken="test-token"
+        sessionId="user-1"
+        initialOrganizationId="unknown-org-id"
+      />
+    );
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    expect(listAssessments).toHaveBeenCalledWith("org-1", "test-token");
+    expect(screen.getByLabelText("Organization")).toHaveValue("org-1");
+  });
+
+  it("onOrganizationChange", async () => {
+    const onOrganizationChange = vi.fn();
+
+    render(
+      <ReportWorkspace
+        accessToken="test-token"
+        sessionId="user-1"
+        onOrganizationChange={onOrganizationChange}
+      />
+    );
+
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+    expect(onOrganizationChange).toHaveBeenCalledWith("org-1");
+
+    fireEvent.change(screen.getByLabelText("Organization"), { target: { value: "org-2" } });
+
+    await waitFor(() => {
+      expect(onOrganizationChange).toHaveBeenCalledWith("org-2");
+    });
+  });
 });
+
 

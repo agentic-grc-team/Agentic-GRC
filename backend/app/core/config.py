@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     smtp_sender_email: str | None = None
     smtp_starttls: bool = True
     smtp_timeout_seconds: int = 10
+    allow_demo_report: bool = False
 
     @field_validator("supabase_url")
     @classmethod
@@ -65,6 +66,8 @@ class Settings(BaseSettings):
         if bool(self.smtp_username) != (self.smtp_password is not None):
             raise ValueError("Set both SMTP_USERNAME and SMTP_PASSWORD, or leave both unset.")
         if self.app_environment == "production":
+            if self.allow_demo_report:
+                raise ValueError("ALLOW_DEMO_REPORT must be false in production.")
             if not self.app_base_url.startswith("https://"):
                 raise ValueError("APP_BASE_URL must use HTTPS in production.")
             if not self.supabase_url or not self.supabase_url.startswith("https://"):

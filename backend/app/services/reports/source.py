@@ -1,10 +1,20 @@
+import logging
 from datetime import datetime, timezone
 from typing import Protocol
 from uuid import UUID
 
+from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Organization
+from app.core.config import get_settings
+from app.db.models import (
+    Assessment,
+    AssessmentControl,
+    ControlResult,
+    ControlResultReview,
+    Organization,
+)
 from app.schemas.report import (
     AssessmentInfo,
     ControlInScope,
@@ -15,7 +25,10 @@ from app.schemas.report import (
     ResultVersion,
 )
 
+logger = logging.getLogger(__name__)
+
 DEMO_ASSESSMENT_ID = UUID("00000000-0000-4000-8000-000000000014")
+CONSULTANT_DISPLAY_NAME = "Aligo consultant"
 
 
 class ReportDataSource(Protocol):
@@ -199,5 +212,200 @@ class DemoReportSource:
         )
 
 
+class DbReportSource:
+    def load(
+        self, db: Session | None, organization_id: UUID, assessment_id: UUID
+    ) -> ReportInput | None:
+        if db is None:
+            return None
+
+        # 1. Filter by BOTH ids so another organization's assessment can never be read.
+        assessment = db.scalar(
+            select(Assessment).where(
+                Assessment.id == assessment_id,
+                Assessment.organization_id == organization_id,
+            )
+        )
+        if assessment is None:
+            return None
+
+        # 2. Organization
+        org = db.get(Organization, organization_id)
+        if org is None:
+            return None
+
+        org_info = OrganizationInfo(
+            id=organization_id,
+            name=org.name,
+            sector=org.industry_sector.label,
+            size=org.organization_size.label,
+        )
+
+        # 3. AssessmentInfo
+        if assessment.framework_code == "NIST-CSF":
+            framework = "NIST CSF " + assessment.framework_version
+        else:
+            framework = f"{assessment.framework_code} {assessment.framework_version}"
+
+        assessment_info = AssessmentInfo(
+            id=assessment.id,
+            title=assessment.title,
+            framework=framework,
+            kb_version=assessment.kb_version,
+            status=assessment.status,
+            started_at=assessment.started_at,
+            completed_at=assessment.completed_at,
+        )
+
+        # 4. Controls in scope (ordered by control_code)
+        controls = list(
+            db.scalars(
+                select(AssessmentControl)
+                .where(
+                    AssessmentControl.organization_id == organization_id,
+                    AssessmentControl.assessment_id == assessment_id,
+                    AssessmentControl.in_scope.is_(True),
+                )
+                .order_by(AssessmentControl.control_code)
+            )
+        )
+
+        # 5. Results and reviews in bulk (no per-control queries).
+        control_ids = [c.id for c in controls]
+        if control_ids:
+            results = list(
+                db.scalars(
+                    select(ControlResult)
+                    .where(
+                        ControlResult.organization_id == organization_id,
+                        ControlResult.assessment_id == assessment_id,
+                        ControlResult.assessment_control_id.in_(control_ids),
+                    )
+                    .order_by(ControlResult.assessment_control_id, ControlResult.version_no)
+                )
+            )
+        else:
+            results = []
+
+        result_ids = [r.id for r in results]
+        if result_ids:
+            reviews = list(
+                db.scalars(
+                    select(ControlResultReview).where(
+                        ControlResultReview.organization_id == organization_id,
+                        ControlResultReview.assessment_id == assessment_id,
+                        ControlResultReview.control_result_id.in_(result_ids),
+                    )
+                )
+            )
+        else:
+            reviews = []
+
+        reviews_by_result_id = {rev.control_result_id: rev for rev in reviews}
+
+        # 6. Map each ControlResult to ResultVersion
+        versions_by_control_id: dict[UUID, list[ResultVersion]] = {c.id: [] for c in controls}
+
+        for result in results:
+            # Reports go to the client: show a neutral label, never the consultant's email. Use a display name here once users have one.
+            author_name = (
+                CONSULTANT_DISPLAY_NAME if result.author_actor == "aligo_consultant" else None
+            )
+
+            review = None
+            if result.author_actor == "agent":
+                rev = reviews_by_result_id.get(result.id)
+                if rev is not None:
+                    review = ResultReview(
+                        outcome=rev.outcome,
+                        reviewer_name=CONSULTANT_DISPLAY_NAME,
+                        reviewed_at=rev.reviewed_at,
+                        comment=rev.comment or "",
+                    )
+
+            evidence_items: list[EvidenceReference] = []
+            for item in (result.evidence_refs or []):
+                # Warnings name the result and the failing fields only: evidence text must not end up in logs.
+                if not isinstance(item, dict):
+                    logger.warning(
+                        "Skipping evidence reference in result %s: expected an object, got %s",
+                        result.id,
+                        type(item).__name__,
+                    )
+                    continue
+                try:
+                    raw_excerpt = item.get("excerpt")
+                    if raw_excerpt is not None and isinstance(raw_excerpt, str) and len(raw_excerpt) > 300:
+                        raw_excerpt = raw_excerpt[:297] + "..."
+                    ev = EvidenceReference(
+                        source_type=item.get("source_type"),
+                        reference=item.get("reference"),
+                        excerpt=raw_excerpt,
+                        nature=item.get("nature"),
+                    )
+                    evidence_items.append(ev)
+                except ValidationError as exc:
+                    logger.warning(
+                        "Skipping invalid evidence reference in result %s: invalid fields %s",
+                        result.id,
+                        sorted({".".join(str(part) for part in error["loc"]) for error in exc.errors()}),
+                    )
+
+            version = ResultVersion(
+                version_no=result.version_no,
+                author_actor=result.author_actor,
+                author_name=author_name,
+                control_status=result.control_status,
+                explanation=result.explanation,
+                justification=result.justification,
+                not_assessed_reason=result.not_assessed_reason,
+                confidence=float(result.confidence) if result.confidence is not None else None,
+                evidence=evidence_items,
+                evidence_pending=bool(result.evidence_pending),
+                created_at=result.created_at,
+                review=review,
+            )
+
+            if result.assessment_control_id in versions_by_control_id:
+                versions_by_control_id[result.assessment_control_id].append(version)
+
+        controls_in_scope = [
+            ControlInScope(
+                code=control.control_code,
+                title=control.control_title,
+                versions=versions_by_control_id[control.id],
+            )
+            for control in controls
+        ]
+
+        # 7. Return ReportInput
+        return ReportInput(
+            organization=org_info,
+            assessment=assessment_info,
+            controls=controls_in_scope,
+            is_demo_data=False,
+        )
+
+
+class CompositeReportSource:
+    """Demo assessment outside production; real data otherwise."""
+
+    def __init__(self, allow_demo: bool) -> None:
+        self._demo = DemoReportSource()
+        self._db = DbReportSource()
+        self._allow_demo = allow_demo
+
+    def load(
+        self, db: Session | None, organization_id: UUID, assessment_id: UUID
+    ) -> ReportInput | None:
+        if assessment_id == DEMO_ASSESSMENT_ID:
+            return self._demo.load(db, organization_id, assessment_id) if self._allow_demo else None
+        return self._db.load(db, organization_id, assessment_id)
+
+
 def get_report_source() -> ReportDataSource:
-    return DemoReportSource()
+    settings = get_settings()
+    return CompositeReportSource(
+        allow_demo=settings.allow_demo_report and settings.app_environment != "production"
+    )
+
