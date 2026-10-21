@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     supabase_secret_key: SecretStr | None = None
     app_base_url: str = "http://127.0.0.1:4178"
     app_environment: Literal["development", "test", "production"] = "development"
+    interview_data_mode: Literal["synthetic", "approved_anonymized", "real"] = "synthetic"
+    interview_anonymized_data_approved: bool = False
+    interview_external_transfer_approved: bool = False
+    interview_retention_approved: bool = False
+    interview_deletion_approved: bool = False
+    interview_redaction_approved: bool = False
+    interview_storage_approved: bool = False
+    interview_topology_documented: bool = False
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -65,6 +73,33 @@ class Settings(BaseSettings):
     def validate_deployment_security(self) -> Settings:
         if bool(self.smtp_username) != (self.smtp_password is not None):
             raise ValueError("Set both SMTP_USERNAME and SMTP_PASSWORD, or leave both unset.")
+        if (
+            self.interview_data_mode == "approved_anonymized"
+            and not self.interview_anonymized_data_approved
+        ):
+            raise ValueError(
+                "Approved anonymized interview data requires "
+                "INTERVIEW_ANONYMIZED_DATA_APPROVED=true."
+            )
+        if self.interview_data_mode == "real":
+            required_interview_approvals = (
+                ("INTERVIEW_EXTERNAL_TRANSFER_APPROVED", self.interview_external_transfer_approved),
+                ("INTERVIEW_RETENTION_APPROVED", self.interview_retention_approved),
+                ("INTERVIEW_DELETION_APPROVED", self.interview_deletion_approved),
+                ("INTERVIEW_REDACTION_APPROVED", self.interview_redaction_approved),
+                ("INTERVIEW_STORAGE_APPROVED", self.interview_storage_approved),
+                ("INTERVIEW_TOPOLOGY_DOCUMENTED", self.interview_topology_documented),
+            )
+            missing_interview_approvals = [
+                name for name, approved in required_interview_approvals if not approved
+            ]
+            if missing_interview_approvals:
+                missing = ", ".join(missing_interview_approvals)
+                raise ValueError(
+                    "Real interview data is blocked until all data-policy gates are approved: "
+                    + missing
+                    + "."
+                )
         if self.app_environment == "production":
             if self.allow_demo_report:
                 raise ValueError("ALLOW_DEMO_REPORT must be false in production.")

@@ -12,6 +12,7 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 # Set the Supabase, PostgreSQL, and SMTP values described below.
 alembic upgrade head
+python -m app.cli init-interview-checkpointer
 python -m app.cli bootstrap-admin --user-id <SUPABASE_AUTH_UUID> --email <ADMIN_EMAIL>
 uvicorn app.main:app --reload
 ```
@@ -45,6 +46,7 @@ FastAPI validates each bearer token with Supabase Auth's user endpoint and uses 
 - Outbound organization email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`.
 - Runtime mode: `APP_ENVIRONMENT`.
 - Demo report: `ALLOW_DEMO_REPORT` (default false; refused in production).
+- Interview data gate: `INTERVIEW_DATA_MODE` defaults to `synthetic`; anonymized testing requires an approval flag, and real mode requires each transfer, retention, deletion, redaction, storage, and topology gate.
 
 The old `JWT_SECRET` and local password-hash settings are no longer used. Remove the temporary JWT secret from your local environment once this branch is adopted. Supabase email/password sign-in and Google OAuth are authenticated by Supabase; the current app SMTP server only sends organization invitations.
 
