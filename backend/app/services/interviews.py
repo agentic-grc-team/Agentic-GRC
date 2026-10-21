@@ -356,6 +356,21 @@ def _require_assessment_access(
     )
     if assessment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+
+    has_in_scope_controls = db.scalar(
+        select(AssessmentControl.id)
+        .where(
+            AssessmentControl.organization_id == organization_id,
+            AssessmentControl.assessment_id == assessment_id,
+            AssessmentControl.in_scope.is_(True),
+        )
+        .limit(1)
+    )
+    if has_in_scope_controls is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This assessment has no in-scope controls configured for an interview.",
+        )
     return organization, assessment, membership
 
 

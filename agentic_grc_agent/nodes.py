@@ -34,8 +34,10 @@ class InterviewState(TypedDict, total=False):
     organization_id: str
     assessment_id: str
     question_codes: list[str]
+    in_scope_control_codes: list[str]
     current_index: int
     follow_ups_used: int
+    ambiguity_clarifications_used: int
     evidence_asked: bool  # an evidence request was already made for the current question
     pending_message: str  # what the agent says next to the participant
     turns: Annotated[list[dict], operator.add]  # full transcript, append-only
@@ -45,16 +47,29 @@ class InterviewState(TypedDict, total=False):
     results: Annotated[dict, _merge]  # question_code -> ControlResult dump
 
 
-def initial_state(organization_id: str, assessment_id: str, question_codes: list[str]) -> InterviewState:
-    return {
+def initial_state(
+    organization_id: str,
+    assessment_id: str,
+    question_codes: list[str],
+    in_scope_control_codes: list[str] | None = None,
+) -> InterviewState:
+    if not question_codes:
+        raise ValueError("Assessment has no interview questions configured.")
+    if in_scope_control_codes is not None and not in_scope_control_codes:
+        raise ValueError("Assessment has no in-scope controls configured.")
+    state: InterviewState = {
         "organization_id": organization_id,
         "assessment_id": assessment_id,
         "question_codes": question_codes,
         "current_index": 0,
         "follow_ups_used": 0,
+        "ambiguity_clarifications_used": 0,
         "turns": [],
         "results": {},
     }
+    if in_scope_control_codes is not None:
+        state["in_scope_control_codes"] = list(dict.fromkeys(in_scope_control_codes))
+    return state
 
 
 @dataclass
@@ -70,8 +85,29 @@ class InterviewNodes:
         self.d = deps
 
     # ------------------------------------------------------------- helpers
+    def _question_codes(self, s: InterviewState) -> list[str]:
+        scope = s.get("in_scope_control_codes")
+        if scope is None:
+            return s["question_codes"]
+        allowed = set(scope)
+        codes = [
+            code
+            for code in s["question_codes"]
+            if any(mapping.node_code in allowed for mapping in self.d.kb.get(code).mappings)
+        ]
+        if not codes:
+            raise ValueError("No configured interview questions map to the assessment's in-scope controls.")
+        return codes
+
     def _question(self, s: InterviewState) -> Question:
-        return self.d.kb.get(s["question_codes"][s["current_index"]])
+        question = self.d.kb.get(self._question_codes(s)[s["current_index"]])
+        scope = s.get("in_scope_control_codes")
+        if scope is None:
+            return question
+        allowed = set(scope)
+        return question.model_copy(
+            update={"mappings": [mapping for mapping in question.mappings if mapping.node_code in allowed]}
+        )
 
     @staticmethod
     def _turns_for(s: InterviewState, code: str) -> list[dict]:
@@ -114,6 +150,7 @@ class InterviewNodes:
         return {
             "pending_message": text,
             "follow_ups_used": 0,
+            "ambiguity_clarifications_used": 0,
             "evidence_asked": False,
             "turns": [self._turn(s, q.code, "agent", "question", text)],
         }
@@ -137,7 +174,11 @@ class InterviewNodes:
             interp.rationale += f" ({e})"
 
         step = decide_next_step(
-            interp, s.get("follow_ups_used", 0), self.d.max_follow_ups, s.get("evidence_asked", False)
+            interp,
+            s.get("follow_ups_used", 0),
+            self.d.max_follow_ups,
+            s.get("evidence_asked", False),
+            s.get("ambiguity_clarifications_used", 0),
         )
         self._trace(
             s, q,
@@ -162,17 +203,54 @@ class InterviewNodes:
 
     def clarify(self, s: InterviewState) -> dict:
         q = self._question(s)
-        system, user = prompts.clarify(q, self._turns_for(s, q.code)[-1]["content"])
-        try:
-            out, _ = self.d.llm.structured(
-                prompt_id=prompts.CLARIFY_ID, prompt_version=prompts.CLARIFY_VERSION,
-                system=system, user=user, schema=Clarification,
+        step = NextStep.model_validate(s["last_step"])
+        turns = self._turns_for(s, q.code)
+        latest_answer = next((t["content"] for t in reversed(turns) if t["speaker"] == "participant"), "")
+
+        if step.rule_id == "rule:low_confidence_clarify":
+            system, user = prompts.ambiguity_clarification(
+                q, latest_answer, s["last_interpretation"].get("summary", "")
             )
-            text = out.explanation.strip() or q.clarification
-        except LLMError:
-            text = q.clarification
-        text = f"{text}\n\n{q.text}"
-        return {"pending_message": text, "turns": [self._turn(s, q.code, "agent", "clarification", text)]}
+            quote = latest_answer[:80].replace("\n", " ").strip()
+            fallback = (
+                f'I want to make sure I understood "{quote}". Could you clarify your answer about: '
+                f"{q.intent}"
+            )
+            try:
+                out, _ = self.d.llm.structured(
+                    prompt_id=prompts.CLARIFY_ID,
+                    prompt_version=prompts.CLARIFY_VERSION,
+                    system=system,
+                    user=user,
+                    schema=FollowUpQuestion,
+                )
+                text = out.question.strip()
+                if not text.endswith("?") or len(text) > 400:
+                    raise LLMError("clarification is not a single short question")
+            except LLMError:
+                text = fallback
+            updates = {"ambiguity_clarifications_used": s.get("ambiguity_clarifications_used", 0) + 1}
+        else:
+            system, user = prompts.clarify(q, latest_answer)
+            try:
+                out, _ = self.d.llm.structured(
+                    prompt_id=prompts.CLARIFY_ID,
+                    prompt_version=prompts.CLARIFY_VERSION,
+                    system=system,
+                    user=user,
+                    schema=Clarification,
+                )
+                text = out.explanation.strip() or q.clarification
+            except LLMError:
+                text = q.clarification
+            text = f"{text}\n\n{q.text}"
+            updates = {}
+
+        return {
+            **updates,
+            "pending_message": text,
+            "turns": [self._turn(s, q.code, "agent", "clarification", text)],
+        }
 
     def follow_up(self, s: InterviewState) -> dict:
         q = self._question(s)
@@ -239,6 +317,5 @@ class InterviewNodes:
     def route_after_interpret(s: InterviewState) -> str:
         return Action(s["last_step"]["action"]).value  # "clarify" | "follow_up" | "close"
 
-    @staticmethod
-    def route_after_close(s: InterviewState) -> str:
-        return "next" if s["current_index"] < len(s["question_codes"]) else "done"
+    def route_after_close(self, s: InterviewState) -> str:
+        return "next" if s["current_index"] < len(self._question_codes(s)) else "done"
