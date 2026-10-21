@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     interview_redaction_approved: bool = False
     interview_storage_approved: bool = False
     interview_topology_documented: bool = False
+    agrc_ollama_host: str = "http://127.0.0.1:11434"
+    agrc_llm_model: str = "llama3.1:8b"
+    agrc_llm_timeout_s: float = 8
+    agrc_llm_retries: int = 1
+    agrc_max_follow_ups: int = 3
+    agrc_kb_path: Path | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None

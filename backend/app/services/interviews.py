@@ -13,6 +13,7 @@ from app.db.models import (
     AssessmentModule,
     AssessmentParticipant,
     AssessmentSession,
+    ControlResult,
     InterviewBlock,
     InterviewTurn,
     KBVersion,
@@ -24,6 +25,7 @@ from app.db.models import (
 )
 from app.schemas.interviews import (
     InterviewControlRead,
+    InterviewDraftResultRead,
     InterviewRead,
     InterviewSessionCreate,
     InterviewSessionRead,
@@ -271,6 +273,47 @@ def save_interview_turn(
             detail="This interview session has ended.",
         )
 
+    latest_agent_turn = db.scalar(
+        select(InterviewTurn)
+        .where(
+            InterviewTurn.organization_id == organization_id,
+            InterviewTurn.session_id == session.id,
+            InterviewTurn.speaker == "agent",
+        )
+        .order_by(InterviewTurn.sequence_no.desc())
+        .limit(1)
+    )
+    if latest_agent_turn is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The interview has no pending agent question. Open or resume the interview first.",
+        )
+    if data.replies_to_turn_id != latest_agent_turn.id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="replies_to_turn_id must identify the latest agent turn in this interview.",
+        )
+    if data.question_id != latest_agent_turn.question_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="question_id must match the question on the latest agent turn.",
+        )
+    answered_prompt = db.scalar(
+        select(InterviewTurn.id)
+        .where(
+            InterviewTurn.organization_id == organization_id,
+            InterviewTurn.session_id == session.id,
+            InterviewTurn.speaker == "participant",
+            InterviewTurn.replies_to_turn_id == latest_agent_turn.id,
+        )
+        .limit(1)
+    )
+    if answered_prompt is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This agent turn already has a saved answer. Retry that answer with its idempotency key.",
+        )
+
     if data.question_id is not None:
         question_statement = (
             select(Question.id)
@@ -443,6 +486,29 @@ def _build_interview_read(
         )
         .order_by(AssessmentControl.control_code)
     ).all()
+    draft_result_rows = db.execute(
+        select(ControlResult, AssessmentControl)
+        .join(
+            AssessmentControl,
+            (AssessmentControl.id == ControlResult.assessment_control_id)
+            & (AssessmentControl.organization_id == ControlResult.organization_id)
+            & (AssessmentControl.assessment_id == ControlResult.assessment_id),
+        )
+        .where(
+            ControlResult.organization_id == organization.id,
+            ControlResult.assessment_id == assessment.id,
+            ControlResult.author_actor == "agent",
+            AssessmentControl.in_scope.is_(True),
+        )
+        .order_by(
+            AssessmentControl.control_code,
+            ControlResult.version_no.desc(),
+            ControlResult.created_at.desc(),
+        )
+    ).all()
+    latest_drafts = {}
+    for result, control in draft_result_rows:
+        latest_drafts.setdefault(control.control_code, (result, control))
     turns = []
     if session is not None:
         turns = list(
@@ -473,6 +539,26 @@ def _build_interview_read(
                 title=control.control_title,
             )
             for control in controls
+        ],
+        draft_results=[
+            InterviewDraftResultRead(
+                id=result.id,
+                assessment_control_id=control.id,
+                control_code=control.control_code,
+                control_title=control.control_title,
+                status=result.control_status,
+                explanation=result.explanation,
+                justification=result.justification,
+                not_assessed_reason=result.not_assessed_reason,
+                confidence=float(result.confidence) if result.confidence is not None else None,
+                requires_human_review=result.requires_human_review,
+                evidence_pending=result.evidence_pending,
+                evidence_summary=result.evidence_summary,
+                evidence_refs=result.evidence_refs,
+                trace_id=result.trace_id,
+                created_at=result.created_at,
+            )
+            for result, control in latest_drafts.values()
         ],
         resumed=resumed,
     )

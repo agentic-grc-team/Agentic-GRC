@@ -15,20 +15,28 @@ from app.db.models import (
 from app.schemas.decision_trace import DecisionTrace, TraceSource
 
 
-def record_trace(db: Session, trace: DecisionTrace) -> DecisionTraceRecord:
+def record_trace(
+    db: Session, trace: DecisionTrace, record_id: UUID | None = None
+) -> DecisionTraceRecord:
     """Add one validated decision to the current transaction. Traces are never updated or deleted.
 
     It only flushes: the caller commits, so a decision and the data it explains
     (for example an expert review) are saved together or not at all.
     """
-    record = DecisionTraceRecord(**trace.model_dump())
+    record_fields = trace.model_dump()
+    if record_id is not None:
+        record_fields["id"] = record_id
+    record = DecisionTraceRecord(**record_fields)
     db.add(record)
     db.flush()
     return record
 
 
 def record_interview_trace(
-    db: Session, trace: DecisionTrace, source_turn_ids: Sequence[UUID]
+    db: Session,
+    trace: DecisionTrace,
+    source_turn_ids: Sequence[UUID],
+    record_id: UUID | None = None,
 ) -> DecisionTraceRecord:
     """Persist an agent decision with durable interview-turn references.
 
@@ -66,7 +74,19 @@ def record_interview_trace(
     payload = trace.model_dump()
     payload["sources"] = sources
     persisted_trace = DecisionTrace.model_validate(payload)
-    record = record_trace(db, persisted_trace)
+    existing = db.get(DecisionTraceRecord, record_id) if record_id is not None else None
+    if existing is not None:
+        if (
+            existing.organization_id != trace.organization_id
+            or existing.assessment_id != trace.assessment_id
+            or existing.decision_type != trace.decision_type
+            or existing.output != trace.output
+            or existing.prompt_id != trace.prompt_id
+        ):
+            raise ValueError("The interview trace id was already used for different trace data.")
+        return existing
+
+    record = record_trace(db, persisted_trace, record_id=record_id)
     db.add_all(
         DecisionTraceSourceRecord(
             organization_id=trace.organization_id,

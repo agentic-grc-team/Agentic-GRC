@@ -1,7 +1,7 @@
 """REST contracts for authenticated assessment interviews."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -61,6 +61,30 @@ class InterviewControlRead(BaseModel):
     title: str
 
 
+class InterviewDraftResultRead(BaseModel):
+    id: UUID
+    assessment_control_id: UUID
+    control_code: str
+    control_title: str
+    status: Literal[
+        "implemented",
+        "partially_implemented",
+        "not_implemented",
+        "not_applicable",
+        "not_assessed",
+    ]
+    explanation: str
+    justification: str | None
+    not_assessed_reason: str | None
+    confidence: float | None
+    requires_human_review: bool
+    evidence_pending: bool
+    evidence_summary: str | None
+    evidence_refs: list[dict[str, Any]]
+    trace_id: UUID | None
+    created_at: datetime
+
+
 class InterviewSourceReference(BaseModel):
     type: Literal["interview_turn"]
     ref: str
@@ -110,9 +134,12 @@ class InterviewRead(BaseModel):
     session: InterviewSessionRead | None
     turns: list[InterviewTurnRead] = Field(default_factory=list)
     in_scope_controls: list[InterviewControlRead] = Field(default_factory=list)
+    draft_results: list[InterviewDraftResultRead] = Field(default_factory=list)
     resumed: bool = False
 
 
 class InterviewTurnReceipt(BaseModel):
     turn: InterviewTurnRead
+    agent_turns: list[InterviewTurnRead] = Field(default_factory=list)
+    draft_results: list[InterviewDraftResultRead] = Field(default_factory=list)
     idempotent_replay: bool = False

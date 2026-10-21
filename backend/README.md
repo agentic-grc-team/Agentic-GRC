@@ -47,8 +47,15 @@ FastAPI validates each bearer token with Supabase Auth's user endpoint and uses 
 - Runtime mode: `APP_ENVIRONMENT`.
 - Demo report: `ALLOW_DEMO_REPORT` (default false; refused in production).
 - Interview data gate: `INTERVIEW_DATA_MODE` defaults to `synthetic`; anonymized testing requires an approval flag, and real mode requires each transfer, retention, deletion, redaction, storage, and topology gate.
+- Interview agent (development): `AGRC_OLLAMA_HOST`, `AGRC_LLM_MODEL`, `AGRC_LLM_TIMEOUT_S`, `AGRC_LLM_RETRIES`, `AGRC_MAX_FOLLOW_UPS`, and optionally `AGRC_KB_PATH`. The current adapter is the local Ollama proof of concept; GCP remains the provisional production inference target and is not configured by this adapter.
 
 The old `JWT_SECRET` and local password-hash settings are no longer used. Remove the temporary JWT secret from your local environment once this branch is adopted. Supabase email/password sign-in and Google OAuth are authenticated by Supabase; the current app SMTP server only sends organization invitations.
+
+## Authenticated assessment interviews
+
+The session endpoint starts or resumes the LangGraph thread using the assessment session UUID and stores the first agent prompt in `interview_turns`. Posting a participant answer requires both `replies_to_turn_id` (the latest agent turn) and `question_id` matching that prompt; repeat submissions must reuse the same `client_request_id` or `Idempotency-Key`. The response includes generated agent turns and draft results. `GET .../interview` restores the durable transcript and in-scope drafts.
+
+The agent uses the assessment's exact `kb_version` and filters its question mappings against `assessment_controls.in_scope`. The checked-in YAML KB is provisional and currently matches `demo-0.2`; synthetic sessions can use it when the normalized KB question rows are absent. Block interviews require questions in the selected stored block. Real or approved-anonymized sessions require matching stored question rows. Run `python -m app.cli init-interview-checkpointer` after migrations before opening sessions. For local development, install the backend requirements and run Ollama with the configured model; model failures degrade to the agent's deterministic rules and templates.
 
 ## Tests
 

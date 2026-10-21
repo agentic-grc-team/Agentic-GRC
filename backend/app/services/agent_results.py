@@ -1,5 +1,6 @@
 """Store the interview agent's results (AGRC-32)."""
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Assessment, AssessmentControl, ControlResult
 from app.schemas.agent_results import AgentControlResult
 from app.schemas.decision_trace import DecisionTrace
-from app.services.decision_traces import record_trace
+from app.services.decision_traces import record_interview_trace, record_trace
 
 
 def save_agent_result(
@@ -18,6 +19,9 @@ def save_agent_result(
     assessment_id: UUID,
     result: AgentControlResult,
     trace: DecisionTrace,
+    *,
+    source_turn_ids: Sequence[UUID] | None = None,
+    trace_record_id: UUID | None = None,
 ) -> list[ControlResult]:
     """Add the agent's result for one question to the current transaction.
 
@@ -44,7 +48,12 @@ def save_agent_result(
 
     controls = _load_controls(db, organization_id, assessment_id, result.control_ids)
 
-    trace_record = record_trace(db, trace)
+    if source_turn_ids is not None:
+        trace_record = record_interview_trace(
+            db, trace, source_turn_ids, record_id=trace_record_id
+        )
+    else:
+        trace_record = record_trace(db, trace, record_id=trace_record_id)
     rows = [
         ControlResult(
             organization_id=organization_id,

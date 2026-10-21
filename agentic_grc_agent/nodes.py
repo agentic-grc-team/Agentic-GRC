@@ -33,6 +33,7 @@ def _merge(a: dict, b: dict) -> dict:
 class InterviewState(TypedDict, total=False):
     organization_id: str
     assessment_id: str
+    kb_version: str
     question_codes: list[str]
     in_scope_control_codes: list[str]
     current_index: int
@@ -41,6 +42,7 @@ class InterviewState(TypedDict, total=False):
     evidence_asked: bool  # an evidence request was already made for the current question
     pending_message: str  # what the agent says next to the participant
     turns: Annotated[list[dict], operator.add]  # full transcript, append-only
+    traces: Annotated[list[dict], operator.add]  # checkpointed so DB persistence can be retried idempotently
     last_interpretation: dict
     last_step: dict
     last_fallback: bool  # the last interpretation came from the keyword fallback
@@ -52,6 +54,7 @@ def initial_state(
     assessment_id: str,
     question_codes: list[str],
     in_scope_control_codes: list[str] | None = None,
+    kb_version: str | None = None,
 ) -> InterviewState:
     if not question_codes:
         raise ValueError("Assessment has no interview questions configured.")
@@ -65,8 +68,11 @@ def initial_state(
         "follow_ups_used": 0,
         "ambiguity_clarifications_used": 0,
         "turns": [],
+        "traces": [],
         "results": {},
     }
+    if kb_version is not None:
+        state["kb_version"] = kb_version
     if in_scope_control_codes is not None:
         state["in_scope_control_codes"] = list(dict.fromkeys(in_scope_control_codes))
     return state
@@ -123,21 +129,21 @@ class InterviewNodes:
             "content": content,
         }
 
-    def _trace(self, s: InterviewState, q: Question, **fields) -> None:
-        self.d.tracer.record(
-            DecisionTrace(
-                organization_id=s["organization_id"],
-                assessment_id=s["assessment_id"],
-                control_ids=[m.node_code for m in q.mappings],
-                module=q.module,
-                kb_version=self.d.kb.kb_version,
-                **fields,
-            )
+    def _trace(self, s: InterviewState, q: Question, **fields) -> dict:
+        trace = DecisionTrace(
+            organization_id=s["organization_id"],
+            assessment_id=s["assessment_id"],
+            control_ids=[m.node_code for m in q.mappings],
+            module=q.module,
+            kb_version=self.d.kb.kb_version,
+            **fields,
         )
+        self.d.tracer.record(trace)
+        return trace.model_dump(mode="json")
 
     def _sources(self, s: InterviewState, code: str) -> list[TraceSource]:
         return [
-            TraceSource(type="interview_turn", ref=f"turn:{t['seq']}", excerpt=t["content"][:300])
+            TraceSource(type="interview_turn", ref=f"turn:{t['seq']}")
             for t in self._turns_for(s, code)
             if t["speaker"] == "participant"
         ]
@@ -180,7 +186,7 @@ class InterviewNodes:
             s.get("evidence_asked", False),
             s.get("ambiguity_clarifications_used", 0),
         )
-        self._trace(
+        trace = self._trace(
             s, q,
             decision_type="answer_interpreted",
             sources=self._sources(s, q.code),
@@ -199,6 +205,7 @@ class InterviewNodes:
             "last_interpretation": interp.model_dump(mode="json"),
             "last_step": step.model_dump(mode="json"),
             "last_fallback": fallback,
+            "traces": [trace],
         }
 
     def clarify(self, s: InterviewState) -> dict:
@@ -272,14 +279,17 @@ class InterviewNodes:
             except LLMError:
                 text = prompts.FALLBACK_FOLLOW_UPS[missing].format(quote=quote, question=q.text)
 
+        trace_update = {}
         if missing is Missing.evidence:
-            self._trace(
+            trace = self._trace(
                 s, q, decision_type="evidence_requested", sources=self._sources(s, q.code),
                 prompt_id=step.rule_id, prompt_version="0.1.0",
                 output={"request": text, "evidence_examples": q.evidence_examples},
                 rationale=step.reason,
             )
+            trace_update = {"traces": [trace]}
         return {
+            **trace_update,
             "pending_message": text,
             "follow_ups_used": s.get("follow_ups_used", 0) + 1,
             "evidence_asked": s.get("evidence_asked", False) or missing is Missing.evidence,
@@ -303,14 +313,18 @@ class InterviewNodes:
             evidence_pending=step.status.value in ("implemented", "partially_implemented"),
             supporting_turns=[int(src.ref.split(":")[1]) for src in sources],
         )
-        self._trace(
+        trace = self._trace(
             s, q, decision_type="status_assessed", sources=sources, evidence_nature="attestation",
             prompt_id=step.rule_id, prompt_version="0.1.0",
             output=result.model_dump(mode="json"), rationale=step.reason,
             confidence=interp.confidence, requires_human_review=step.requires_human_review,
             fallback_used=s.get("last_fallback", False),
         )
-        return {"results": {q.code: result.model_dump(mode="json")}, "current_index": s["current_index"] + 1}
+        return {
+            "results": {q.code: result.model_dump(mode="json")},
+            "current_index": s["current_index"] + 1,
+            "traces": [trace],
+        }
 
     # -------------------------------------------------------------- routes
     @staticmethod

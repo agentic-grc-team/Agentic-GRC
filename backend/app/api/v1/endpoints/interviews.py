@@ -16,6 +16,7 @@ from app.schemas.interviews import (
     InterviewTurnReceipt,
 )
 from app.security.auth import get_current_user
+from app.services.interview_agent import advance_interview_agent, start_interview_agent
 from app.services.interviews import (
     create_or_resume_interview,
     read_interview,
@@ -45,7 +46,18 @@ def open_interview(
         interview = create_or_resume_interview(
             db, organization_id, assessment_id, user, data
         )
-        if interview.resumed:
+        resumed = interview.resumed
+        if interview.session is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The interview session could not be initialized.",
+            )
+        start_interview_agent(db, interview.session.id)
+        interview = read_interview(
+            db, organization_id, assessment_id, user, interview.session.id
+        )
+        interview.resumed = resumed
+        if resumed:
             response.status_code = status.HTTP_200_OK
         return interview
     except HTTPException:
@@ -59,10 +71,17 @@ def open_interview(
         ) from exc
     except SQLAlchemyError as exc:
         db.rollback()
-        logger.exception("Interview session persistence failed.")
+        logger.error("Interview session persistence failed (%s).", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="The interview session could not be saved.",
+        ) from exc
+    except Exception as exc:
+        db.rollback()
+        logger.error("Interview agent initialization failed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The interview agent could not initialize the session. Retry the request.",
         ) from exc
 
 
@@ -108,6 +127,18 @@ def post_interview_turn(
             data,
             idempotency_key,
         )
+        agent_turns = advance_interview_agent(
+            db,
+            organization_id,
+            assessment_id,
+            data.session_id,
+            receipt.turn.id,
+        )
+        interview = read_interview(
+            db, organization_id, assessment_id, user, data.session_id
+        )
+        receipt.agent_turns = agent_turns
+        receipt.draft_results = interview.draft_results
         if receipt.idempotent_replay:
             response.status_code = status.HTTP_200_OK
         return receipt
@@ -122,8 +153,15 @@ def post_interview_turn(
         ) from exc
     except SQLAlchemyError as exc:
         db.rollback()
-        logger.exception("Interview turn persistence failed.")
+        logger.error("Interview turn processing failed (%s).", type(exc).__name__)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="The interview answer could not be saved.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The interview answer could not be processed. Retry with the same idempotency key.",
+        ) from exc
+    except Exception as exc:
+        db.rollback()
+        logger.error("Interview agent processing failed (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The answer was saved, but the interview agent could not process it. Retry with the same idempotency key.",
         ) from exc
