@@ -16,15 +16,15 @@ import {
 import ExpertReviewWorkspace from "./ExpertReviewWorkspace.jsx";
 import {
   listPendingReviews,
+  getReviewEvidence,
   submitReviewDecision,
 } from "./api.js";
 
-
 vi.mock("./api.js", () => ({
   listPendingReviews: vi.fn(),
+  getReviewEvidence: vi.fn(),
   submitReviewDecision: vi.fn(),
 }));
-
 
 const pendingReview = {
   result_id: "result-demo-001",
@@ -45,6 +45,13 @@ describe("ExpertReviewWorkspace", () => {
     vi.resetAllMocks();
 
     listPendingReviews.mockResolvedValue([pendingReview]);
+
+    getReviewEvidence.mockResolvedValue({
+      sources: [],
+      linked_documents: [],
+      evidence_pending: false,
+      skipped_source_count: 0,
+    });
 
     submitReviewDecision.mockResolvedValue({
       result_id: "result-demo-001",
@@ -639,4 +646,73 @@ describe("ExpertReviewWorkspace", () => {
       screen.queryByText("Not available"),
     ).not.toBeInTheDocument();
   });
+    it("preserves editing on token refresh and submits with the latest token", async () => {
+      const { rerender } = render(
+        <ExpertReviewWorkspace
+          accessToken="old-token"
+          sessionId="user-1"
+        />,
+      );
+
+      await screen.findByRole("heading", { name: "PR.AA-03" });
+      await screen.findByText(
+        "No documents are currently linked to this control.",
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Edit result" }),
+      );
+
+      fireEvent.change(screen.getByLabelText("Modified explanation"), {
+        target: { value: "Configuration checked by the consultant." },
+      });
+
+      fireEvent.change(screen.getByLabelText("Review comment"), {
+        target: { value: "Updated after checking evidence." },
+      });
+
+      rerender(
+        <ExpertReviewWorkspace
+          accessToken="new-token"
+          sessionId="user-1"
+        />,
+      );
+
+      expect(screen.getByLabelText("Modified explanation")).toHaveValue(
+        "Configuration checked by the consultant.",
+      );
+
+      expect(screen.getByLabelText("Review comment")).toHaveValue(
+        "Updated after checking evidence.",
+      );
+
+      expect(listPendingReviews).toHaveBeenCalledTimes(1);
+      expect(getReviewEvidence).toHaveBeenCalledTimes(1);
+
+      submitReviewDecision.mockResolvedValueOnce({
+        result_id: pendingReview.result_id,
+        outcome: "modified",
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Submit modified result" }),
+      );
+
+      await waitFor(() => {
+        expect(submitReviewDecision).toHaveBeenCalledWith(
+          pendingReview.result_id,
+          "modified",
+          "Updated after checking evidence.",
+          "new-token",
+          {
+            control_status: "partially_implemented",
+            explanation: "Configuration checked by the consultant.",
+          },
+        );
+      });
+
+      await screen.findByRole("heading", {
+        name: "Review queue complete",
+      });
+    });
 });

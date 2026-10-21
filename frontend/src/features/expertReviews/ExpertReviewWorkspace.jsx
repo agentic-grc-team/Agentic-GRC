@@ -5,6 +5,7 @@ import {
   submitReviewDecision,
 } from "./api.js";
 
+import ReviewEvidence from "./ReviewEvidence.jsx";
 
 function formatValue(value) {
   return value.replaceAll("_", " ");
@@ -18,7 +19,7 @@ const outcomeLabels = {
 };
 
 
-export default function ExpertReviewWorkspace({ accessToken }) {
+export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
   const [reviews, setReviews] = useState([]);
   const [comment, setComment] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -33,6 +34,12 @@ export default function ExpertReviewWorkspace({ accessToken }) {
   const [notAssessedReason, setNotAssessedReason] = useState("");
 
   const sessionRef = useRef(null);
+  const accessTokenRef = useRef(accessToken);
+  const sessionKey = sessionId ?? accessToken;
+
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+  }, [accessToken]);
 
   function resetEditor() {
     setIsEditing(false);
@@ -63,7 +70,9 @@ export default function ExpertReviewWorkspace({ accessToken }) {
 
     async function loadReviews() {
       try {
-        const pendingReviews = await listPendingReviews(accessToken);
+        const pendingReviews = await listPendingReviews(
+          accessTokenRef.current,
+        );
 
         if (isActive) {
           setReviews(pendingReviews);
@@ -90,7 +99,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
         sessionRef.current = null;
       }
     };
-  }, [accessToken]);
+  }, [sessionKey]);
 
   function startEditing() {
     if (reviews.length === 0 || isSubmitting) {
@@ -189,7 +198,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
           resultId,
           outcome,
           trimmedComment,
-          accessToken,
+          accessTokenRef.current,
           modifiedResult,
         );
       } else {
@@ -197,7 +206,7 @@ export default function ExpertReviewWorkspace({ accessToken }) {
           resultId,
           outcome,
           trimmedComment,
-          accessToken,
+          accessTokenRef.current,
         );
       }
 
@@ -294,6 +303,12 @@ export default function ExpertReviewWorkspace({ accessToken }) {
             "No evidence summary available."}
         </p>
       </div>
+
+      <ReviewEvidence
+        resultId={review.result_id}
+        accessToken={accessToken}
+        sessionId={sessionKey}
+      />
 
       {isEditing && (
         <div className="review-section">
