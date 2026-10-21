@@ -40,12 +40,17 @@ SOURCE_TYPE_VALUES = (
 
 def upgrade() -> None:
     bind = op.get_bind()
-    actor_type = postgresql.ENUM(*ACTOR_TYPE_VALUES, name="actor_type")
-    session_type = postgresql.ENUM(*SESSION_TYPE_VALUES, name="session_type")
-    turn_speaker = postgresql.ENUM(*TURN_SPEAKER_VALUES, name="turn_speaker")
-    turn_type = postgresql.ENUM(*TURN_TYPE_VALUES, name="turn_type")
-    kb_version_status = postgresql.ENUM(*KB_VERSION_STATUS_VALUES, name="kb_version_status")
-    source_type = postgresql.ENUM(*SOURCE_TYPE_VALUES, name="source_type")
+    # These types are created explicitly below. Disable SQLAlchemy's implicit
+    # CREATE TYPE hook when their first table is created, otherwise PostgreSQL
+    # sees a duplicate type inside this same migration transaction.
+    actor_type = postgresql.ENUM(*ACTOR_TYPE_VALUES, name="actor_type", create_type=False)
+    session_type = postgresql.ENUM(*SESSION_TYPE_VALUES, name="session_type", create_type=False)
+    turn_speaker = postgresql.ENUM(*TURN_SPEAKER_VALUES, name="turn_speaker", create_type=False)
+    turn_type = postgresql.ENUM(*TURN_TYPE_VALUES, name="turn_type", create_type=False)
+    kb_version_status = postgresql.ENUM(
+        *KB_VERSION_STATUS_VALUES, name="kb_version_status", create_type=False
+    )
+    source_type = postgresql.ENUM(*SOURCE_TYPE_VALUES, name="source_type", create_type=False)
     for enum_type in (actor_type, session_type, turn_speaker, turn_type, kb_version_status, source_type):
         enum_type.create(bind, checkfirst=True)
 
@@ -250,7 +255,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "trace_id"],
-            ["decision_traces.organization_id", "id"],
+            ["decision_traces.organization_id", "decision_traces.id"],
             name="fk_decision_trace_sources_trace_same_org",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_decision_trace_sources")),
