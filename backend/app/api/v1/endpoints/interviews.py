@@ -56,7 +56,8 @@ def open_interview(
         # starts a new SQLAlchemy transaction after its own commit. The graph
         # service owns the next transaction, so close the read transaction first.
         db.commit()
-        start_interview_agent(db, interview.session.id)
+        if not interview.session.closed:
+            start_interview_agent(db, interview.session.id)
         interview = read_interview(
             db, organization_id, assessment_id, user, interview.session.id
         )
@@ -134,18 +135,23 @@ def post_interview_turn(
         # Saving refreshes the participant turn and leaves a read transaction
         # open. The graph runner starts its own transaction on this Session.
         db.commit()
-        agent_turns = advance_interview_agent(
-            db,
-            organization_id,
-            assessment_id,
-            data.session_id,
-            receipt.turn.id,
-        )
+        agent_turns = []
+        if not receipt.session_closed:
+            agent_turns = advance_interview_agent(
+                db,
+                organization_id,
+                assessment_id,
+                data.session_id,
+                receipt.turn.id,
+            )
         interview = read_interview(
             db, organization_id, assessment_id, user, data.session_id
         )
         receipt.agent_turns = agent_turns
         receipt.draft_results = interview.draft_results
+        receipt.session_closed = receipt.session_closed or (
+            interview.session.closed if interview.session is not None else False
+        )
         if receipt.idempotent_replay:
             response.status_code = status.HTTP_200_OK
         return receipt

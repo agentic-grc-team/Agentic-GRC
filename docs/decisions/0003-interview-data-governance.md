@@ -24,6 +24,8 @@ The authenticated interview stores participant answers, evidence references, dra
 - Approved anonymized data may be used for testing after the data owner approves the sample and its anonymization.
 - Real organizational data is blocked until the external-transfer, retention, deletion, redaction, and storage rules are approved and the topology above is documented.
 - This gate applies to transcripts, source excerpts, evidence, draft results, traces, and LangGraph checkpoints. A checkpoint is working state, but it can contain the same sensitive content as a transcript.
+- Production interview routes fail closed until all six transfer, retention, deletion, redaction, storage, and topology approvals are configured. A remote model URL must use HTTPS and requires explicit transfer approval and a documented topology. Synthetic-mode free text is not reliably classifiable by the API, so production must not rely on that label instead of the approval gate.
+- The API does not perform general-purpose anonymization. Approved anonymized samples must be anonymized before submission; the request validation only rejects a declared non-English language because the configured interview agent currently supports English.
 
 ### Persistence and session memory
 

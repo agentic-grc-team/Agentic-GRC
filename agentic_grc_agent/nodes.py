@@ -175,9 +175,11 @@ class InterviewNodes:
                 prompt_id=prompts.INTERPRET_ID, prompt_version=prompts.INTERPRET_VERSION,
                 system=system, user=user, schema=AnswerInterpretation,
             )
-        except LLMError as e:
+        except LLMError:
             interp, fallback = heuristic_interpret(turns[-1]["content"]), True
-            interp.rationale += f" ({e})"
+            # Provider exceptions can contain endpoint URLs or response bodies.
+            # Keep the durable trace free of that potentially sensitive detail.
+            interp.rationale += " (model unavailable; deterministic fallback used)"
 
         step = decide_next_step(
             interp,

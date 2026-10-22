@@ -711,6 +711,7 @@ class SessionParticipant(Base):
 class InterviewTurn(Base):
     __tablename__ = "interview_turns"
     __table_args__ = (
+        Index("ix_interview_turns_session_created", "session_id", "created_at"),
         ForeignKeyConstraint(
             ["organization_id", "session_id"],
             ["assessment_sessions.organization_id", "assessment_sessions.id"],

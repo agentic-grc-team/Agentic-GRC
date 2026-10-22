@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models import (
     Assessment,
     AssessmentControl,
@@ -14,6 +15,7 @@ from app.db.models import (
     AssessmentParticipant,
     AssessmentSession,
     ControlResult,
+    ControlResultReview,
     InterviewBlock,
     InterviewTurn,
     KBVersion,
@@ -47,7 +49,7 @@ def create_or_resume_interview(
     user: User,
     data: InterviewSessionCreate,
 ) -> InterviewRead:
-    """Create a participant's active session or resume their matching active session."""
+    """Resume the matching session, or create a clean session when explicitly restarted."""
     organization, assessment, membership = _require_assessment_access(
         db, organization_id, assessment_id, user
     )
@@ -108,6 +110,40 @@ def create_or_resume_interview(
     )
     session = db.scalar(session_statement)
     resumed = session is not None
+
+    if session is None and not data.restart:
+        # A completed session remains the default result for a repeated open
+        # request. The caller must explicitly ask for a new session with
+        # `restart=true`, avoiding accidental duplicate interviews.
+        session = db.scalar(
+            select(AssessmentSession)
+            .join(
+                SessionParticipant,
+                (SessionParticipant.session_id == AssessmentSession.id)
+                & (SessionParticipant.organization_id == AssessmentSession.organization_id),
+            )
+            .where(
+                AssessmentSession.organization_id == organization_id,
+                AssessmentSession.assessment_id == assessment_id,
+                AssessmentSession.session_type == data.session_type,
+                AssessmentSession.block_id == data.block_id,
+                AssessmentSession.ended_at.is_not(None),
+                SessionParticipant.participant_id == participant.id,
+                SessionParticipant.organization_id == organization_id,
+            )
+            .order_by(AssessmentSession.ended_at.desc())
+            .limit(1)
+        )
+        resumed = session is not None
+
+    if session is not None and data.restart:
+        # Keep the old transcript/checkpoint for audit and resume-by-id reads, but
+        # let this participant start a clean graph thread after scope drift or a
+        # checkpoint that cannot be reconciled.
+        session.ended_at = datetime.now(timezone.utc)
+        db.flush()
+        session = None
+        resumed = False
 
     if session is None:
         now = datetime.now(timezone.utc)
@@ -260,7 +296,13 @@ def save_interview_turn(
                 detail="Idempotency key was already used for a different interview answer.",
             )
         db.commit()
-        return InterviewTurnReceipt(turn=_turn_read(existing), idempotent_replay=True)
+        return InterviewTurnReceipt(
+            turn=_turn_read(existing),
+            idempotent_replay=True,
+            session_closed=(
+                session.ended_at is not None or assessment.status != "in_progress"
+            ),
+        )
 
     if assessment.status != "in_progress":
         raise HTTPException(
@@ -375,6 +417,22 @@ def _require_assessment_access(
     assessment_id: UUID,
     user: User,
 ) -> tuple[Organization, Assessment, OrganizationMembership | None]:
+    settings = get_settings()
+    if settings.app_environment == "production":
+        required_approvals = (
+            settings.interview_external_transfer_approved,
+            settings.interview_retention_approved,
+            settings.interview_deletion_approved,
+            settings.interview_redaction_approved,
+            settings.interview_storage_approved,
+            settings.interview_topology_documented,
+        )
+        if not all(required_approvals):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The interview API is disabled until all production data-policy gates are approved.",
+            )
+
     organization = db.scalar(select(Organization).where(Organization.id == organization_id))
     if organization is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
@@ -486,7 +544,7 @@ def _build_interview_read(
         )
         .order_by(AssessmentControl.control_code)
     ).all()
-    draft_result_rows = db.execute(
+    result_rows = db.execute(
         select(ControlResult, AssessmentControl)
         .join(
             AssessmentControl,
@@ -497,7 +555,6 @@ def _build_interview_read(
         .where(
             ControlResult.organization_id == organization.id,
             ControlResult.assessment_id == assessment.id,
-            ControlResult.author_actor == "agent",
             AssessmentControl.in_scope.is_(True),
         )
         .order_by(
@@ -506,9 +563,26 @@ def _build_interview_read(
             ControlResult.created_at.desc(),
         )
     ).all()
-    latest_drafts = {}
-    for result, control in draft_result_rows:
-        latest_drafts.setdefault(control.control_code, (result, control))
+    latest_results = {}
+    for result, control in result_rows:
+        latest_results.setdefault(control.control_code, (result, control))
+    latest_result_ids = [result.id for result, _control in latest_results.values()]
+    reviewed_result_ids = set()
+    if latest_result_ids:
+        reviewed_result_ids = set(
+            db.scalars(
+                select(ControlResultReview.control_result_id).where(
+                    ControlResultReview.organization_id == organization.id,
+                    ControlResultReview.assessment_id == assessment.id,
+                    ControlResultReview.control_result_id.in_(latest_result_ids),
+                )
+            )
+        )
+    latest_drafts = {
+        code: (result, control)
+        for code, (result, control) in latest_results.items()
+        if result.author_actor == "agent" and result.id not in reviewed_result_ids
+    }
     turns = []
     if session is not None:
         turns = list(
@@ -530,7 +604,9 @@ def _build_interview_read(
         assessment_status=assessment.status,
         kb_version=assessment.kb_version,
         participant_id=participant.id if participant is not None else None,
-        session=_session_read(session) if session is not None else None,
+        session=(
+            _session_read(session, assessment.status) if session is not None else None
+        ),
         turns=[_turn_read(turn) for turn in turns],
         in_scope_controls=[
             InterviewControlRead(
@@ -564,11 +640,14 @@ def _build_interview_read(
     )
 
 
-def _session_read(session: AssessmentSession) -> InterviewSessionRead:
+def _session_read(
+    session: AssessmentSession, assessment_status: str
+) -> InterviewSessionRead:
     return InterviewSessionRead(
         id=session.id,
         session_type=session.session_type,
         block_id=session.block_id,
+        closed=session.ended_at is not None or assessment_status != "in_progress",
         facilitator_user_id=session.facilitator_user_id,
         scheduled_at=session.scheduled_at,
         started_at=session.started_at,

@@ -15,6 +15,10 @@ class InterviewSessionCreate(BaseModel):
 
     session_type: InterviewSessionType = "kickoff"
     block_id: UUID | None = None
+    restart: bool = Field(
+        default=False,
+        description="End the active session and start a new one, preserving the old transcript.",
+    )
 
     @model_validator(mode="after")
     def check_block(self) -> "InterviewSessionCreate":
@@ -29,7 +33,7 @@ class InterviewTurnCreate(BaseModel):
     session_id: UUID
     content: str = Field(min_length=1, max_length=10_000)
     question_id: UUID | None = None
-    replies_to_turn_id: UUID | None = None
+    replies_to_turn_id: UUID
     language_code: str | None = Field(default=None, max_length=10)
     client_request_id: UUID | None = Field(
         default=None,
@@ -52,7 +56,10 @@ class InterviewTurnCreate(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("language_code cannot be blank.")
-        return value
+        normalized = value.replace("_", "-")
+        if normalized.lower() != "en" and not normalized.lower().startswith("en-"):
+            raise ValueError("The configured interview agent currently supports English only.")
+        return normalized
 
 
 class InterviewControlRead(BaseModel):
@@ -94,6 +101,7 @@ class InterviewSessionRead(BaseModel):
     id: UUID
     session_type: InterviewSessionType
     block_id: UUID | None
+    closed: bool
     facilitator_user_id: UUID | None
     scheduled_at: datetime | None
     started_at: datetime | None
@@ -142,4 +150,5 @@ class InterviewTurnReceipt(BaseModel):
     turn: InterviewTurnRead
     agent_turns: list[InterviewTurnRead] = Field(default_factory=list)
     draft_results: list[InterviewDraftResultRead] = Field(default_factory=list)
+    session_closed: bool = False
     idempotent_replay: bool = False

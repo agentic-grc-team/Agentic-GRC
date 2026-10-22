@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -104,8 +105,18 @@ def _run_interview_graph(
         )
         if interview_session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview session not found.")
+        if interview_session.ended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This interview session is closed.",
+            )
 
         context = _load_agent_context(db, interview_session)
+        if context.assessment.status != "in_progress":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This assessment is no longer accepting interview answers.",
+            )
         answer_turn = None
         if answer_turn_id is not None:
             answer_turn = db.scalar(
@@ -181,6 +192,13 @@ def _run_interview_graph(
             graph_state = snapshot.values
             sequence_to_turn = _persist_graph_turns(db, context, graph_state.get("turns", []))
             _persist_graph_traces(db, context, graph_state.get("traces", []), sequence_to_turn)
+
+            # An empty `next` tuple means LangGraph reached END rather than
+            # pausing at its answer interrupt. Persist that state on the domain
+            # session so the API can distinguish a finished interview from one
+            # that is merely waiting for another answer.
+            if not snapshot.next and interview_session.ended_at is None:
+                interview_session.ended_at = datetime.now(timezone.utc)
 
             first_generated_sequence = (
                 answer_turn.sequence_no + 1 if answer_turn is not None else 1

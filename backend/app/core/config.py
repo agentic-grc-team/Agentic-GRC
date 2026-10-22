@@ -75,8 +75,40 @@ class Settings(BaseSettings):
             raise ValueError("SUPABASE_URL must be a valid project URL without credentials.")
         return normalized
 
+    @field_validator("agrc_ollama_host")
+    @classmethod
+    def validate_interview_model_host(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        parsed = urlsplit(normalized)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "AGRC_OLLAMA_HOST must be an HTTP(S) URL without credentials, query, or fragment."
+            )
+        return normalized
+
     @model_validator(mode="after")
     def validate_deployment_security(self) -> Settings:
+        model_host = urlsplit(self.agrc_ollama_host)
+        is_local_model_host = model_host.hostname in {"localhost", "127.0.0.1", "::1"}
+        if not is_local_model_host:
+            if model_host.scheme != "https":
+                raise ValueError("A remote interview model host must use HTTPS.")
+            if not self.interview_external_transfer_approved:
+                raise ValueError(
+                    "A remote interview model requires INTERVIEW_EXTERNAL_TRANSFER_APPROVED=true."
+                )
+            if not self.interview_topology_documented:
+                raise ValueError(
+                    "A remote interview model requires INTERVIEW_TOPOLOGY_DOCUMENTED=true."
+                )
+
         if bool(self.smtp_username) != (self.smtp_password is not None):
             raise ValueError("Set both SMTP_USERNAME and SMTP_PASSWORD, or leave both unset.")
         if (

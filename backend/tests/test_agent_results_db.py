@@ -191,14 +191,25 @@ def test_refuses_a_control_outside_the_scope(db):
     assert "outside the assessment scope" in error.value.detail
 
 
-def test_refuses_a_second_result_for_the_same_control(db):
+def test_versions_a_second_result_for_the_same_control(db):
     organization, _, assessment, _ = setup_assessment(db)
-    save(db, organization, assessment, agent_output())
+    (first_result,) = save(db, organization, assessment, agent_output())
     db.commit()
 
-    with pytest.raises(HTTPException) as error:
-        save(db, organization, assessment, agent_output())
-    assert "already have a result" in error.value.detail
+    (second_result,) = save(
+        db,
+        organization,
+        assessment,
+        agent_output(summary="MFA now covers privileged accounts across the organization."),
+    )
+    db.commit()
+    db.expire_all()
+
+    first = db.get(ControlResult, first_result.id)
+    second = db.get(ControlResult, second_result.id)
+    assert first.version_no == 1 and first.based_on_result_id is None
+    assert second.version_no == 2 and second.based_on_result_id == first.id
+    assert second.explanation.startswith("MFA now covers privileged accounts")
 
 
 def test_refuses_an_assessment_of_another_organization(db):

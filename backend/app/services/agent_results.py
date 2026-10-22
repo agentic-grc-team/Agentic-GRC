@@ -25,9 +25,9 @@ def save_agent_result(
 ) -> list[ControlResult]:
     """Add the agent's result for one question to the current transaction.
 
-    Records the status_assessed trace with record_trace(), then one control_results
-    row per control id (version 1, author "agent") linked to that trace. Each row is
-    a draft that enters the expert review queue.
+    Records the status_assessed trace, then adds one versioned control_results row
+    per control id (author "agent") linked to that trace. Each new row chains to
+    the previous version and enters the expert review queue.
 
     Current limitation: evidence_refs stays empty and maturity null, because the
     agent does not attach documents or assess maturity yet.
@@ -54,25 +54,39 @@ def save_agent_result(
         )
     else:
         trace_record = record_trace(db, trace, record_id=trace_record_id)
-    rows = [
-        ControlResult(
-            organization_id=organization_id,
-            assessment_id=assessment_id,
-            assessment_control_id=control.id,
-            version_no=1,
-            author_actor="agent",
-            control_status=result.status,
-            explanation=result.explanation,
-            justification=result.justification,
-            not_assessed_reason=result.not_assessed_reason,
-            confidence=result.confidence,
-            requires_human_review=result.requires_human_review,
-            evidence_pending=result.evidence_pending,
-            evidence_refs=[],
-            trace_id=trace_record.id,
+    rows = []
+    for control in controls:
+        # _load_controls locks each control row, serializing version assignment
+        # against both other agent runs and expert reviews for this control.
+        previous = db.scalar(
+            select(ControlResult)
+            .where(
+                ControlResult.organization_id == organization_id,
+                ControlResult.assessment_id == assessment_id,
+                ControlResult.assessment_control_id == control.id,
+            )
+            .order_by(ControlResult.version_no.desc())
+            .limit(1)
         )
-        for control in controls
-    ]
+        rows.append(
+            ControlResult(
+                organization_id=organization_id,
+                assessment_id=assessment_id,
+                assessment_control_id=control.id,
+                version_no=(previous.version_no + 1) if previous is not None else 1,
+                based_on_result_id=previous.id if previous is not None else None,
+                author_actor="agent",
+                control_status=result.status,
+                explanation=result.explanation,
+                justification=result.justification,
+                not_assessed_reason=result.not_assessed_reason,
+                confidence=result.confidence,
+                requires_human_review=result.requires_human_review,
+                evidence_pending=result.evidence_pending,
+                evidence_refs=[],
+                trace_id=trace_record.id,
+            )
+        )
     db.add_all(rows)
     db.flush()
     return rows
@@ -104,6 +118,7 @@ def _load_controls(
             AssessmentControl.assessment_id == assessment_id,
             AssessmentControl.control_code.in_(control_ids),
         )
+        .order_by(AssessmentControl.id)
         .with_for_update()
     ).all()
     by_code = {control.control_code: control for control in controls}
@@ -120,19 +135,6 @@ def _load_controls(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Controls outside the assessment scope: {', '.join(out_of_scope)}.",
-        )
-
-    # The agent writes the first version only. Re-running a question over an existing
-    # result (and its reviews) is not decided yet, so it is refused rather than guessed.
-    already_assessed = db.scalars(
-        select(AssessmentControl.control_code)
-        .join(ControlResult, ControlResult.assessment_control_id == AssessmentControl.id)
-        .where(AssessmentControl.id.in_([control.id for control in controls]))
-    ).all()
-    if already_assessed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Controls that already have a result: {', '.join(sorted(set(already_assessed)))}.",
         )
 
     return [by_code[code] for code in control_ids]
