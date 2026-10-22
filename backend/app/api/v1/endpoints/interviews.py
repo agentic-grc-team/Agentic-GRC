@@ -52,6 +52,10 @@ def open_interview(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="The interview session could not be initialized.",
             )
+        # The service reads the persisted session to build its response, which
+        # starts a new SQLAlchemy transaction after its own commit. The graph
+        # service owns the next transaction, so close the read transaction first.
+        db.commit()
         start_interview_agent(db, interview.session.id)
         interview = read_interview(
             db, organization_id, assessment_id, user, interview.session.id
@@ -127,6 +131,9 @@ def post_interview_turn(
             data,
             idempotency_key,
         )
+        # Saving refreshes the participant turn and leaves a read transaction
+        # open. The graph runner starts its own transaction on this Session.
+        db.commit()
         agent_turns = advance_interview_agent(
             db,
             organization_id,
