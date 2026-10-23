@@ -20,3 +20,10 @@ evals/results/
 
 
 /uploaded_evidence/
+
+# Local Sprint planning screenshots and generated exports
+/HU04-technical-subtasks.png
+/Sprint4-Jira-stories.png
+/Sprint4-Jira-verified.png
+/outputs/db-migration-0006/0006-preview.sql
+/outputs/status-presentation/Agentic_GRC_Status_Update_Oct14.pptx

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -11,11 +12,14 @@ from sqlalchemy import URL
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = Path(os.environ.get("AGRC_ENV_FILE", str(BACKEND_DIR / ".env")))
+if not ENV_FILE.is_absolute():
+    ENV_FILE = BACKEND_DIR / ENV_FILE
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=BACKEND_DIR / ".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         extra="ignore",

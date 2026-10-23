@@ -17,6 +17,22 @@ python -m app.cli bootstrap-admin --user-id <SUPABASE_AUTH_UUID> --email <ADMIN_
 uvicorn app.main:app --reload
 ```
 
+To keep test credentials separate from the default local environment, copy `.env.example` to
+`.env.testing`, fill it with the isolated test project's values, and select it in the PowerShell
+session before running Alembic or the API:
+
+```powershell
+Copy-Item .env.example .env.testing
+$env:AGRC_ENV_FILE = ".env.testing"
+alembic upgrade head
+python -m app.cli init-interview-checkpointer
+uvicorn app.main:app --reload
+```
+
+`AGRC_ENV_FILE` is resolved relative to the `backend` directory when it is not an absolute path.
+The selected environment file is ignored by Git; never commit database passwords or Supabase secret
+keys. Remove the process override with `Remove-Item Env:AGRC_ENV_FILE` to return to `.env`.
+
 The health check is at `http://127.0.0.1:8000/api/v1/health` and interactive API docs are at `http://127.0.0.1:8000/docs`.
 
 ## Authentication setup
