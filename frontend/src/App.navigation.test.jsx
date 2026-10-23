@@ -25,6 +25,9 @@ vi.mock("./features/expertReviews/ExpertReviewWorkspace.jsx", () => ({
 vi.mock("./features/reports/ReportWorkspace.jsx", () => ({
   default: () => <div>Reports view</div>,
 }));
+vi.mock("./features/assessments/AssessmentWorkspace.jsx", () => ({
+  default: () => <div>Assessments view</div>,
+}));
 vi.mock("./features/organizations/EvidencePage.jsx", () => ({
   default: ({ onNavigate }) => (
     <div>
@@ -49,13 +52,13 @@ describe("App navigation", () => {
     const items = document.querySelectorAll(".app-rail .rail-navigation-item");
     expect(Array.from(items).map((node) => node.getAttribute("aria-label"))).toEqual([
       "Client onboarding",
+      "Assessments",
       "Expert reviews",
       "Reports",
       "Evidence upload",
     ]);
     expect(screen.getAllByRole("button", { name: "Client onboarding" })).toHaveLength(1);
     expect(document.querySelectorAll(".breadcrumb")).toHaveLength(1);
-    expect(screen.queryByText(/Assessments/)).not.toBeInTheDocument();
     expect(screen.queryByText("Later")).not.toBeInTheDocument();
   });
 
@@ -65,6 +68,18 @@ describe("App navigation", () => {
     expect(screen.getByText("Organizations view")).toBeInTheDocument();
     expect(breadcrumb()).toBe("Organization setup");
     expect(screen.getByRole("button", { name: "Client onboarding" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens the Assessments workspace from the rail", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Assessments" }));
+
+    expect(screen.getByText("Assessments view")).toBeInTheDocument();
+    expect(screen.queryByText("Organizations view")).not.toBeInTheDocument();
+    expect(breadcrumb()).toBe("Assessments");
+    expect(screen.getByRole("button", { name: "Assessments" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Client onboarding" })).not.toHaveAttribute("aria-current");
   });
 
   it("opens the Expert reviews workspace from the rail", () => {
