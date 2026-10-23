@@ -18,7 +18,10 @@ from app.db.session import get_engine
 from app.main import app
 from app.security import auth as auth_module
 from app.security.supabase import SupabaseIdentity
-from app.services.langgraph_checkpointer import open_interview_checkpointer
+from app.services.langgraph_checkpointer import (
+    initialize_interview_checkpointer,
+    open_interview_checkpointer,
+)
 from tests.test_assessments_db import make_control
 from tests.test_expert_review_db import make_assessment_context
 
@@ -30,6 +33,10 @@ def interview_api(monkeypatch):
         connection = get_engine().connect()
     except (OSError, SQLAlchemyError, RuntimeError):
         pytest.skip("PostgreSQL is unavailable for interview API integration tests.")
+
+    # Alembic provisions the private schema, while LangGraph owns its tables.
+    # Set them up here so the integration test also works on a freshly migrated DB.
+    initialize_interview_checkpointer()
 
     transaction = connection.begin()
     db = Session(bind=connection, join_transaction_mode="create_savepoint")
