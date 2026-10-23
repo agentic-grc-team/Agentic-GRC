@@ -21,6 +21,9 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_engine
+from app.schemas.assessments import AssessmentCreate
+from app.services.assessment_scope import controls_for_kb_version
+from app.services.assessments import start_assessment
 from app.services.reports.builder import build_report_view
 from app.services.reports.pdf import render_report_pdf
 from app.services.reports.source import DbReportSource
@@ -592,6 +595,27 @@ def test_accepted_agent_result_with_evidence_pending(db):
     assert view.results[0].basis == "accepted_agent_result"
     assert view.results[0].evidence_pending is True
     assert view.summary.final_with_evidence_pending == 1
+
+
+def test_new_assessment_shows_its_kb_controls_as_pending(db):
+    """An assessment started from the API has its KB controls in scope, all pending until results exist (AGRC-73)."""
+    org = make_organization(db)
+    consultant = make_user(db)
+
+    assessment = start_assessment(db, org.id, consultant.id, AssessmentCreate(title="New assessment"))
+
+    report_input = DbReportSource().load(db, org.id, assessment.id)
+    assert report_input is not None
+    view = build_report_view(report_input, datetime.now(timezone.utc))
+
+    assert [(s.code, s.title) for s in view.scope] == controls_for_kb_version("demo-0.2")
+    assert [(p.code, p.reason) for p in view.pending] == [
+        ("PR.AA-01", "no_result"),
+        ("PR.AA-03", "no_result"),
+        ("PR.AA-05", "no_result"),
+    ]
+    assert view.results == []
+    assert view.exclusions == []
 
 
 def test_seed_demo_assessment_data_builds_the_expected_report(db):

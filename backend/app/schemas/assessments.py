@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.services.assessment_scope import KB_SCOPES
+
 DEFAULT_KB_VERSION = "demo-0.2"   # the agent's provisional KB (agentic_grc_agent/data/kb_demo.yaml) until E0-03
 
 AssessmentStatus = Literal["draft", "in_progress", "awaiting_review", "completed"]
@@ -13,7 +15,7 @@ AssessmentStatus = Literal["draft", "in_progress", "awaiting_review", "completed
 
 class AssessmentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)       # strip; blank after strip -> ValueError "This field cannot be blank."
-    kb_version: str | None = Field(default=None, min_length=1, max_length=50)  # strip; blank -> same error
+    kb_version: str | None = Field(default=None, min_length=1, max_length=50)  # strip; blank -> same error; unknown version -> ValueError
 
     @field_validator("title")
     @classmethod
@@ -31,6 +33,10 @@ class AssessmentCreate(BaseModel):
         stripped = v.strip()
         if not stripped:
             raise ValueError("This field cannot be blank.")
+        # An unknown version would create an assessment without controls (AGRC-73).
+        if stripped not in KB_SCOPES:
+            supported = ", ".join(KB_SCOPES)
+            raise ValueError(f"Unknown knowledge-base version. Supported versions: {supported}.")
         return stripped
 
 
