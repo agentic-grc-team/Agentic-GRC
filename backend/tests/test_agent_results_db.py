@@ -366,3 +366,91 @@ def test_saved_agent_result_can_be_modified_without_maturity(db):
     assert review_trace.reviews_trace_id == original_trace_id
     assert review_trace.actor_user_id == user.id
     assert list_pending_reviews(db, user) == []
+@pytest.mark.parametrize("outcome", ["accepted", "modified"])
+def test_refuses_new_agent_result_after_expert_review(db, outcome):
+    from copy import deepcopy
+    from datetime import datetime, timezone
+
+    from app.services.reports.builder import build_report_view
+    from app.services.reports.source import DbReportSource
+
+    organization, user, assessment, _ = setup_assessment(db)
+
+    (original,) = save(db, organization, assessment, agent_output())
+    db.commit()
+
+    decision_data = {
+        "outcome": outcome,
+        "comment": "Evidence checked by the consultant.",
+    }
+    if outcome == "modified":
+        decision_data["modified_result"] = {
+            "control_status": "partially_implemented",
+            "explanation": "MFA is missing on legacy administrator accounts.",
+        }
+
+    save_review_decision(
+        db,
+        original.id,
+        ReviewDecision(**decision_data),
+        user,
+    )
+    db.commit()
+
+    generated_at = datetime.now(timezone.utc)
+
+    def report_snapshot():
+        report_input = DbReportSource().load(
+            db, organization.id, assessment.id
+        )
+        assert report_input is not None
+        return build_report_view(
+            report_input, generated_at
+        ).model_dump(mode="json")
+
+    def stored_rows(model):
+        table = model.__table__
+        rows = db.execute(
+            select(*table.c)
+            .where(
+                table.c.organization_id == organization.id,
+                table.c.assessment_id == assessment.id,
+            )
+            .order_by(table.c.id)
+        ).mappings().all()
+        return deepcopy([dict(row) for row in rows])
+
+    tracked_models = (
+        ControlResult,
+        ControlResultReview,
+        DecisionTraceRecord,
+    )
+    rows_before = {
+        model: stored_rows(model) for model in tracked_models
+    }
+    report_before = report_snapshot()
+
+    assert len(report_before["results"]) == 1
+    assert report_before["pending"] == []
+    assert list_pending_reviews(db, user) == []
+
+    with pytest.raises(HTTPException) as error:
+        with db.begin_nested():
+            save(
+                db,
+                organization,
+                assessment,
+                agent_output(
+                    summary="A new interview proposes full implementation."
+                ),
+            )
+
+    assert error.value.status_code == 409
+
+    db.expire_all()
+
+    for model in tracked_models:
+        assert stored_rows(model) == rows_before[model]
+
+    assert report_snapshot() == report_before
+    assert list_pending_reviews(db, user) == []
