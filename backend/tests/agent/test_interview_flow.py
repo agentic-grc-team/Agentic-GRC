@@ -1,13 +1,13 @@
 """End-to-end interview flow with a fake LLM (no Ollama needed)."""
 
-from conftest import run_scripted, run_scripted_more
+from tests.agent.conftest import KB_PATH, run_scripted, run_scripted_more
 
-from agentic_grc_agent.fallback import heuristic_interpret
-from agentic_grc_agent.llm import FakeLLM
-from agentic_grc_agent.nodes import Deps, InterviewNodes
-from agentic_grc_agent.schemas import AnswerInterpretation, Clarification, FollowUpQuestion
-from agentic_grc_agent.trace import TraceRecorder
-from agentic_grc_agent.nodes import initial_state
+from app.agent.fallback import heuristic_interpret
+from app.agent.llm import FakeLLM
+from app.agent.nodes import Deps, InterviewNodes
+from app.agent.schemas import AnswerInterpretation, Clarification, FollowUpQuestion
+from app.agent.trace import TraceRecorder
+from app.agent.nodes import initial_state
 
 
 def scripted_interpretations(*interps):
@@ -26,9 +26,8 @@ def make(llm):
 
 
 def pytest_kb():
-    from conftest import ROOT
-    from agentic_grc_agent.knowledge import load_kb
-    return load_kb(ROOT / "agentic_grc_agent" / "data" / "kb_demo.yaml")
+    from app.agent.knowledge import load_kb
+    return load_kb(KB_PATH)
 
 
 def test_vague_yes_then_detail_closes_as_implemented():

@@ -20,12 +20,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 
-from agentic_grc_agent.config import Settings  # noqa: E402
-from agentic_grc_agent.graph import build_graph, initial_state  # noqa: E402
-from agentic_grc_agent.knowledge import load_kb  # noqa: E402
-from agentic_grc_agent.llm import OllamaLLM  # noqa: E402
-from agentic_grc_agent.nodes import Deps  # noqa: E402
-from agentic_grc_agent.trace import TraceRecorder  # noqa: E402
+from app.agent.config import Settings  # noqa: E402
+from app.agent.graph import build_graph, initial_state  # noqa: E402
+from app.agent.knowledge import load_kb  # noqa: E402
+from app.agent.llm import OllamaLLM  # noqa: E402
+from app.agent.nodes import Deps  # noqa: E402
+from app.agent.trace import TraceRecorder  # noqa: E402
 
 
 def pending_interrupt(graph, config):
@@ -44,7 +44,7 @@ def main() -> None:
     settings = Settings()
     kb = load_kb(settings.kb_path)
     codes = args.only or [q.code for q in kb.questions]
-    tracer = TraceRecorder(settings.trace_dir)
+    tracer = TraceRecorder()  # in memory: the CLI does not write to the database
     llm = OllamaLLM(settings.llm_model, settings.ollama_host, settings.llm_timeout_s, settings.llm_retries)
     graph = build_graph(Deps(llm=llm, kb=kb, tracer=tracer, max_follow_ups=settings.max_follow_ups),
                         checkpointer=MemorySaver())
@@ -71,7 +71,7 @@ def main() -> None:
         flag = " ⚠ needs human review" if r["requires_human_review"] else ""
         evidence = " · evidence pending" if r["evidence_pending"] else ""
         print(f"{code}: {r['status']} — {r['reason']}{evidence}{flag}")
-    print(f"\nTraces: {settings.trace_dir / (assessment_id + '.jsonl')}")
+    print(f"\nDecisions recorded: {len(tracer.records)} (in memory only; the backend API persists them)")
 
 
 if __name__ == "__main__":

@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from agentic_grc_agent.llm import FakeLLM
-from agentic_grc_agent.schemas import AnswerCategory, AnswerInterpretation, Intent
+from app.agent.llm import FakeLLM
+from app.agent.schemas import AnswerCategory, AnswerInterpretation, Intent
 from app.api.v1.dependencies import get_db_session
 from app.db.models import InterviewTurn
 from app.db.session import get_engine
@@ -70,7 +70,7 @@ def interview_api(monkeypatch):
         }
     )
     monkeypatch.setattr(
-        "agentic_grc_agent.llm.OllamaLLM",
+        "app.agent.llm.OllamaLLM",
         lambda *_args, **_kwargs: fake_llm,
     )
     monkeypatch.setattr(
