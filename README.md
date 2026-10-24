@@ -28,7 +28,9 @@ python scripts/benchmark_models.py qwen2.5:7b llama3.1:8b
 
 Settings (env vars): `AGRC_LLM_MODEL` (default `llama3.1:8b`, see the decision record),
 `AGRC_OLLAMA_HOST`, `AGRC_LLM_TIMEOUT_S` (default 8), `AGRC_LLM_RETRIES` (default 1, invalid output only),
+`AGRC_LLM_KEEP_ALIVE` (default `30m`), `AGRC_LLM_NUM_PREDICT` (default `320`),
 `AGRC_MAX_FOLLOW_UPS` (default 3), `AGRC_KB_PATH`, `AGRC_TRACE_DIR`.
+For complete setup, tuning, and benchmark instructions, see [docs/ollama-setup.md](docs/ollama-setup.md).
 
 ## Design: the LLM interprets, code decides
 

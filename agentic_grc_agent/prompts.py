@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from .schemas import Missing, Question
 
-INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.2.0"
+INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.3.0"
 FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.3.0"
 CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.2.0"
 
@@ -34,8 +34,9 @@ def interpret(question: Question, turns: list[dict]) -> tuple[str, str]:
         "  For 'partial', detailed = they say what is missing. For 'not_applicable', detailed = they give a reason.\n"
         "- mentions_scope: true if they say which accounts, systems or people it applies to.\n"
         "- mentions_evidence: true if they mention something verifiable (policy, configuration, report, tool).\n"
-        "- summary: one sentence in English paraphrasing the participant.\n"
-        "- key_quote: a short literal fragment of the participant's LAST message.\n"
+        "- summary: one sentence in English, at most 20 words, paraphrasing the participant.\n"
+        "- key_quote: a short literal fragment (at most 12 words) of the participant's LAST message.\n"
+        "- rationale: at most 15 words explaining the category and specificity.\n"
         "- confidence: 0 to 1, how sure you are of your interpretation."
     )
     user = (

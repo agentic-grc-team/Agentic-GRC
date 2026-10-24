@@ -13,6 +13,8 @@ class Settings:
     llm_model: str = os.getenv("AGRC_LLM_MODEL", "llama3.1:8b")
     llm_timeout_s: float = float(os.getenv("AGRC_LLM_TIMEOUT_S", "8"))  # keeps the turn under the 10 s NFR
     llm_retries: int = int(os.getenv("AGRC_LLM_RETRIES", "1"))
+    llm_keep_alive: str = os.getenv("AGRC_LLM_KEEP_ALIVE", "30m")    # keep the model loaded between turns
+    llm_num_predict: int = int(os.getenv("AGRC_LLM_NUM_PREDICT", "320"))  # safety cap on generated tokens
     max_follow_ups: int = int(os.getenv("AGRC_MAX_FOLLOW_UPS", "3"))  # HU-06
     kb_path: Path = Path(os.getenv("AGRC_KB_PATH", Path(__file__).parent / "data" / "kb_demo.yaml"))
     trace_dir: Path = Path(os.getenv("AGRC_TRACE_DIR", "traces"))

@@ -45,13 +45,26 @@ def main() -> None:
     kb = load_kb(settings.kb_path)
     codes = args.only or [q.code for q in kb.questions]
     tracer = TraceRecorder(settings.trace_dir)
-    llm = OllamaLLM(settings.llm_model, settings.ollama_host, settings.llm_timeout_s, settings.llm_retries)
+    llm = OllamaLLM(
+        settings.llm_model,
+        settings.ollama_host,
+        settings.llm_timeout_s,
+        settings.llm_retries,
+        keep_alive=settings.llm_keep_alive,
+        num_predict=settings.llm_num_predict,
+    )
     graph = build_graph(Deps(llm=llm, kb=kb, tracer=tracer, max_follow_ups=settings.max_follow_ups),
                         checkpointer=MemorySaver())
 
     assessment_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": assessment_id}}
     print(f"Model: {settings.llm_model} · KB {kb.kb_version} · assessment {assessment_id[:8]}\n")
+
+    warm_ms = llm.warm_up()
+    if warm_ms is not None:
+        print(f"Model loaded in {warm_ms} ms\n")
+    else:
+        print("Could not load the model; the keyword fallback will be used.\n")
 
     graph.invoke(initial_state("demo-org", assessment_id, codes), config)
     while (pending := pending_interrupt(graph, config)) is not None:
