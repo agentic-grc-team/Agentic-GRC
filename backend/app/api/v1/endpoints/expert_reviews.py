@@ -13,12 +13,14 @@ from app.schemas.expert_review import (
     ReviewEvidence,
     ReviewItem,
 )
+from app.schemas.review_trace import ResultTraceRead
 from app.security.auth import get_current_user
 from app.services.expert_reviews import (
     list_pending_reviews,
     save_review_decision,
 )
 from app.services.review_evidence import get_review_evidence
+from app.services.review_trace import get_result_trace
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,18 @@ def get_pending_reviews(
     db: Session = Depends(get_db_session),
 ):
     return list_pending_reviews(db, user)
+
+
+@router.get(
+    "/{result_id}/trace",
+    response_model=ResultTraceRead,
+)
+def read_result_trace(
+    result_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    return get_result_trace(db, result_id, user)
 
 
 @router.get(

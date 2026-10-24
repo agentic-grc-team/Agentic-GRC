@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { getReviewEvidence } from "./api.js";
+import { getReviewEvidence, getReviewTrace } from "./api.js";
 
 
 it("loads review evidence with the current bearer token", async () => {
@@ -35,5 +35,25 @@ it("loads review evidence with the current bearer token", async () => {
     options.headers.get("Authorization"),
   ).toBe("Bearer test-token");
 
+  expect(options.credentials).toBe("omit");
+});
+
+it("getReviewTrace requests the trace of one result with the bearer token", async () => {
+  const trace = { result_id: "result 1", steps: [] };
+
+  fetch.mockResolvedValueOnce({
+    status: 200,
+    ok: true,
+    json: async () => trace,
+  });
+
+  const result = await getReviewTrace("result 1", "test-token");
+
+  expect(result).toEqual(trace);
+
+  const [url, options] = fetch.mock.calls[0];
+
+  expect(url).toBe("/api/v1/expert-reviews/result%201/trace");
+  expect(options.headers.get("Authorization")).toBe("Bearer test-token");
   expect(options.credentials).toBe("omit");
 });
