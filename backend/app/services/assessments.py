@@ -1,4 +1,4 @@
-"""Store and read assessments (AGRC-61, AGRC-73)."""
+"""Store and read assessments (AGRC-61, AGRC-73) and their scope (AGRC-63)."""
 
 from datetime import datetime, timezone
 from uuid import UUID
@@ -77,3 +77,17 @@ def get_assessment(db: Session, organization_id: UUID, assessment_id: UUID) -> A
         )
     )
     return db.scalars(statement).first()
+
+
+def list_in_scope_controls(db: Session, organization_id: UUID, assessment_id: UUID) -> list[AssessmentControl]:
+    """The in-scope controls of one assessment, ordered by code. Always filtered by organization."""
+    statement = (
+        select(AssessmentControl)
+        .where(
+            AssessmentControl.organization_id == organization_id,
+            AssessmentControl.assessment_id == assessment_id,
+            AssessmentControl.in_scope.is_(True),
+        )
+        .order_by(AssessmentControl.control_code)
+    )
+    return list(db.scalars(statement))
