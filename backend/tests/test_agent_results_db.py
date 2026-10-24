@@ -191,25 +191,35 @@ def test_refuses_a_control_outside_the_scope(db):
     assert "outside the assessment scope" in error.value.detail
 
 
-def test_versions_a_second_result_for_the_same_control(db):
-    organization, _, assessment, _ = setup_assessment(db)
+def test_refuses_a_second_agent_result_after_expert_review(db):
+    organization, user, assessment, (control,) = setup_assessment(db)
     (first_result,) = save(db, organization, assessment, agent_output())
     db.commit()
 
-    (second_result,) = save(
+    save_review_decision(
         db,
-        organization,
-        assessment,
-        agent_output(summary="MFA now covers privileged accounts across the organization."),
+        first_result.id,
+        ReviewDecision(outcome="accepted", comment="Policy checked."),
+        user,
     )
     db.commit()
-    db.expire_all()
 
-    first = db.get(ControlResult, first_result.id)
-    second = db.get(ControlResult, second_result.id)
-    assert first.version_no == 1 and first.based_on_result_id is None
-    assert second.version_no == 2 and second.based_on_result_id == first.id
-    assert second.explanation.startswith("MFA now covers privileged accounts")
+    with pytest.raises(HTTPException) as error:
+        save(
+            db,
+            organization,
+            assessment,
+            agent_output(summary="MFA now covers privileged accounts across the organization."),
+        )
+
+    assert error.value.status_code == 409
+    assert control.control_code in error.value.detail
+    stored_results = db.scalars(
+        select(ControlResult).where(
+            ControlResult.assessment_control_id == control.id,
+        )
+    ).all()
+    assert [(row.id, row.version_no) for row in stored_results] == [(first_result.id, 1)]
 
 
 def test_refuses_an_assessment_of_another_organization(db):

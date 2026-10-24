@@ -137,4 +137,29 @@ def _load_controls(
             detail=f"Controls outside the assessment scope: {', '.join(out_of_scope)}.",
         )
 
+    # Re-assessment behavior is not decided yet. Refuse a new agent result when
+    # any version already exists, so a rerun cannot supersede an expert-reviewed result.
+    already_assessed = db.scalars(
+        select(AssessmentControl.control_code)
+        .join(
+            ControlResult,
+            (ControlResult.assessment_control_id == AssessmentControl.id)
+            & (ControlResult.organization_id == AssessmentControl.organization_id)
+            & (ControlResult.assessment_id == AssessmentControl.assessment_id),
+        )
+        .where(
+            AssessmentControl.organization_id == organization_id,
+            AssessmentControl.assessment_id == assessment_id,
+            AssessmentControl.id.in_([control.id for control in controls]),
+        )
+    ).all()
+    if already_assessed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Controls that already have a result: "
+                f"{', '.join(sorted(set(already_assessed)))}."
+            ),
+        )
+
     return [by_code[code] for code in control_ids]
