@@ -1,5 +1,7 @@
 # E0-04 — Agent architecture, LLM selection and data policy
 
+> Historical proof-of-concept record. Its Ollama deployment choice and data-transfer policy are superseded for production-like data by [ADR 0003](0003-interview-data-governance.md). The benchmark below remains evidence about the local prototype only.
+
 Status: proposed · Date: 2026-10-08 · Backlog item: E0-04 · Code: `agent/`
 
 ## Context and status

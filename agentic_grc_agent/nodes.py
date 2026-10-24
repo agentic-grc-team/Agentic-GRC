@@ -33,28 +33,49 @@ def _merge(a: dict, b: dict) -> dict:
 class InterviewState(TypedDict, total=False):
     organization_id: str
     assessment_id: str
+    kb_version: str
     question_codes: list[str]
+    in_scope_control_codes: list[str]
     current_index: int
     follow_ups_used: int
+    ambiguity_clarifications_used: int
     evidence_asked: bool  # an evidence request was already made for the current question
     pending_message: str  # what the agent says next to the participant
     turns: Annotated[list[dict], operator.add]  # full transcript, append-only
+    traces: Annotated[list[dict], operator.add]  # checkpointed so DB persistence can be retried idempotently
     last_interpretation: dict
     last_step: dict
     last_fallback: bool  # the last interpretation came from the keyword fallback
     results: Annotated[dict, _merge]  # question_code -> ControlResult dump
 
 
-def initial_state(organization_id: str, assessment_id: str, question_codes: list[str]) -> InterviewState:
-    return {
+def initial_state(
+    organization_id: str,
+    assessment_id: str,
+    question_codes: list[str],
+    in_scope_control_codes: list[str] | None = None,
+    kb_version: str | None = None,
+) -> InterviewState:
+    if not question_codes:
+        raise ValueError("Assessment has no interview questions configured.")
+    if in_scope_control_codes is not None and not in_scope_control_codes:
+        raise ValueError("Assessment has no in-scope controls configured.")
+    state: InterviewState = {
         "organization_id": organization_id,
         "assessment_id": assessment_id,
         "question_codes": question_codes,
         "current_index": 0,
         "follow_ups_used": 0,
+        "ambiguity_clarifications_used": 0,
         "turns": [],
+        "traces": [],
         "results": {},
     }
+    if kb_version is not None:
+        state["kb_version"] = kb_version
+    if in_scope_control_codes is not None:
+        state["in_scope_control_codes"] = list(dict.fromkeys(in_scope_control_codes))
+    return state
 
 
 @dataclass
@@ -70,8 +91,29 @@ class InterviewNodes:
         self.d = deps
 
     # ------------------------------------------------------------- helpers
+    def _question_codes(self, s: InterviewState) -> list[str]:
+        scope = s.get("in_scope_control_codes")
+        if scope is None:
+            return s["question_codes"]
+        allowed = set(scope)
+        codes = [
+            code
+            for code in s["question_codes"]
+            if any(mapping.node_code in allowed for mapping in self.d.kb.get(code).mappings)
+        ]
+        if not codes:
+            raise ValueError("No configured interview questions map to the assessment's in-scope controls.")
+        return codes
+
     def _question(self, s: InterviewState) -> Question:
-        return self.d.kb.get(s["question_codes"][s["current_index"]])
+        question = self.d.kb.get(self._question_codes(s)[s["current_index"]])
+        scope = s.get("in_scope_control_codes")
+        if scope is None:
+            return question
+        allowed = set(scope)
+        return question.model_copy(
+            update={"mappings": [mapping for mapping in question.mappings if mapping.node_code in allowed]}
+        )
 
     @staticmethod
     def _turns_for(s: InterviewState, code: str) -> list[dict]:
@@ -87,21 +129,21 @@ class InterviewNodes:
             "content": content,
         }
 
-    def _trace(self, s: InterviewState, q: Question, **fields) -> None:
-        self.d.tracer.record(
-            DecisionTrace(
-                organization_id=s["organization_id"],
-                assessment_id=s["assessment_id"],
-                control_ids=[m.node_code for m in q.mappings],
-                module=q.module,
-                kb_version=self.d.kb.kb_version,
-                **fields,
-            )
+    def _trace(self, s: InterviewState, q: Question, **fields) -> dict:
+        trace = DecisionTrace(
+            organization_id=s["organization_id"],
+            assessment_id=s["assessment_id"],
+            control_ids=[m.node_code for m in q.mappings],
+            module=q.module,
+            kb_version=self.d.kb.kb_version,
+            **fields,
         )
+        self.d.tracer.record(trace)
+        return trace.model_dump(mode="json")
 
     def _sources(self, s: InterviewState, code: str) -> list[TraceSource]:
         return [
-            TraceSource(type="interview_turn", ref=f"turn:{t['seq']}", excerpt=t["content"][:300])
+            TraceSource(type="interview_turn", ref=f"turn:{t['seq']}")
             for t in self._turns_for(s, code)
             if t["speaker"] == "participant"
         ]
@@ -114,6 +156,7 @@ class InterviewNodes:
         return {
             "pending_message": text,
             "follow_ups_used": 0,
+            "ambiguity_clarifications_used": 0,
             "evidence_asked": False,
             "turns": [self._turn(s, q.code, "agent", "question", text)],
         }
@@ -132,14 +175,20 @@ class InterviewNodes:
                 prompt_id=prompts.INTERPRET_ID, prompt_version=prompts.INTERPRET_VERSION,
                 system=system, user=user, schema=AnswerInterpretation,
             )
-        except LLMError as e:
+        except LLMError:
             interp, fallback = heuristic_interpret(turns[-1]["content"]), True
-            interp.rationale += f" ({e})"
+            # Provider exceptions can contain endpoint URLs or response bodies.
+            # Keep the durable trace free of that potentially sensitive detail.
+            interp.rationale += " (model unavailable; deterministic fallback used)"
 
         step = decide_next_step(
-            interp, s.get("follow_ups_used", 0), self.d.max_follow_ups, s.get("evidence_asked", False)
+            interp,
+            s.get("follow_ups_used", 0),
+            self.d.max_follow_ups,
+            s.get("evidence_asked", False),
+            s.get("ambiguity_clarifications_used", 0),
         )
-        self._trace(
+        trace = self._trace(
             s, q,
             decision_type="answer_interpreted",
             sources=self._sources(s, q.code),
@@ -158,21 +207,59 @@ class InterviewNodes:
             "last_interpretation": interp.model_dump(mode="json"),
             "last_step": step.model_dump(mode="json"),
             "last_fallback": fallback,
+            "traces": [trace],
         }
 
     def clarify(self, s: InterviewState) -> dict:
         q = self._question(s)
-        system, user = prompts.clarify(q, self._turns_for(s, q.code)[-1]["content"])
-        try:
-            out, _ = self.d.llm.structured(
-                prompt_id=prompts.CLARIFY_ID, prompt_version=prompts.CLARIFY_VERSION,
-                system=system, user=user, schema=Clarification,
+        step = NextStep.model_validate(s["last_step"])
+        turns = self._turns_for(s, q.code)
+        latest_answer = next((t["content"] for t in reversed(turns) if t["speaker"] == "participant"), "")
+
+        if step.rule_id == "rule:low_confidence_clarify":
+            system, user = prompts.ambiguity_clarification(
+                q, latest_answer, s["last_interpretation"].get("summary", "")
             )
-            text = out.explanation.strip() or q.clarification
-        except LLMError:
-            text = q.clarification
-        text = f"{text}\n\n{q.text}"
-        return {"pending_message": text, "turns": [self._turn(s, q.code, "agent", "clarification", text)]}
+            quote = latest_answer[:80].replace("\n", " ").strip()
+            fallback = (
+                f'I want to make sure I understood "{quote}". Could you clarify your answer about: '
+                f"{q.intent}"
+            )
+            try:
+                out, _ = self.d.llm.structured(
+                    prompt_id=prompts.CLARIFY_ID,
+                    prompt_version=prompts.CLARIFY_VERSION,
+                    system=system,
+                    user=user,
+                    schema=FollowUpQuestion,
+                )
+                text = out.question.strip()
+                if not text.endswith("?") or len(text) > 400:
+                    raise LLMError("clarification is not a single short question")
+            except LLMError:
+                text = fallback
+            updates = {"ambiguity_clarifications_used": s.get("ambiguity_clarifications_used", 0) + 1}
+        else:
+            system, user = prompts.clarify(q, latest_answer)
+            try:
+                out, _ = self.d.llm.structured(
+                    prompt_id=prompts.CLARIFY_ID,
+                    prompt_version=prompts.CLARIFY_VERSION,
+                    system=system,
+                    user=user,
+                    schema=Clarification,
+                )
+                text = out.explanation.strip() or q.clarification
+            except LLMError:
+                text = q.clarification
+            text = f"{text}\n\n{q.text}"
+            updates = {}
+
+        return {
+            **updates,
+            "pending_message": text,
+            "turns": [self._turn(s, q.code, "agent", "clarification", text)],
+        }
 
     def follow_up(self, s: InterviewState) -> dict:
         q = self._question(s)
@@ -194,14 +281,17 @@ class InterviewNodes:
             except LLMError:
                 text = prompts.FALLBACK_FOLLOW_UPS[missing].format(quote=quote, question=q.text)
 
+        trace_update = {}
         if missing is Missing.evidence:
-            self._trace(
+            trace = self._trace(
                 s, q, decision_type="evidence_requested", sources=self._sources(s, q.code),
                 prompt_id=step.rule_id, prompt_version="0.1.0",
                 output={"request": text, "evidence_examples": q.evidence_examples},
                 rationale=step.reason,
             )
+            trace_update = {"traces": [trace]}
         return {
+            **trace_update,
             "pending_message": text,
             "follow_ups_used": s.get("follow_ups_used", 0) + 1,
             "evidence_asked": s.get("evidence_asked", False) or missing is Missing.evidence,
@@ -225,20 +315,23 @@ class InterviewNodes:
             evidence_pending=step.status.value in ("implemented", "partially_implemented"),
             supporting_turns=[int(src.ref.split(":")[1]) for src in sources],
         )
-        self._trace(
+        trace = self._trace(
             s, q, decision_type="status_assessed", sources=sources, evidence_nature="attestation",
             prompt_id=step.rule_id, prompt_version="0.1.0",
             output=result.model_dump(mode="json"), rationale=step.reason,
             confidence=interp.confidence, requires_human_review=step.requires_human_review,
             fallback_used=s.get("last_fallback", False),
         )
-        return {"results": {q.code: result.model_dump(mode="json")}, "current_index": s["current_index"] + 1}
+        return {
+            "results": {q.code: result.model_dump(mode="json")},
+            "current_index": s["current_index"] + 1,
+            "traces": [trace],
+        }
 
     # -------------------------------------------------------------- routes
     @staticmethod
     def route_after_interpret(s: InterviewState) -> str:
         return Action(s["last_step"]["action"]).value  # "clarify" | "follow_up" | "close"
 
-    @staticmethod
-    def route_after_close(s: InterviewState) -> str:
-        return "next" if s["current_index"] < len(s["question_codes"]) else "done"
+    def route_after_close(self, s: InterviewState) -> str:
+        return "next" if s["current_index"] < len(self._question_codes(s)) else "done"
