@@ -1,16 +1,14 @@
-"""Decision traces (E0-06 / AGRC-15).
+"""Decision trace value objects for the graph proof of concept (E0-06 / AGRC-15).
 
-Field names follow docs/design/trace-schema.md (v0.2), so moving from this JSONL
-file to the `decision_traces` table is a mapping, not a redesign. Traces are
-append-only.
+Durable production traces are written by the backend append-only service. This
+module has no file-backed trace path.
 """
 
 from __future__ import annotations
 
-import json
+from collections.abc import Callable
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -54,16 +52,18 @@ class DecisionTrace(BaseModel):
 
 
 class TraceRecorder:
-    def __init__(self, directory: Path | None = None):
-        self.directory = directory
+    """In-memory trace collector with an optional durable backend sink.
+
+    JSONL output was a proof-of-concept transport. Production traces are written
+    through the backend append-only decision_traces service instead.
+    """
+
+    def __init__(self, persist: Callable[[DecisionTrace], object] | None = None):
+        self.persist = persist
         self.records: list[DecisionTrace] = []
-        if directory:
-            directory.mkdir(parents=True, exist_ok=True)
 
     def record(self, trace: DecisionTrace) -> DecisionTrace:
+        if self.persist is not None:
+            self.persist(trace)
         self.records.append(trace)
-        if self.directory:
-            path = self.directory / f"{trace.assessment_id}.jsonl"
-            with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(trace.model_dump(), ensure_ascii=False) + "\n")
         return trace

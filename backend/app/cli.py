@@ -72,9 +72,19 @@ def main() -> int:
     )
     admin_parser.add_argument("--user-id", required=True, type=_uuid)
     admin_parser.add_argument("--email", required=True, type=_email)
+    subparsers.add_parser(
+        "init-interview-checkpointer",
+        help="Create or upgrade the private Postgres tables used by LangGraph checkpoints.",
+    )
     args = parser.parse_args()
     if args.command == "bootstrap-admin":
         return bootstrap_platform_admin(args.user_id, args.email)
+    if args.command == "init-interview-checkpointer":
+        from app.services.langgraph_checkpointer import initialize_interview_checkpointer
+
+        initialize_interview_checkpointer()
+        print("LangGraph interview checkpoint schema is ready.")
+        return 0
     return 2
 
 

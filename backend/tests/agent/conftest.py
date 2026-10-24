@@ -1,18 +1,17 @@
-import sys
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from app.agent.knowledge import load_kb
+from app.agent.nodes import InterviewNodes
 
-from agentic_grc_agent.knowledge import load_kb  # noqa: E402
-from agentic_grc_agent.nodes import InterviewNodes  # noqa: E402
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+KB_PATH = BACKEND_DIR / "app" / "agent" / "data" / "kb_demo.yaml"
 
 
 @pytest.fixture
 def kb():
-    return load_kb(ROOT / "agentic_grc_agent" / "data" / "kb_demo.yaml")
+    return load_kb(KB_PATH)
 
 
 def apply(state: dict, update: dict) -> dict:

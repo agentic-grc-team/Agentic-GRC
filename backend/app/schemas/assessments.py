@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-DEFAULT_KB_VERSION = "demo-0.2"   # the agent's provisional KB (agentic_grc_agent/data/kb_demo.yaml) until E0-03
+DEFAULT_KB_VERSION = "demo-0.2"   # the agent's provisional KB (app/agent/data/kb_demo.yaml) until E0-03
 
 AssessmentStatus = Literal["draft", "in_progress", "awaiting_review", "completed"]
 

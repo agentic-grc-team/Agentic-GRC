@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Enum as SqlEnum,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -263,6 +264,32 @@ CONTROL_STATUSES = ("implemented", "partially_implemented", "not_implemented", "
 ASSESSMENT_STATUSES = ("draft", "in_progress", "awaiting_review", "completed")
 RESULT_AUTHORS = ("agent", "aligo_consultant")   # the assessed organization never authors a result (schema v0.3)
 CSF_CODE_REGEX = r"^(GV|ID|PR|DE|RS|RC)\.[A-Z]{2}-[0-9]{2}$"
+ACTOR_TYPE_VALUES = ("agent", "assessed_org_representative", "aligo_consultant")
+SESSION_TYPE_VALUES = ("kickoff", "block", "recovery", "evidence_review")
+TURN_SPEAKER_VALUES = ("agent", "participant")
+TURN_TYPE_VALUES = (
+    "question",
+    "answer",
+    "follow_up",
+    "clarification",
+    "evidence_request",
+    "contradiction_prompt",
+    "summary",
+)
+KB_VERSION_STATUS_VALUES = ("draft", "published", "retired")
+SOURCE_TYPE_VALUES = (
+    "interview_turn",
+    "document_span",
+    "tenant_configuration",
+    "prior_phase_evidence",
+)
+
+ACTOR_TYPE_ENUM = SqlEnum(*ACTOR_TYPE_VALUES, name="actor_type")
+SESSION_TYPE_ENUM = SqlEnum(*SESSION_TYPE_VALUES, name="session_type")
+TURN_SPEAKER_ENUM = SqlEnum(*TURN_SPEAKER_VALUES, name="turn_speaker")
+TURN_TYPE_ENUM = SqlEnum(*TURN_TYPE_VALUES, name="turn_type")
+KB_VERSION_STATUS_ENUM = SqlEnum(*KB_VERSION_STATUS_VALUES, name="kb_version_status")
+SOURCE_TYPE_ENUM = SqlEnum(*SOURCE_TYPE_VALUES, name="source_type")
 
 
 def _in_list(column: str, values: tuple[str, ...]) -> str:
@@ -310,6 +337,7 @@ class DecisionTraceRecord(Base):
         ),
         # A review or a replacement must point to a trace of the same organization and assessment.
         UniqueConstraint("organization_id", "assessment_id", "id", name="uq_decision_traces_org_assessment_id"),
+        UniqueConstraint("organization_id", "id", name="uq_decision_traces_org_id"),
         ForeignKeyConstraint(
             ["organization_id", "assessment_id", "reviews_trace_id"],
             ["decision_traces.organization_id", "decision_traces.assessment_id", "decision_traces.id"],
@@ -379,6 +407,56 @@ class DecisionTraceRecord(Base):
     )
 
 
+class DecisionTraceSourceRecord(Base):
+    __tablename__ = "decision_trace_sources"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "trace_id"],
+            ["decision_traces.organization_id", "decision_traces.id"],
+            name="fk_decision_trace_sources_trace_same_org",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "interview_turn_id"],
+            ["interview_turns.organization_id", "interview_turns.id"],
+            name="fk_decision_trace_sources_turn_same_org",
+        ),
+        CheckConstraint(
+            "num_nonnulls(interview_turn_id, document_chunk_id, configuration_item_id, prior_phase_finding_id) = 1",
+            name="one_reference",
+        ),
+        CheckConstraint(
+            "(source_type = 'interview_turn') = (interview_turn_id IS NOT NULL)",
+            name="type_turn",
+        ),
+        CheckConstraint(
+            "(source_type = 'document_span') = (document_chunk_id IS NOT NULL)",
+            name="type_document",
+        ),
+        CheckConstraint(
+            "(source_type = 'tenant_configuration') = (configuration_item_id IS NOT NULL)",
+            name="type_configuration",
+        ),
+        CheckConstraint(
+            "(source_type = 'prior_phase_evidence') = (prior_phase_finding_id IS NOT NULL)",
+            name="type_prior_phase",
+        ),
+        UniqueConstraint("trace_id", "interview_turn_id", name="uq_trace_source_turn"),
+        Index("ix_decision_trace_sources_trace_id", "trace_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    trace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    source_type: Mapped[str] = mapped_column(SOURCE_TYPE_ENUM, nullable=False)
+    interview_turn_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    document_chunk_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    configuration_item_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    prior_phase_finding_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Assessment(Base):
     """An assessment of one organization against a cybersecurity framework (AGRC-61)."""
 
@@ -426,6 +504,253 @@ class Assessment(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Framework(Base):
+    __tablename__ = "frameworks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class FrameworkVersion(Base):
+    __tablename__ = "framework_versions"
+    __table_args__ = (UniqueConstraint("framework_id", "version", name="uq_framework_versions_framework_version"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    framework_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("frameworks.id"), nullable=False
+    )
+    version: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class KBVersion(Base):
+    __tablename__ = "kb_versions"
+    __table_args__ = (
+        CheckConstraint("status = 'draft' OR published_at IS NOT NULL", name="published_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    framework_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("framework_versions.id"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(
+        KB_VERSION_STATUS_ENUM, nullable=False, server_default="draft"
+    )
+    is_provisional: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    decision_record_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class InterviewBlock(Base):
+    __tablename__ = "interview_blocks"
+    __table_args__ = (
+        UniqueConstraint("kb_version_id", "code", name="uq_interview_blocks_kb_version_code"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    kb_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("kb_versions.id"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(String(5), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    audience: Mapped[str] = mapped_column(Text, nullable=False)
+    estimated_minutes: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+
+
+class AssessmentModule(Base):
+    __tablename__ = "assessment_modules"
+    __table_args__ = (
+        UniqueConstraint("kb_version_id", "code", name="uq_assessment_modules_kb_version_code"),
+        Index("ix_assessment_modules_block_id", "block_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    kb_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("kb_versions.id"), nullable=False
+    )
+    block_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("interview_blocks.id"), nullable=True
+    )
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+
+
+class Question(Base):
+    __tablename__ = "questions"
+    __table_args__ = (
+        UniqueConstraint("module_id", "code", name="uq_questions_module_code"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    module_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("assessment_modules.id"), nullable=False
+    )
+    # Optional knowledge-base references are connected when their catalog tables are adopted.
+    statement_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    remediation_template_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    language_code: Mapped[str] = mapped_column(String(10), nullable=False, server_default="en")
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
+
+
+class AssessmentParticipant(Base):
+    __tablename__ = "assessment_participants"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_assessment_participants_assessment_same_org",
+        ),
+        CheckConstraint("participant_type <> 'agent'", name="human"),
+        UniqueConstraint("organization_id", "id", name="uq_assessment_participants_tenant"),
+        Index("ix_assessment_participants_assessment_id", "assessment_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    participant_type: Mapped[str] = mapped_column(ACTOR_TYPE_ENUM, nullable=False)
+    role_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AssessmentSession(Base):
+    __tablename__ = "assessment_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_assessment_sessions_assessment_same_org",
+        ),
+        CheckConstraint(
+            "(session_type = 'block') = (block_id IS NOT NULL)", name="block"
+        ),
+        CheckConstraint(
+            "ended_at IS NULL OR started_at IS NULL OR ended_at >= started_at",
+            name="dates",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_assessment_sessions_tenant"),
+        Index("ix_assessment_sessions_assessment_id", "assessment_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    session_type: Mapped[str] = mapped_column(SESSION_TYPE_ENUM, nullable=False)
+    block_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("interview_blocks.id"), nullable=True
+    )
+    facilitator_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resume_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SessionParticipant(Base):
+    __tablename__ = "session_participants"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "session_id"],
+            ["assessment_sessions.organization_id", "assessment_sessions.id"],
+            name="fk_session_participants_session_same_org",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "participant_id"],
+            ["assessment_participants.organization_id", "assessment_participants.id"],
+            name="fk_session_participants_participant_same_org",
+        ),
+    )
+
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    participant_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+
+
+class InterviewTurn(Base):
+    __tablename__ = "interview_turns"
+    __table_args__ = (
+        Index("ix_interview_turns_session_created", "session_id", "created_at"),
+        ForeignKeyConstraint(
+            ["organization_id", "session_id"],
+            ["assessment_sessions.organization_id", "assessment_sessions.id"],
+            name="fk_interview_turns_session_same_org",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "participant_id"],
+            ["assessment_participants.organization_id", "assessment_participants.id"],
+            name="fk_interview_turns_participant_same_org",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "replies_to_turn_id"],
+            ["interview_turns.organization_id", "interview_turns.id"],
+            name="fk_interview_turns_reply_same_org",
+        ),
+        CheckConstraint(
+            "(speaker = 'participant') = (participant_id IS NOT NULL)", name="participant"
+        ),
+        UniqueConstraint("session_id", "sequence_no", name="uq_interview_turns_session_sequence"),
+        UniqueConstraint("organization_id", "id", name="uq_interview_turns_tenant"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    speaker: Mapped[str] = mapped_column(TURN_SPEAKER_ENUM, nullable=False)
+    participant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    turn_type: Mapped[str] = mapped_column(TURN_TYPE_ENUM, nullable=False)
+    question_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("questions.id"), nullable=True
+    )
+    replies_to_turn_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    language_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

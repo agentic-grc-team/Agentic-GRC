@@ -252,8 +252,8 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 3. Resolved: organization representatives do not see traces (HU-03, section 7).
 4. How the agent computes `confidence` (agent developers).
 5. Resolved: migration 0007 (PR #15) adds the composite foreign key `fk_decision_traces_assessment_same_org`, `(organization_id, assessment_id)` → `assessments (organization_id, id)`.
-6. Normalizing `sources` and `control_ids` into separate tables (as in the team schema v0.3) is deferred until the tables they would reference (`interview_turns`, `document_chunks`, `configuration_items`, `framework_nodes`) exist. Until then they stay as JSONB and `TEXT[]` columns.
-7. Agent integration: the backend `DecisionTrace` model is the single source of truth. When the agent moves into the backend, it replaces its JSONL `TraceRecorder` with the backend's `record_trace()` function. `record_trace()` only flushes; the caller commits, so a decision and the data it explains (for example an expert review) are saved in one transaction.
+6. Interview turn source links are normalized in `decision_trace_sources` and tenant-scoped to `interview_turns`. The legacy `sources` JSONB field remains for trace API compatibility during this phase. Document/configuration/prior-phase source links and normalized control mappings are deferred until their referenced tables are adopted.
+7. Agent integration: the backend `DecisionTrace` model is the single source of truth. The proof-of-concept `TraceRecorder` no longer writes JSONL; it accepts an optional persistence sink for integration and otherwise only collects records in memory for isolated graph runs. Production decisions use the backend append-only `record_trace()` service. Interview source references use `interview_turn:<uuid>` and are saved in the same caller-owned transaction as the decision. `record_trace()` only flushes; the caller commits, so a decision and the data it explains (for example an expert review) are saved in one transaction.
 
 ## 11. Changelog
 
@@ -266,3 +266,4 @@ CREATE INDEX idx_trace_controls ON decision_traces USING GIN (control_ids);
 | 0.2 | 2026-10-12 | Review by Natalia: control status values listed in snake_case, `not_applicable` added, fallback review required only when a control is closed, `attestation` recommended for interview-based decisions. |
 | 0.2 | 2026-10-10 | Access rules aligned with HU-03 (representatives have no access), append-only enforced by trigger, JSON export, `created_at` uses `clock_timestamp()`. Aligned with the agent PoC (PR #6): added `evidence_requested`, `latency_ms` and `fallback_used`; `model_name` required only for LLM decisions; table renamed to `decision_traces` to match the existing plural table names; `assessment_id` without a foreign key until the `assessments` table exists |
 | 0.3 | 2026-10-13 | Open question 5 resolved: `assessment_id` is a composite foreign key to `assessments` (migration 0007, PR #15). |
+| 0.4 | 2026-10-20 | Backend append-only storage is the production trace path; the proof-of-concept recorder no longer writes JSONL. Interview source references use persisted turn UUIDs. |

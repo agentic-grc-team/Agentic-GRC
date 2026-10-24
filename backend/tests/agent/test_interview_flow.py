@@ -1,13 +1,13 @@
 """End-to-end interview flow with a fake LLM (no Ollama needed)."""
 
-from conftest import run_scripted, run_scripted_more
+from tests.agent.conftest import KB_PATH, run_scripted, run_scripted_more
 
-from agentic_grc_agent.fallback import heuristic_interpret
-from agentic_grc_agent.llm import FakeLLM
-from agentic_grc_agent.nodes import Deps, InterviewNodes
-from agentic_grc_agent.schemas import AnswerInterpretation, Clarification, FollowUpQuestion
-from agentic_grc_agent.trace import TraceRecorder
-from agentic_grc_agent.nodes import initial_state
+from app.agent.fallback import heuristic_interpret
+from app.agent.llm import FakeLLM
+from app.agent.nodes import Deps, InterviewNodes
+from app.agent.schemas import AnswerInterpretation, Clarification, FollowUpQuestion
+from app.agent.trace import TraceRecorder
+from app.agent.nodes import initial_state
 
 
 def scripted_interpretations(*interps):
@@ -26,9 +26,8 @@ def make(llm):
 
 
 def pytest_kb():
-    from conftest import ROOT
-    from agentic_grc_agent.knowledge import load_kb
-    return load_kb(ROOT / "agentic_grc_agent" / "data" / "kb_demo.yaml")
+    from app.agent.knowledge import load_kb
+    return load_kb(KB_PATH)
 
 
 def test_vague_yes_then_detail_closes_as_implemented():
@@ -110,13 +109,22 @@ def test_evidence_request_flag_resets_on_the_next_question():
     assert [t.decision_type for t in tracer.records].count("evidence_requested") == 2
 
 
-def test_control_closed_on_fallback_is_flagged_in_its_trace():
+def test_low_confidence_fallback_requires_clarification_before_result():
     down = lambda _u: RuntimeError("connection refused")  # noqa: E731
-    nodes, tracer = make(FakeLLM({"interpret_answer": down}))
-    run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["No, never"])
-    closed = tracer.records[-1]
-    assert closed.decision_type == "status_assessed"
-    assert closed.fallback_used and closed.requires_human_review
+    llm = FakeLLM({
+        "interpret_answer": down,
+        "clarify_question": lambda _u: FollowUpQuestion(question="Could you clarify whether MFA is used?"),
+    })
+    nodes, tracer = make(llm)
+    state = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["No, never"])
+
+    assert state["results"] == {}
+    assert state["turns"][-1]["turn_type"] == "clarification"
+    assert "Could you clarify" in state["pending_message"]
+    assert len(tracer.records) == 1
+    assert tracer.records[0].decision_type == "answer_interpreted"
+    assert tracer.records[0].fallback_used
+    assert tracer.records[0].output["next_step"]["rule_id"] == "rule:low_confidence_clarify"
 
 
 def test_three_vague_follow_ups_then_stops():
@@ -155,10 +163,12 @@ def test_moves_to_next_question():
 
 def test_llm_down_degrades_to_heuristic_and_templates():
     down = lambda _u: RuntimeError("connection refused")  # noqa: E731
-    llm = FakeLLM({"interpret_answer": down, "generate_follow_up": down})
+    llm = FakeLLM({"interpret_answer": down, "clarify_question": down, "generate_follow_up": down})
     nodes, tracer = make(llm)
     s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["Yes"])
-    assert "Yes" in s["pending_message"]  # template quotes the participant
+    assert '"Yes"' in s["pending_message"]  # deterministic ambiguity clarification quotes the participant
+    assert s["results"] == {}  # a fallback interpretation cannot close the control
+    assert s["turns"][-1]["turn_type"] == "clarification"
     assert tracer.records[0].fallback_used and tracer.records[0].prompt_id == "rule:keyword_fallback"
 
 
