@@ -4,7 +4,8 @@
     python scripts/run_interview.py --only IAM-01   # just the MFA control
     AGRC_LLM_MODEL=qwen2.5:7b python scripts/run_interview.py
 
-Type /quit to stop. Traces are written to traces/<assessment_id>.jsonl.
+Type /quit to stop. Decisions are kept in memory only; the backend interview API is what
+persists them to the database.
 """
 
 from __future__ import annotations
