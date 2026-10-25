@@ -30,3 +30,9 @@ export function submitReviewDecision(
     body: JSON.stringify(payload),
   });
 }
+
+export function getReviewEvidence(resultId, accessToken) {
+  return apiRequest(`/expert-reviews/${resultId}/evidence`, {
+    accessToken: accessToken,
+  });
+}
