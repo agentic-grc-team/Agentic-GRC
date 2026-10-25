@@ -56,6 +56,8 @@ export default function AssessmentWorkspace({
   const initialOrganizationIdRef = useRef(initialOrganizationId);
   const onOrganizationChangeRef = useRef(onOrganizationChange);
   const createdAssessmentIdRef = useRef("");
+  // A create that finishes after the user switched organization must not change the new organization's screen.
+  const selectedOrganizationIdRef = useRef("");
   const sessionKey = sessionId ?? accessToken;
 
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function AssessmentWorkspace({
   }, [onOrganizationChange]);
 
   useEffect(() => {
+    selectedOrganizationIdRef.current = selectedOrganizationId;
     if (selectedOrganizationId) {
       onOrganizationChangeRef.current?.(selectedOrganizationId);
     }
@@ -165,6 +168,7 @@ export default function AssessmentWorkspace({
   );
 
   function selectOrganization(organizationId) {
+    selectedOrganizationIdRef.current = organizationId;
     setSelectedOrganizationId(organizationId);
     setNotice("");
     setCreateError("");
@@ -188,11 +192,13 @@ export default function AssessmentWorkspace({
     setNotice("");
     try {
       const created = await createAssessment(organizationId, trimmedTitle, accessTokenRef.current);
+      if (selectedOrganizationIdRef.current !== organizationId) return;
       setTitle("");
       setNotice(`"${created.title}" was created. Its scope is shown below.`);
       createdAssessmentIdRef.current = created.id;
       setAssessmentsReload((count) => count + 1);
     } catch (error) {
+      if (selectedOrganizationIdRef.current !== organizationId) return;
       setCreateError(describeError(error));
     } finally {
       setIsCreating(false);

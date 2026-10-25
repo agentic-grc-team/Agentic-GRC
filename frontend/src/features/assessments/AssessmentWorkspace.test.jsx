@@ -235,6 +235,45 @@ describe("AssessmentWorkspace", () => {
     expect(getAssessmentScope).not.toHaveBeenCalledWith("org-1", "assess-1", "token-a");
   });
 
+  it("ignores a create that finishes after switching organization", async () => {
+    const slowCreate = deferred();
+    createAssessment.mockReturnValue(slowCreate.promise);
+    renderWorkspace();
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "Q4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
+    expect(await screen.findByText("This organization has no assessments yet.")).toBeInTheDocument();
+    const listCalls = listAssessments.mock.calls.length;
+
+    await act(async () => {
+      slowCreate.resolve(assessment("assess-2", "Q4"));
+    });
+
+    expect(screen.queryByText(/was created/)).not.toBeInTheDocument();
+    expect(listAssessments.mock.calls.length).toBe(listCalls);
+    expect(screen.getByRole("combobox", { name: "Organization" })).toHaveValue("org-2");
+  });
+
+  it("ignores a create error that arrives after switching organization", async () => {
+    const slowCreate = deferred();
+    createAssessment.mockReturnValue(slowCreate.promise);
+    renderWorkspace();
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "Q4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
+    await screen.findByText("This organization has no assessments yet.");
+
+    await act(async () => {
+      slowCreate.reject(new ApiError(403, { detail: "Only administrators and consultants can start an assessment." }));
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("uses the refreshed token without reloading the screen", async () => {
     const { rerender } = renderWorkspace();
     await screen.findByRole("heading", { name: "Q3 baseline" });
