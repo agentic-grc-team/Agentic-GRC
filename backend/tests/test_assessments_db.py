@@ -23,6 +23,7 @@ from app.services import assessment_scope
 from app.services.assessments import (
     get_assessment,
     list_assessments,
+    list_in_scope_controls,
     start_assessment,
 )
 
@@ -197,6 +198,25 @@ def test_start_assessment_saves_nothing_when_a_control_cannot_be_added(db, monke
     assert db.scalars(
         select(AssessmentControl).where(AssessmentControl.organization_id == organization.id)
     ).all() == []
+
+
+def test_list_in_scope_controls_skips_out_of_scope_and_other_assessments(db):
+    organization = make_organization(db)
+    user = make_user(db)
+    assessment = start_assessment(db, organization.id, user.id, AssessmentCreate(title="Scope"))
+    other = start_assessment(db, organization.id, user.id, AssessmentCreate(title="Other"))
+    make_control(
+        db, organization, assessment,
+        control_code="DE.CM-01", control_title="Networks are monitored",
+        in_scope=False, scope_rationale="Not covered by the demo KB.",
+    )
+
+    controls = list_in_scope_controls(db, organization.id, assessment.id)
+
+    assert [c.control_code for c in controls] == ["PR.AA-01", "PR.AA-03", "PR.AA-05"]
+    assert all(c.assessment_id == assessment.id for c in controls)
+    assert list_in_scope_controls(db, make_organization(db).id, assessment.id) == []
+    assert len(list_in_scope_controls(db, organization.id, other.id)) == 3
 
 
 def test_list_assessments_returns_only_organization_newest_first(db):

@@ -1,4 +1,4 @@
-"""Start, list and read assessments (AGRC-61)."""
+"""Start, list and read assessments (AGRC-61) and their scope (AGRC-63)."""
 
 from uuid import UUID
 
@@ -8,9 +8,15 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_db_session
 from app.api.v1.endpoints.organizations import _active_membership
 from app.db.models import Organization, User
-from app.schemas.assessments import AssessmentCreate, AssessmentRead
+from app.schemas.assessments import AssessmentCreate, AssessmentRead, AssessmentScopeRead
 from app.security.auth import get_current_user
-from app.services.assessments import get_assessment, list_assessments, start_assessment
+from app.services.assessment_scope import group_controls_by_domain
+from app.services.assessments import (
+    get_assessment,
+    list_assessments,
+    list_in_scope_controls,
+    start_assessment,
+)
 
 router = APIRouter(prefix="/organizations", tags=["assessments"])
 
@@ -94,3 +100,34 @@ def read_assessment(
             detail="Assessment not found.",
         )
     return AssessmentRead.model_validate(record)
+
+
+@router.get(
+    "/{organization_id}/assessments/{assessment_id}/scope",
+    response_model=AssessmentScopeRead,
+)
+def read_assessment_scope(
+    organization_id: UUID,
+    assessment_id: UUID,
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+) -> AssessmentScopeRead:
+    """The CSF 2.0 functions, categories and controls in scope (HU-04). Every member can see it."""
+    _require_assessment_access(db, organization_id, user)
+    record = get_assessment(db, organization_id, assessment_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assessment not found.",
+        )
+    organization = db.get(Organization, organization_id)
+    controls = list_in_scope_controls(db, organization_id, assessment_id)
+    return AssessmentScopeRead(
+        organization_id=organization_id,
+        organization_name=organization.name,
+        assessment=AssessmentRead.model_validate(record),
+        control_count=len(controls),
+        functions=group_controls_by_domain(
+            [(control.control_code, control.control_title) for control in controls]
+        ),
+    )

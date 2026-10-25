@@ -268,3 +268,61 @@ def test_platform_admin_cannot_list_assessments_if_org_missing(api):
 
 def test_models_and_schemas_control_statuses_match():
     assert db_models.CONTROL_STATUSES == trace_schemas.CONTROL_STATUSES
+
+
+SCOPE_URL = f"{URL}/{ASSESSMENT_ID}/scope"
+
+
+def stored_control(code, title, in_scope=True):
+    return SimpleNamespace(control_code=code, control_title=title, in_scope=in_scope)
+
+
+@pytest.fixture
+def scope_controls(api):
+    api.setattr(
+        "app.api.v1.endpoints.assessments.list_in_scope_controls",
+        lambda db, organization_id, assessment_id: [
+            stored_control("PR.AA-01", "Identities are managed"),
+            stored_control("PR.AA-03", "Users are authenticated"),
+        ],
+    )
+
+
+def test_representative_can_see_the_assessment_scope(api, scope_controls):
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", membership("representative"))
+
+    response = client.get(SCOPE_URL)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["organization_name"] == "Known Org"
+    assert body["assessment"]["id"] == str(ASSESSMENT_ID)
+    assert body["control_count"] == 2
+    assert [f["code"] for f in body["functions"]] == ["PR"]
+    assert [c["code"] for c in body["functions"][0]["categories"][0]["controls"]] == ["PR.AA-01", "PR.AA-03"]
+
+
+def test_non_member_cannot_see_the_assessment_scope(api, scope_controls):
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", no_membership)
+
+    response = client.get(SCOPE_URL)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Organization not found."
+
+
+def test_scope_of_unknown_assessment_returns_404(api, scope_controls):
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", membership("consultant"))
+
+    response = client.get(f"{URL}/{uuid.uuid4()}/scope")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Assessment not found."
+
+
+def test_scope_requires_login(api, scope_controls):
+    app.dependency_overrides.pop(get_current_user)
+
+    response = client.get(SCOPE_URL)
+
+    assert response.status_code == 401
