@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.db.models import (
 )
 from app.db.session import get_engine
 from app.schemas.assessments import AssessmentCreate
+from app.services import assessment_scope
 from app.services.assessments import (
     get_assessment,
     list_assessments,
@@ -163,6 +164,39 @@ def test_start_assessment_stores_all_fields(db):
     assert assessment.framework_code == "NIST-CSF"
     assert assessment.framework_version == "2.0"
     assert assessment.kb_version == "demo-0.2"
+
+
+def test_start_assessment_adds_the_kb_controls_in_scope(db):
+    organization = make_organization(db)
+    user = make_user(db)
+
+    assessment = start_assessment(db, organization.id, user.id, AssessmentCreate(title="Scoped"))
+
+    controls = db.scalars(
+        select(AssessmentControl)
+        .where(AssessmentControl.assessment_id == assessment.id)
+        .order_by(AssessmentControl.control_code)
+    ).all()
+    assert [(c.control_code, c.control_title) for c in controls] == assessment_scope.controls_for_kb_version("demo-0.2")
+    assert all(c.in_scope for c in controls)
+    assert all(c.scope_rationale is None for c in controls)
+    assert all(c.organization_id == organization.id for c in controls)
+    assert all(c.added_by_user_id == user.id for c in controls)
+
+
+def test_start_assessment_saves_nothing_when_a_control_cannot_be_added(db, monkeypatch):
+    organization = make_organization(db)
+    user = make_user(db)
+    # A repeated code breaks uq_assessment_controls_assessment_code while the controls are added.
+    monkeypatch.setitem(assessment_scope.KB_SCOPES, "demo-0.2", ("PR.AA-01", "PR.AA-01"))
+
+    with pytest.raises(IntegrityError):
+        start_assessment(db, organization.id, user.id, AssessmentCreate(title="Broken scope"))
+
+    assert list_assessments(db, organization.id) == []
+    assert db.scalars(
+        select(AssessmentControl).where(AssessmentControl.organization_id == organization.id)
+    ).all() == []
 
 
 def test_list_assessments_returns_only_organization_newest_first(db):

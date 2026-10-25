@@ -114,7 +114,7 @@ def test_consultant_can_start_assessment(api):
 
     api.setattr("app.api.v1.endpoints.assessments.start_assessment", mock_start)
 
-    response = client.post(URL, json={"title": "Test Assessment", "kb_version": "custom-1.0"})
+    response = client.post(URL, json={"title": "Test Assessment", "kb_version": "demo-0.2"})
 
     assert response.status_code == 201
     body = response.json()
@@ -123,7 +123,7 @@ def test_consultant_can_start_assessment(api):
     assert captured["organization_id"] == ORG_ID
     assert captured["created_by_user_id"] == USER_ID
     assert captured["data"].title == "Test Assessment"
-    assert captured["data"].kb_version == "custom-1.0"
+    assert captured["data"].kb_version == "demo-0.2"
 
 
 def test_administrator_can_start_assessment(api):
@@ -167,6 +167,13 @@ def test_blank_title_rejected(api):
     assert response.status_code == 422
 
 
+def test_unknown_kb_version_rejected(api):
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", membership("consultant"))
+    response = client.post(URL, json={"title": "Unknown KB", "kb_version": "custom-1.0"})
+    assert response.status_code == 422
+    assert "Unknown knowledge-base version" in str(response.json()["detail"])
+
+
 def test_no_kb_version_defaults_to_none_in_request_and_service_sets_default(api):
     api.setattr("app.api.v1.endpoints.assessments._active_membership", membership("consultant"))
     captured_data = {}
@@ -188,7 +195,16 @@ def test_no_kb_version_defaults_to_none_in_request_and_service_sets_default(api)
         def add(self, obj):
             self.added.append(obj)
 
+        def add_all(self, objs):
+            self.added.extend(objs)
+
+        def flush(self):
+            pass
+
         def commit(self):
+            pass
+
+        def rollback(self):
             pass
 
         def refresh(self, obj):
@@ -198,8 +214,9 @@ def test_no_kb_version_defaults_to_none_in_request_and_service_sets_default(api)
     created_assessment = real_start_assessment(
         fake_db, ORG_ID, USER_ID, AssessmentCreate(title="Real Service Test")
     )
-    assert len(fake_db.added) == 1
+    assert len(fake_db.added) == 4  # the assessment and its three KB controls
     assert fake_db.added[0] is created_assessment
+    assert [control.control_code for control in fake_db.added[1:]] == ["PR.AA-01", "PR.AA-03", "PR.AA-05"]
     assert created_assessment.kb_version == DEFAULT_KB_VERSION
     assert created_assessment.status == "in_progress"
     assert created_assessment.started_at is not None
