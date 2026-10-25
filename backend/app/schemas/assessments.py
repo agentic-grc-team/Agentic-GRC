@@ -1,4 +1,4 @@
-"""Assessment schemas (AGRC-61)."""
+"""Assessment schemas (AGRC-61, AGRC-63)."""
 
 from datetime import datetime
 from typing import Literal
@@ -54,3 +54,30 @@ class AssessmentRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     created_at: datetime
+
+
+class ScopeControlRead(BaseModel):
+    code: str
+    title: str
+
+
+class ScopeCategoryRead(BaseModel):
+    code: str
+    name: str | None  # None only for a category missing from the CSF 2.0 catalog
+    controls: list[ScopeControlRead]
+
+
+class ScopeFunctionRead(BaseModel):
+    code: str
+    name: str
+    categories: list[ScopeCategoryRead]
+
+
+class AssessmentScopeRead(BaseModel):
+    """What an assessment covers, shown before the interview starts (HU-04, AGRC-63)."""
+
+    organization_id: UUID
+    organization_name: str
+    assessment: AssessmentRead
+    control_count: int
+    functions: list[ScopeFunctionRead]
