@@ -2,7 +2,7 @@
 
 > Historical proof-of-concept record. Its Ollama deployment choice and data-transfer policy are superseded for production-like data by [ADR 0003](0003-interview-data-governance.md). The benchmark below remains evidence about the local prototype only.
 
-Status: proposed · Date: 2026-10-08 · Backlog item: E0-04 · Code: `agent/`
+Status: proposed · Date: 2026-10-08 · Backlog item: E0-04 · Code: `backend/app/agent/`
 
 ## Context and status
 
@@ -56,9 +56,9 @@ A plain "no" closes the control at once; a vague or partial answer loops back th
 
 `llama3.1:8b` is selected: it routed all 20 test cases to the correct next step, against 12 of 20 for `qwen2.5:7b`. Its latency still has to come down to meet the 10 s turn limit. `qwen2.5:7b` was the provisional default before the benchmark.
 
-**Method.** `scripts/benchmark_models.py` runs each candidate on `evals/interpret_cases.yaml`: 20 labelled answers covering a detailed yes, a vague yes, partial, no, unsure, not applicable, clarification requests, off-topic answers and multi-turn dialogues. For each case it checks four fields against the label (intent, category, specificity, and the action the rules derive from them) and records latency. Same prompt version, temperature 0, same machine.
+**Method.** `backend/scripts/benchmark_models.py` runs each candidate on `backend/evals/interpret_cases.yaml`: 20 labelled answers covering a detailed yes, a vague yes, partial, no, unsure, not applicable, clarification requests, off-topic answers and multi-turn dialogues. For each case it checks four fields against the label (intent, category, specificity, and the action the rules derive from them) and records latency. Same prompt version, temperature 0, same machine.
 
-**Results** (20 cases, prompt v0.2.0, run on 2026-10-08; details in `evals/results/`):
+**Results** (20 cases, prompt v0.2.0, run on 2026-10-08; details in `backend/evals/results/`):
 
 | Model | Intent | Category | Specificity | Action | Invalid / failed | p50 latency (ms) | p95 latency (ms) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -158,7 +158,7 @@ Every decision the agent makes is written as an append-only trace, so a consulta
 
 Each trace carries the fields of the AGRC-15 trace schema: `organization_id`, `assessment_id`, `control_ids`, `module`, `sources` (the interview turns that support it), `model_name`, `prompt_id`, `prompt_version`, `kb_version`, `output`, `rationale`, `confidence`, `requires_human_review`. Two extra fields help E0-04: `latency_ms` and `fallback_used`. Prompts are versioned, so results can be compared across prompt changes.
 
-The proof of concept writes JSONL files; the backend writes the same records to `decision_traces`.
+The backend writes these records to `decision_traces`; the command-line interview keeps them in memory only.
 
 ## Acceptance criteria and open items
 
@@ -177,4 +177,4 @@ Open questions for the team and Aligo:
 - Labels in the evaluation set need review by someone with GRC experience.
 - Demo hardware: which machine runs Ollama for the recorded demo (HU-27)?
 
-Next steps: apply the latency levers to `llama3.1:8b` (now the default in `config.py`), then re-run the benchmark on the demo machine; move `agent/` to `backend/app/agent/` once the backend is merged; then contradiction detection (HU-07).
+Next steps: apply the latency levers to `llama3.1:8b` (now the default in `config.py`), then re-run the benchmark on the demo machine; then contradiction detection (HU-07).

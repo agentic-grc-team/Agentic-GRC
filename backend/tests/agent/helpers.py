@@ -1,25 +1,18 @@
-import sys
+"""Helpers for the agent tests: run the interview nodes without LangGraph."""
+
 from pathlib import Path
 
-import pytest
+from app.agent.nodes import InterviewNodes
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from agentic_grc_agent.knowledge import load_kb  # noqa: E402
-from agentic_grc_agent.nodes import InterviewNodes  # noqa: E402
-
-
-@pytest.fixture
-def kb():
-    return load_kb(ROOT / "agentic_grc_agent" / "data" / "kb_demo.yaml")
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+KB_PATH = BACKEND_DIR / "app" / "agent" / "data" / "kb_demo.yaml"
 
 
 def apply(state: dict, update: dict) -> dict:
     """Merge a node update the way LangGraph's reducers would."""
     new = dict(state)
     for k, v in update.items():
-        if k == "turns":
+        if k in ("turns", "traces"):  # append-only, like operator.add in InterviewState
             new[k] = state.get(k, []) + v
         elif k == "results":
             new[k] = {**state.get(k, {}), **v}

@@ -17,7 +17,7 @@ from tests.test_expert_review_db import db, make_assessment, make_control, make_
 
 
 def agent_output(**changes) -> dict:
-    """The `output` of a status_assessed trace, as the agent writes it (agentic_grc_agent ControlResult)."""
+    """The `output` of a status_assessed trace, as the agent writes it (app.agent ControlResult)."""
     output = {
         "question_code": "IAM-01",
         "control_ids": ["PR.AA-03"],

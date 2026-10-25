@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentic_grc_agent.rules import decide_next_step
-from agentic_grc_agent.schemas import (
+from app.agent.rules import decide_next_step
+from app.agent.schemas import (
     Action,
     AnswerCategory,
     AnswerInterpretation,
@@ -100,7 +100,7 @@ def test_same_input_same_decision():
     assert decide_next_step(i, 1, 3) == decide_next_step(i, 1, 3)
 
 
-CASES = yaml.safe_load((Path(__file__).parents[1] / "evals" / "interpret_cases.yaml").read_text())["cases"]
+CASES = yaml.safe_load((Path(__file__).parents[2] / "evals" / "interpret_cases.yaml").read_text())["cases"]
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])

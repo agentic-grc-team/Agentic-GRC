@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,10 +36,8 @@ from app.services.langgraph_checkpointer import (
 )
 
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 _TURN_REF = re.compile(r"^turn:(\d+)$")
-if str(_REPOSITORY_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPOSITORY_ROOT))
+_DEFAULT_KB_PATH = Path(__file__).resolve().parents[1] / "agent" / "data" / "kb_demo.yaml"
 
 
 @dataclass(frozen=True)
@@ -151,7 +148,7 @@ def _run_interview_graph(
                         status_code=status.HTTP_409_CONFLICT,
                         detail="Interview turns exist without a resumable agent checkpoint.",
                     )
-                from agentic_grc_agent.nodes import initial_state
+                from app.agent.nodes import initial_state
 
                 graph.invoke(
                     initial_state(
@@ -220,7 +217,7 @@ def _run_interview_graph(
 
 
 def _load_agent_context(db: Session, interview_session: AssessmentSession) -> _AgentContext:
-    from agentic_grc_agent.knowledge import load_kb
+    from app.agent.knowledge import load_kb
 
     assessment = db.scalar(
         select(Assessment).where(
@@ -251,7 +248,7 @@ def _load_agent_context(db: Session, interview_session: AssessmentSession) -> _A
 
     app_settings = get_settings()
     kb_path = app_settings.agrc_kb_path or (
-        _REPOSITORY_ROOT / "agentic_grc_agent" / "data" / "kb_demo.yaml"
+        _DEFAULT_KB_PATH
     )
     try:
         knowledge_base = load_kb(kb_path)
@@ -351,10 +348,10 @@ def _load_agent_context(db: Session, interview_session: AssessmentSession) -> _A
 
 
 def _build_graph(context: _AgentContext, checkpointer=None, tracer=None):
-    from agentic_grc_agent.graph import build_graph
-    from agentic_grc_agent.llm import OllamaLLM
-    from agentic_grc_agent.nodes import Deps
-    from agentic_grc_agent.trace import TraceRecorder
+    from app.agent.graph import build_graph
+    from app.agent.llm import OllamaLLM
+    from app.agent.nodes import Deps
+    from app.agent.trace import TraceRecorder
 
     settings = get_settings()
     try:
