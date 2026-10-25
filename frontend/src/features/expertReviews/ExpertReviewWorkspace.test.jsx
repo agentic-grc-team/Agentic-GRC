@@ -17,12 +17,14 @@ import ExpertReviewWorkspace from "./ExpertReviewWorkspace.jsx";
 import {
   listPendingReviews,
   getReviewEvidence,
+  getReviewTrace,
   submitReviewDecision,
 } from "./api.js";
 
 vi.mock("./api.js", () => ({
   listPendingReviews: vi.fn(),
   getReviewEvidence: vi.fn(),
+  getReviewTrace: vi.fn(),
   submitReviewDecision: vi.fn(),
 }));
 
@@ -715,4 +717,54 @@ describe("ExpertReviewWorkspace", () => {
         name: "Review queue complete",
       });
     });
+
+  it("opens the reasoning trace of the current result without losing unsaved edits", async () => {
+    getReviewTrace.mockResolvedValue({
+      result_id: pendingReview.result_id,
+      organization_id: "org-1",
+      organization_name: "Halverston Community Bank",
+      assessment_id: pendingReview.assessment_id,
+      assessment_title: "Q4 identity review",
+      control_code: pendingReview.control_code,
+      control_title: pendingReview.control_title,
+      result_version: 1,
+      result_author: "agent",
+      result_trace_id: null,
+      steps: [],
+    });
+
+    render(
+      <ExpertReviewWorkspace accessToken="test-token" sessionId="user-1" />,
+    );
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+    expect(getReviewTrace).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit result" }));
+    fireEvent.change(screen.getByLabelText("Modified explanation"), {
+      target: { value: "Unsaved consultant wording." },
+    });
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "Checking the trace first." },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reasoning trace" }),
+    );
+
+    expect(
+      await screen.findByText("Halverston Community Bank"),
+    ).toBeInTheDocument();
+    expect(getReviewTrace).toHaveBeenCalledWith(
+      pendingReview.result_id,
+      "test-token",
+    );
+    expect(screen.getByLabelText("Modified explanation")).toHaveValue(
+      "Unsaved consultant wording.",
+    );
+    expect(screen.getByLabelText("Review comment")).toHaveValue(
+      "Checking the trace first.",
+    );
+    expect(listPendingReviews).toHaveBeenCalledTimes(1);
+  });
 });

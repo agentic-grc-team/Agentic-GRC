@@ -6,6 +6,7 @@ import {
 } from "./api.js";
 
 import ReviewEvidence from "./ReviewEvidence.jsx";
+import ReviewTrace from "./ReviewTrace.jsx";
 
 function formatValue(value) {
   return value.replaceAll("_", " ");
@@ -305,6 +306,12 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
       </div>
 
       <ReviewEvidence
+        resultId={review.result_id}
+        accessToken={accessToken}
+        sessionId={sessionKey}
+      />
+
+      <ReviewTrace
         resultId={review.result_id}
         accessToken={accessToken}
         sessionId={sessionKey}

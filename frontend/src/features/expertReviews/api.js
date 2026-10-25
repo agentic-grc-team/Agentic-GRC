@@ -36,3 +36,9 @@ export function getReviewEvidence(resultId, accessToken) {
     accessToken: accessToken,
   });
 }
+
+export function getReviewTrace(resultId, accessToken) {
+  return apiRequest(`/expert-reviews/${encodeURIComponent(resultId)}/trace`, {
+    accessToken: accessToken,
+  });
+}
