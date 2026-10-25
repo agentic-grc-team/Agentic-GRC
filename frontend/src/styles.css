@@ -557,3 +557,38 @@ a.rail-navigation-item { text-decoration: none; }
   .evidence-page { max-width: 100%; padding: 18px 15px; }
   .evidence-home-link { margin-inline: 15px; }
 }
+
+.review-evidence h4 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+
+.review-evidence li {
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.review-evidence blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--mint);
+  white-space: pre-wrap;
+}
+
+.review-source-reference {
+  overflow-wrap: anywhere;
+}
+
+.review-trace > button { margin-bottom: 12px; }
+.review-trace-context { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0 0 14px; }
+.review-trace-context dt { color: var(--quiet); font: 500 9px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.review-trace-context dd { margin: 3px 0 0; color: #e4e9ea; font-size: 12px; overflow-wrap: anywhere; }
+.review-trace-steps { display: grid; gap: 10px; margin: 12px 0 0; padding-left: 20px; }
+.review-trace-step { padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }
+.review-trace-step.is-result-decision { border-color: var(--mint-strong); }
+.review-trace-step-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 4px; }
+.review-trace-badge { padding: 2px 8px; border: 1px solid var(--mint-strong); border-radius: 20px; color: var(--mint); font: 500 9px var(--mono); }
+.review-section p.review-trace-meta { color: var(--muted); font-size: 11px; }
+.review-section p.review-trace-flags { color: #ffc0b1; font-size: 12px; }
+.review-trace-sources { margin: 8px 0 0; padding-left: 18px; font-size: 12px; }
+.review-trace-sources blockquote { margin: 6px 0; padding-left: 12px; border-left: 2px solid var(--mint); white-space: pre-wrap; }

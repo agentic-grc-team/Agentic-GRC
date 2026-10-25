@@ -30,3 +30,15 @@ export function submitReviewDecision(
     body: JSON.stringify(payload),
   });
 }
+
+export function getReviewEvidence(resultId, accessToken) {
+  return apiRequest(`/expert-reviews/${resultId}/evidence`, {
+    accessToken: accessToken,
+  });
+}
+
+export function getReviewTrace(resultId, accessToken) {
+  return apiRequest(`/expert-reviews/${encodeURIComponent(resultId)}/trace`, {
+    accessToken: accessToken,
+  });
+}
