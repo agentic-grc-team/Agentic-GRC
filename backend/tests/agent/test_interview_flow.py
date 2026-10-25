@@ -1,6 +1,6 @@
 """End-to-end interview flow with a fake LLM (no Ollama needed)."""
 
-from tests.agent.conftest import KB_PATH, run_scripted, run_scripted_more
+from tests.agent.helpers import KB_PATH, run_scripted, run_scripted_more
 
 from app.agent.fallback import heuristic_interpret
 from app.agent.llm import FakeLLM

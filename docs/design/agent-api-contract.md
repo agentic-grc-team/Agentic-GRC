@@ -37,17 +37,29 @@ From the agent package the service uses only:
 | `initial_state(organization_id, assessment_id, question_codes, in_scope_control_codes, kb_version)` | First state of a session |
 | `Deps(llm, kb, tracer, max_follow_ups)` and `build_graph(deps, checkpointer)` | Build the graph |
 | `OllamaLLM(model, host, timeout_s, retries)` | The model client; tests replace it with `FakeLLM` |
+| `TraceRecorder()` | Collects the decisions of one run; the durable copies come from the `traces` state key |
 
 ## 3. Graph state the API reads
 
-The graph pauses with `interrupt({"message": ...})` when it needs an answer, and the API resumes it with `Command(resume=<answer>)`. After each run the API reads these keys from the state:
+The graph pauses with `interrupt()` when it needs an answer, and the API resumes it with `Command(resume=<answer>)`. An empty `next` on the snapshot means the graph reached the end, and the API closes the session.
+
+After each run the API persists two state keys:
 
 | Key | Shape | Rule |
 | --- | --- | --- |
-| `turns` | list of `{seq, question_code, speaker, turn_type, content}` | Append-only; `seq` starts at 1 per session |
-| `traces` | list of `DecisionTrace` dumps (trace schema v0.2) | Append-only; sources cite `turn:<seq>` |
-| `results` | `question_code` → `ControlResult` dump | One entry per closed question |
-| `pending_message` | text | What the agent asks next |
+| `turns` | list of `{seq, question_code, speaker, turn_type, content}` | Append-only; `seq` starts at 1 per session. The agent's messages to the participant come from here |
+| `traces` | list of `DecisionTrace` dumps (trace schema v0.2) | Append-only; sources cite `turn:<seq>`. Draft results come from the `status_assessed` traces |
+
+Before resuming a saved session, the API checks that the checkpoint still matches the assessment, and returns 409 if any of these differ:
+
+| Key | Must match |
+| --- | --- |
+| `organization_id`, `assessment_id` | The session's organization and assessment |
+| `kb_version` | The assessment's knowledge-base version |
+| `question_codes` | The questions selected for the session |
+| `in_scope_control_codes` | The assessment's in-scope controls |
+
+`results` and `pending_message` are internal to the agent; the API does not read them.
 
 The API maps the agent's identifiers to database identifiers when it saves them:
 
@@ -75,7 +87,7 @@ The API maps the agent's identifiers to database identifiers when it saves them:
 
 ## 6. Changing the contract
 
-- Any change to the state keys in section 3, to `ControlResult` or to `AgentControlResult` needs both owners' review.
+- Any change to the state keys in section 3 (the two persisted keys and the five checked on resume), to `ControlResult` or to `AgentControlResult` needs both owners' review. Renaming or removing one of them breaks sessions already in progress.
 - Changing prompt wording bumps its version in `app/agent/prompts.py`; the version is stored in every trace.
 - Behaviour changes to the rules are checked with `pytest tests/agent` and `scripts/benchmark_models.py`.
 
