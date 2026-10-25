@@ -6,6 +6,7 @@ import InvitationActivation from "./auth/InvitationActivation.jsx";
 import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
+import InterviewWorkspace from "./features/interviews/InterviewWorkspace.jsx";
 import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
 
 const EVIDENCE_PATH = "/evidence";
@@ -214,6 +215,19 @@ function App() {
         </button>
 
         <button
+          className={`rail-navigation-item ${!isEvidencePage && currentView === "interview" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => showView("interview")}
+          disabled={!user?.accessToken}
+          aria-label="Interview"
+          aria-current={!isEvidencePage && currentView === "interview" ? "page" : undefined}
+        >
+          <span className="rail-current-icon" aria-hidden="true">✎</span>
+          <span>Interview</span>
+          {!isEvidencePage && currentView === "interview" && <span className="rail-active-dot" />}
+        </button>
+
+        <button
           className={`rail-navigation-item ${!isEvidencePage && currentView === "expert-reviews" ? "is-active" : ""}`}
           type="button"
           onClick={() => showView("expert-reviews")}
@@ -271,7 +285,9 @@ function App() {
                   ? "Reports"
                   : currentView === "expert-reviews"
                     ? "Expert reviews"
-                    : "Organization setup"}
+                    : currentView === "interview"
+                      ? "Interview"
+                      : "Organization setup"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -300,6 +316,14 @@ function App() {
         ) : user?.accessToken ? (
           currentView === "reports" ? (
             <ReportWorkspace
+              accessToken={user.accessToken}
+              sessionId={user.id}
+              initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
+            />
+          ) : currentView === "interview" ? (
+            <InterviewWorkspace
+              key={user.id}
               accessToken={user.accessToken}
               sessionId={user.id}
               initialOrganizationId={selectedOrganizationId}
