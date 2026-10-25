@@ -4,7 +4,7 @@
 | --- | --- |
 | Sprint 4 | S4-P01 (interview API and persisted results) |
 | Owners | Agent: Natalia · Interview API: Santiago |
-| Status | Draft, describes the interface implemented in PR #28; open decisions in section 7 |
+| Status | Draft, describes the interface merged in PR #28; open decisions in section 7 |
 
 ## 1. Who owns what
 
@@ -81,7 +81,7 @@ The API maps the agent's identifiers to database identifiers when it saves them:
 
 ## 7. Open decisions
 
-a. **An agent re-run can supersede an expert's decision.** `save_agent_result()` now adds version N+1 on top of the latest version, even when that version was written or reviewed by a consultant. The new agent draft then replaces the expert's result in the review queue. Proposal: refuse (409) when the latest version is consultant-authored or reviewed, until we decide how re-assessment works. Needs Miloš (review flow).
+a. **Re-assessment.** Decided for now (#28): `save_agent_result()` refuses with 409 when a control already has a result, so an agent re-run cannot replace an expert's decision. Still open: a restarted interview (`restart=true`) on an assessment with results gets stuck, because every closing answer returns 409. Either refuse the restart up front or skip the questions whose controls are already assessed.
 
 b. **Evidence requests can exceed the follow-up limit.** A detailed "yes" always gets its evidence request, even after 3 follow-ups, so a question can reach 4. Accept explicitly or keep the limit.
 
