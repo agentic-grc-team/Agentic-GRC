@@ -22,7 +22,7 @@ from app.services.expert_reviews import (
 from app.services.reports.builder import build_report_view
 from app.services.reports.source import DbReportSource
 
-from tests.test_report_db_source import (
+from tests.test_report_db_source import (  # noqa: F401
     db,
     make_assessment,
     make_control,
@@ -189,8 +189,8 @@ def test_saved_agent_result_review_report_flow(db, outcome):
     )
 
     assert original_trace.sources == [
-        source.model_dump(mode="json")
-        for source in trace.sources
+        trace_source.model_dump(mode="json")
+        for trace_source in trace.sources
     ]
 
     versions = list(
@@ -246,6 +246,9 @@ def test_saved_agent_result_review_report_flow(db, outcome):
         final_result = after_review.results[0]
 
         assert final_result.code == control.control_code
+        # The report goes to the client: a neutral label, never the consultant's email.
+        assert final_result.reviewed_by == "Aligo consultant"
+        assert reviewer.email not in after_review.model_dump_json()
         assert final_result.evidence_pending is True
         assert after_review.summary.final_with_evidence_pending == 1
 
