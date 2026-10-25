@@ -1,6 +1,6 @@
-# Provisional database and identity model
+# Database and identity model
 
-This is the MVP schema for organization onboarding and invitations. It is intentionally small and remains subject to review by the teammate responsible for the final project schema.
+This document covers the current organization identity model and the additive interview persistence slice. The attached project DDL remains the canonical target for assessment, evidence, and result normalization; those existing tables are migrated in later phases after reference-data mapping is approved.
 
 ## Identity and application data
 
@@ -33,3 +33,20 @@ The first platform administrator must first be created and email-confirmed in Su
 `20261006_0005_supabase_auth_identity` removes the former local password and OIDC columns, links profiles to `auth.users`, and enables RLS on the application's public tables. It stops before changing the schema if it finds an application profile without a matching Supabase Auth identity. If earlier migrations were already applied and `public.users` contains data, map those profiles to matching Auth UUIDs before running it; do not bypass the preflight check.
 
 The migration is prepared but has not been applied to the remote Supabase project from this environment. Check the current Alembic revision and take a backup before applying schema changes.
+
+## Interview persistence and checkpoint state
+
+Migration `20261020_0008` adds the interview catalog/session slice: framework and knowledge-base version identifiers, interview blocks, modules and questions, participants, assessment sessions, session participants, interview turns, and normalized interview source links for decision traces. Tenant-owned session, turn, and trace-source rows use composite organization-scoped foreign keys. RLS is enabled on the new public tables; the FastAPI database role remains responsible for membership checks because no direct Supabase Data API policies are defined.
+
+The existing `assessments` table still carries the earlier text fields for framework and knowledge-base versions. The new catalog is additive; a follow-up migration must map those existing values before replacing legacy columns or normalizing assessment controls. The optional `questions.statement_id` and `questions.remediation_template_id` references remain nullable until those catalog tables are brought in. For trace compatibility, interview sources are written both to the normalized `decision_trace_sources` rows and to the legacy trace JSON until the trace API is migrated.
+
+LangGraph checkpoint state is stored separately in the non-exposed `agentic_grc_private` schema. Alembic creates that schema and revokes access from `PUBLIC`; the LangGraph library owns its checkpoint tables and migrations. After applying Alembic, initialize those tables once with:
+
+```powershell
+cd backend
+python -m app.cli init-interview-checkpointer
+```
+
+Checkpoint threads use the assessment session UUID. Graph state must be JSON-compatible, use the restricted MsgPack serializer, and contain no credentials. Checkpoints are working memory, not the canonical record of answers or findings. They contain conversation state and are subject to the same production-data gate and future retention/deletion policy as interview turns.
+
+The backend defaults `INTERVIEW_DATA_MODE` to `synthetic`. `approved_anonymized` requires `INTERVIEW_ANONYMIZED_DATA_APPROVED=true`. `real` fails settings validation unless transfer, retention, deletion, redaction, storage, and topology gates are each explicitly enabled. These switches record deployment approvals; they do not replace the required written approval in [ADR 0003](../docs/decisions/0003-interview-data-governance.md).

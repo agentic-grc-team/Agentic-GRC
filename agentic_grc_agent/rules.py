@@ -21,16 +21,30 @@ LOW_CONFIDENCE = 0.5
 
 
 def decide_next_step(
-    interp: AnswerInterpretation, follow_ups_used: int, max_follow_ups: int, evidence_asked: bool = False
+    interp: AnswerInterpretation,
+    follow_ups_used: int,
+    max_follow_ups: int,
+    evidence_asked: bool = False,
+    ambiguity_clarifications_used: int = 0,
 ) -> NextStep:
     can_follow_up = follow_ups_used < max_follow_ups
-    step = _decide(interp, can_follow_up, evidence_asked)
+    # Never create a control result from a low-confidence interpretation. Ask one
+    # focused question first; if the response remains unclear, route a not-assessed
+    # draft to a human instead of guessing a status.
+    if interp.intent is not Intent.clarification_request and interp.confidence < LOW_CONFIDENCE:
+        if ambiguity_clarifications_used == 0:
+            return _clarify(
+                "The answer could not be interpreted confidently.",
+                "rule:low_confidence_clarify",
+            )
+        return _close(
+            ControlStatus.not_assessed,
+            "The answer remained ambiguous after a focused clarification.",
+            "rule:low_confidence_unresolved",
+            review=True,
+        )
 
-    # A closing decision built on a shaky interpretation goes to a human.
-    if step.action is Action.close and interp.confidence < LOW_CONFIDENCE:
-        step.requires_human_review = True
-        step.reason += " Low-confidence interpretation."
-    return step
+    return _decide(interp, can_follow_up, evidence_asked)
 
 
 def _close(status: ControlStatus, reason: str, rule_id: str, review: bool = False) -> NextStep:
@@ -43,10 +57,14 @@ def _ask(missing: Missing, reason: str, rule_id: str) -> NextStep:
     return NextStep(action=Action.follow_up, missing=missing, reason=reason, rule_id=rule_id)
 
 
+def _clarify(reason: str, rule_id: str) -> NextStep:
+    return NextStep(action=Action.clarify, reason=reason, rule_id=rule_id)
+
+
 def _decide(i: AnswerInterpretation, can_follow_up: bool, evidence_asked: bool) -> NextStep:
     # Clarification does not count as a follow-up and never closes the control (HU-05).
     if i.intent is Intent.clarification_request:
-        return NextStep(action=Action.clarify, reason="The participant asked what the question means.", rule_id="rule:clarify")
+        return _clarify("The participant asked what the question means.", "rule:clarify")
 
     if i.intent is Intent.off_topic:
         if can_follow_up:
@@ -68,12 +86,10 @@ def _decide(i: AnswerInterpretation, can_follow_up: bool, evidence_asked: bool) 
                 return _close(ControlStatus.implemented,
                               "Affirmative answer with scope described; evidence was requested and is still to be validated.",
                               "rule:yes_detailed")
-            if can_follow_up:
-                return _ask(Missing.evidence, "Affirmative answer with scope described; evidence not requested yet.",
-                            "rule:yes_detailed_ask_evidence")
-            return _close(ControlStatus.implemented,
-                          "Affirmative answer with scope described; the follow-up limit was reached before evidence could be requested.",
-                          "rule:yes_detailed_limit")
+            # This evidence request is mandatory even when the ordinary follow-up
+            # budget is exhausted. It is a review gate for affirmative findings.
+            return _ask(Missing.evidence, "Affirmative answer with scope described; evidence not requested yet.",
+                        "rule:yes_detailed_ask_evidence")
         if can_follow_up:
             if not i.mentions_scope:
                 missing = Missing.scope
