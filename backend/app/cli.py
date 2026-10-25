@@ -63,6 +63,30 @@ def _uuid(value: str) -> UUID:
         raise argparse.ArgumentTypeError("Enter the Supabase Auth user's UUID.") from exc
 
 
+def warm_up_model() -> int:
+    from app.agent.llm import OllamaLLM
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    llm = OllamaLLM(
+        model_name=settings.agrc_llm_model,
+        host=settings.agrc_ollama_host,
+        timeout_s=settings.agrc_llm_timeout_s,
+        retries=settings.agrc_llm_retries,
+        keep_alive=settings.agrc_llm_keep_alive,
+        num_predict=settings.agrc_llm_num_predict,
+    )
+    load_time = llm.warm_up()
+    if load_time is not None:
+        print(
+            f"Model {settings.agrc_llm_model} loaded in {load_time} ms "
+            f"(keep-alive {settings.agrc_llm_keep_alive})."
+        )
+        return 0
+    print(f"Could not reach the model at {settings.agrc_ollama_host}. Is Ollama running?")
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Manage Agentic GRC platform profiles.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -76,6 +100,10 @@ def main() -> int:
         "init-interview-checkpointer",
         help="Create or upgrade the private Postgres tables used by LangGraph checkpoints.",
     )
+    subparsers.add_parser(
+        "warm-up-model",
+        help="Pre-load the configured Ollama model into memory before an interview.",
+    )
     args = parser.parse_args()
     if args.command == "bootstrap-admin":
         return bootstrap_platform_admin(args.user_id, args.email)
@@ -85,6 +113,8 @@ def main() -> int:
         initialize_interview_checkpointer()
         print("LangGraph interview checkpoint schema is ready.")
         return 0
+    if args.command == "warm-up-model":
+        return warm_up_model()
     return 2
 
 
