@@ -10,7 +10,14 @@ const organizations = [{ id: "alpha", name: "Alpha" }, { id: "beta", name: "Beta
 const result = { organization_id: "alpha", original_filename: "alpha.txt", extracted_content_preview: "Alpha document" };
 const file = () => new File(["Alpha document"], "alpha.txt", { type: "text/plain" });
 const dropzone = () => screen.getByRole("button", { name: /Drag and drop a file here/ });
-const drop = () => fireEvent.drop(dropzone(), { dataTransfer: { files: [file()] } });
+const drop = async () => {
+  // Complete pending mount effects before simulating a user drop.
+  await act(async () => {});
+
+  fireEvent.drop(dropzone(), {
+    dataTransfer: { files: [file()] },
+  });
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -32,7 +39,7 @@ describe("EvidencePage organization context", () => {
     expect(listOrganizations).toHaveBeenCalledWith("token", { activeMembershipsOnly: true });
     expect(screen.getByRole("combobox")).toHaveValue("beta");
     expect(screen.getByText("Beta", { selector: "strong" })).toBeInTheDocument();
-    drop();
+    await drop();
     await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("beta", expect.any(File), "token", expect.any(AbortSignal)));
   });
 
@@ -41,7 +48,7 @@ describe("EvidencePage organization context", () => {
     await page();
     expect(screen.getByRole("combobox")).toHaveValue("");
     expect(dropzone()).toHaveAttribute("aria-disabled", "true");
-    drop();
+    await drop();
     expect(uploadEvidence).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "beta" } });
     expect(dropzone()).toHaveAttribute("aria-disabled", "false");
@@ -53,13 +60,13 @@ describe("EvidencePage organization context", () => {
     await page();
     expect(screen.getByRole("combobox")).toHaveValue("");
     expect(dropzone()).toHaveAttribute("aria-disabled", "true");
-    drop();
+    await drop();
     expect(uploadEvidence).not.toHaveBeenCalled();
   });
 
   it("clears a completed preview when switching organizations", async () => {
     await page();
-    drop();
+    await drop();
     await screen.findByText("Alpha document");
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "beta" } });
     expect(screen.queryByText("Alpha document")).not.toBeInTheDocument();
@@ -70,13 +77,13 @@ describe("EvidencePage organization context", () => {
     let resolveAlpha;
     uploadEvidence.mockImplementationOnce(() => new Promise((resolve) => { resolveAlpha = resolve; }));
     await page();
-    drop();
+    await drop();
     await screen.findByText("Uploading alpha.txt...");
     const alphaSignal = uploadEvidence.mock.calls[0][3];
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "beta" } });
     expect(alphaSignal.aborted).toBe(true);
     uploadEvidence.mockResolvedValueOnce({ ...result, organization_id: "beta", extracted_content_preview: "Beta document" });
-    drop();
+    await drop();
     await screen.findByText("Beta document");
     await act(async () => { resolveAlpha(result); });
     expect(screen.queryByText("Alpha document")).not.toBeInTheDocument();
@@ -108,7 +115,7 @@ describe("EvidencePage session changes", () => {
   it("hides the previous evidence context while the new session loads and shows the new organizations", async () => {
     const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
     await screen.findByRole("combobox");
-    drop();
+    await drop();
     await screen.findByText("Alpha document");
 
     let resolveNext;
@@ -129,7 +136,7 @@ describe("EvidencePage session changes", () => {
   it("does not keep the previous upload UI when loading the new session fails", async () => {
     const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
     await screen.findByRole("combobox");
-    drop();
+    await drop();
     await screen.findByText("Alpha document");
 
     listOrganizations.mockRejectedValueOnce(new Error("Network unavailable"));
@@ -146,7 +153,7 @@ describe("EvidencePage session changes", () => {
     uploadEvidence.mockImplementationOnce(() => new Promise((resolve) => { resolveUpload = resolve; }));
     const view = renderPage({ accessToken: "token-a", sessionId: "user-a" });
     await screen.findByRole("combobox");
-    drop();
+    await drop();
     await screen.findByText("Uploading alpha.txt...");
     const signal = uploadEvidence.mock.calls[0][3];
 
@@ -177,7 +184,7 @@ describe("EvidencePage session changes", () => {
   it("keeps the context and does not reload when the same session refreshes its token", async () => {
     const view = renderPage({ accessToken: "token-1", sessionId: "user-a" });
     await screen.findByRole("combobox");
-    drop();
+    await drop();
     await screen.findByText("Alpha document");
 
     view.rerender(<EvidencePage accessToken="token-2" sessionId="user-a" onNavigate={vi.fn()} />);
@@ -186,7 +193,7 @@ describe("EvidencePage session changes", () => {
     expect(listOrganizations).toHaveBeenCalledTimes(1);
 
     uploadEvidence.mockClear();
-    drop();
+    await drop();
     await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal)));
   });
 });
