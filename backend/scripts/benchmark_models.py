@@ -22,12 +22,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agentic_grc_agent import prompts  # noqa: E402
-from agentic_grc_agent.config import Settings  # noqa: E402
-from agentic_grc_agent.knowledge import load_kb  # noqa: E402
-from agentic_grc_agent.llm import LLMError, OllamaLLM  # noqa: E402
-from agentic_grc_agent.rules import decide_next_step  # noqa: E402
-from agentic_grc_agent.schemas import AnswerInterpretation  # noqa: E402
+from app.agent import prompts  # noqa: E402
+from app.agent.config import Settings  # noqa: E402
+from app.agent.knowledge import load_kb  # noqa: E402
+from app.agent.llm import LLMError, OllamaLLM  # noqa: E402
+from app.agent.rules import decide_next_step  # noqa: E402
+from app.agent.schemas import AnswerInterpretation  # noqa: E402
 
 FIELDS = ("intent", "category", "specificity", "mentions_evidence", "action")
 

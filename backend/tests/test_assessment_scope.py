@@ -16,7 +16,7 @@ from app.services.assessment_scope import (
     group_controls_by_domain,
 )
 
-KB_DEMO_PATH = Path(__file__).resolve().parents[2] / "agentic_grc_agent" / "data" / "kb_demo.yaml"
+KB_DEMO_PATH = Path(__file__).resolve().parents[1] / "app" / "agent" / "data" / "kb_demo.yaml"
 
 
 def load_kb_demo() -> dict:

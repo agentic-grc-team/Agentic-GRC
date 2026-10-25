@@ -4,7 +4,7 @@ NIST CSF 2.0 functions and categories used to group them (AGRC-63).
 Until the knowledge base is stored in the database (E0-03), the scope of an
 assessment is the set of NIST CSF 2.0 subcategories that the agent's knowledge
 base asks about. A test checks this list against the mappings in
-agentic_grc_agent/data/kb_demo.yaml, so the two cannot drift apart.
+app/agent/data/kb_demo.yaml, so the two cannot drift apart.
 """
 
 # Official NIST CSF 2.0 functions and categories (NIST CSWP 29, Appendix A), in framework order.
