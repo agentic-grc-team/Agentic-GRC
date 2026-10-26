@@ -289,4 +289,28 @@ describe("AssessmentWorkspace", () => {
     expect(listAssessments).toHaveBeenLastCalledWith("org-1", "token-b");
     expect(listOrganizations).toHaveBeenCalledTimes(1);
   });
-});
+
+  it("opens the interview of the selected assessment that is in progress", async () => {
+    const onStartInterview = vi.fn();
+    renderWorkspace({ onStartInterview });
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Go to interview/ }));
+
+    expect(onStartInterview).toHaveBeenCalledWith("org-1", "assess-1");
+  });
+
+  it("offers no interview for an assessment that is not in progress", async () => {
+    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "completed" }]);
+    renderWorkspace({ onStartInterview: vi.fn() });
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    expect(screen.queryByRole("button", { name: /Go to interview/ })).not.toBeInTheDocument();
+  });
+
+  it("shows no interview button when the app does not provide one", async () => {
+    renderWorkspace();
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    expect(screen.queryByRole("button", { name: /Go to interview/ })).not.toBeInTheDocument();
+  });});
