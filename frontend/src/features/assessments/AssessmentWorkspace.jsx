@@ -30,6 +30,7 @@ export default function AssessmentWorkspace({
   isPlatformAdmin = false,
   initialOrganizationId = "",
   onOrganizationChange,
+  onStartInterview,
 }) {
   const [organizations, setOrganizations] = useState([]);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(true);
@@ -163,6 +164,7 @@ export default function AssessmentWorkspace({
   }, [selectedOrganizationId, selectedAssessmentId, sessionKey]);
 
   const selectedOrganization = organizations.find((item) => item.id === selectedOrganizationId) || null;
+  const selectedAssessment = assessments.find((item) => item.id === selectedAssessmentId) || null;
   const canCreate = Boolean(
     selectedOrganization && (isPlatformAdmin || CREATOR_ROLES.includes(selectedOrganization.role)),
   );
@@ -277,6 +279,16 @@ export default function AssessmentWorkspace({
             ))}
           </select>
         </label>
+      )}
+
+      {onStartInterview && selectedAssessment?.status === "in_progress" && (
+        <button
+          className="primary-button assessment-interview-button"
+          type="button"
+          onClick={() => onStartInterview(selectedOrganizationId, selectedAssessment.id)}
+        >
+          Go to interview <span aria-hidden="true">→</span>
+        </button>
       )}
 
       {isLoadingScope && <p role="status">Loading assessment scope…</p>}
