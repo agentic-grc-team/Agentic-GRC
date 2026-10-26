@@ -289,6 +289,56 @@ describe("InterviewWorkspace", () => {
     expect(log).toHaveTextContent("Who reviews access rights?");
   });
 
+  it("shows the updated transcript when the same interview is opened again", async () => {
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    expect(screen.queryByText("Who reviews access rights?")).not.toBeInTheDocument();
+    openInterview.mockResolvedValue(interview({
+      resumed: true,
+      turns: [turn(), receipt().turn, receipt().agent_turns[0]],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
+
+    expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
+    expect(screen.getByText("We use Okta with MFA.")).toBeInTheDocument();
+    expect(openInterview).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies a closed session when the interview is opened again", async () => {
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    openInterview.mockResolvedValue(interview({
+      resumed: true,
+      session: { id: "session-1", closed: true },
+      turns: [turn(), receipt().turn],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
+
+    expect(await screen.findByText(/The interview is complete/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your answer")).not.toBeInTheDocument();
+  });
+
+  it("recovers the transcript by reopening after a failed refresh", async () => {
+    submitInterviewTurn.mockResolvedValue(receipt({ agent_turns: [], idempotent_replay: true }));
+    getInterview.mockRejectedValue(new ApiError(503, { detail: "Unavailable" }));
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    sendAnswer("We use Okta with MFA.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not be refreshed");
+    expect(screen.queryByText("Who reviews access rights?")).not.toBeInTheDocument();
+    openInterview.mockResolvedValue(interview({
+      resumed: true,
+      turns: [turn(), receipt().turn, receipt().agent_turns[0]],
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
+
+    expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("opens a finished interview read-only", async () => {
     openInterview.mockResolvedValue(interview({
       session: { id: "session-1", closed: true },

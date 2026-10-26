@@ -7,11 +7,11 @@ langgraph = pytest.importorskip("langgraph")
 from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 
-from agentic_grc_agent.graph import build_graph, initial_state  # noqa: E402
-from agentic_grc_agent.llm import FakeLLM  # noqa: E402
-from agentic_grc_agent.nodes import Deps  # noqa: E402
-from agentic_grc_agent.schemas import AnswerInterpretation, FollowUpQuestion  # noqa: E402
-from agentic_grc_agent.trace import TraceRecorder  # noqa: E402
+from app.agent.graph import build_graph, initial_state  # noqa: E402
+from app.agent.llm import FakeLLM  # noqa: E402
+from app.agent.nodes import Deps  # noqa: E402
+from app.agent.schemas import AnswerInterpretation, FollowUpQuestion  # noqa: E402
+from app.agent.trace import TraceRecorder  # noqa: E402
 
 
 def pending(graph, config):

@@ -15,4 +15,3 @@ class Settings:
     llm_retries: int = int(os.getenv("AGRC_LLM_RETRIES", "1"))
     max_follow_ups: int = int(os.getenv("AGRC_MAX_FOLLOW_UPS", "3"))  # HU-06
     kb_path: Path = Path(os.getenv("AGRC_KB_PATH", Path(__file__).parent / "data" / "kb_demo.yaml"))
-    trace_dir: Path = Path(os.getenv("AGRC_TRACE_DIR", "traces"))

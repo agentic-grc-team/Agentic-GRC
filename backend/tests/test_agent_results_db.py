@@ -17,7 +17,7 @@ from tests.test_expert_review_db import db, make_assessment, make_control, make_
 
 
 def agent_output(**changes) -> dict:
-    """The `output` of a status_assessed trace, as the agent writes it (agentic_grc_agent ControlResult)."""
+    """The `output` of a status_assessed trace, as the agent writes it (app.agent ControlResult)."""
     output = {
         "question_code": "IAM-01",
         "control_ids": ["PR.AA-03"],
@@ -191,14 +191,35 @@ def test_refuses_a_control_outside_the_scope(db):
     assert "outside the assessment scope" in error.value.detail
 
 
-def test_refuses_a_second_result_for_the_same_control(db):
-    organization, _, assessment, _ = setup_assessment(db)
-    save(db, organization, assessment, agent_output())
+def test_refuses_a_second_agent_result_after_expert_review(db):
+    organization, user, assessment, (control,) = setup_assessment(db)
+    (first_result,) = save(db, organization, assessment, agent_output())
+    db.commit()
+
+    save_review_decision(
+        db,
+        first_result.id,
+        ReviewDecision(outcome="accepted", comment="Policy checked."),
+        user,
+    )
     db.commit()
 
     with pytest.raises(HTTPException) as error:
-        save(db, organization, assessment, agent_output())
-    assert "already have a result" in error.value.detail
+        save(
+            db,
+            organization,
+            assessment,
+            agent_output(summary="MFA now covers privileged accounts across the organization."),
+        )
+
+    assert error.value.status_code == 409
+    assert control.control_code in error.value.detail
+    stored_results = db.scalars(
+        select(ControlResult).where(
+            ControlResult.assessment_control_id == control.id,
+        )
+    ).all()
+    assert [(row.id, row.version_no) for row in stored_results] == [(first_result.id, 1)]
 
 
 def test_refuses_an_assessment_of_another_organization(db):

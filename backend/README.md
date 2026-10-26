@@ -12,9 +12,26 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 # Set the Supabase, PostgreSQL, and SMTP values described below.
 alembic upgrade head
+python -m app.cli init-interview-checkpointer
 python -m app.cli bootstrap-admin --user-id <SUPABASE_AUTH_UUID> --email <ADMIN_EMAIL>
 uvicorn app.main:app --reload
 ```
+
+To keep test credentials separate from the default local environment, copy `.env.example` to
+`.env.testing`, fill it with the isolated test project's values, and select it in the PowerShell
+session before running Alembic or the API:
+
+```powershell
+Copy-Item .env.example .env.testing
+$env:AGRC_ENV_FILE = ".env.testing"
+alembic upgrade head
+python -m app.cli init-interview-checkpointer
+uvicorn app.main:app --reload
+```
+
+`AGRC_ENV_FILE` is resolved relative to the `backend` directory when it is not an absolute path.
+The selected environment file is ignored by Git; never commit database passwords or Supabase secret
+keys. Remove the process override with `Remove-Item Env:AGRC_ENV_FILE` to return to `.env`.
 
 The health check is at `http://127.0.0.1:8000/api/v1/health` and interactive API docs are at `http://127.0.0.1:8000/docs`.
 
@@ -45,8 +62,16 @@ FastAPI validates each bearer token with Supabase Auth's user endpoint and uses 
 - Outbound organization email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`.
 - Runtime mode: `APP_ENVIRONMENT`.
 - Demo report: `ALLOW_DEMO_REPORT` (default false; refused in production).
+- Interview data gate: `INTERVIEW_DATA_MODE` defaults to `synthetic`; anonymized testing requires an approval flag, and real mode requires each transfer, retention, deletion, redaction, storage, and topology gate.
+- Interview agent (development): `AGRC_OLLAMA_HOST`, `AGRC_LLM_MODEL`, `AGRC_LLM_TIMEOUT_S`, `AGRC_LLM_RETRIES`, `AGRC_MAX_FOLLOW_UPS`, and optionally `AGRC_KB_PATH`. The current adapter is the local Ollama proof of concept; GCP remains the provisional production inference target and is not configured by this adapter.
 
 The old `JWT_SECRET` and local password-hash settings are no longer used. Remove the temporary JWT secret from your local environment once this branch is adopted. Supabase email/password sign-in and Google OAuth are authenticated by Supabase; the current app SMTP server only sends organization invitations.
+
+## Authenticated assessment interviews
+
+The session endpoint starts or resumes the LangGraph thread using the assessment session UUID and stores the first agent prompt in `interview_turns`. Posting a participant answer requires both `replies_to_turn_id` (the latest agent turn) and `question_id` matching that prompt; repeat submissions must reuse the same `client_request_id` or `Idempotency-Key`. The response includes generated agent turns and draft results. `GET .../interview` restores the durable transcript and in-scope drafts.
+
+The agent uses the assessment's exact `kb_version` and filters its question mappings against `assessment_controls.in_scope`. The checked-in YAML KB is provisional and currently matches `demo-0.2`; synthetic sessions can use it when the normalized KB question rows are absent. Block interviews require questions in the selected stored block. Real or approved-anonymized sessions require matching stored question rows. Run `python -m app.cli init-interview-checkpointer` after migrations before opening sessions. For local development, install the backend requirements and run Ollama with the configured model; model failures degrade to the agent's deterministic rules and templates.
 
 ## Tests
 

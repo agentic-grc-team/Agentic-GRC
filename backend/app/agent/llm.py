@@ -64,8 +64,10 @@ class OllamaLLM:
             except ValidationError as e:  # malformed JSON: retry
                 last_error = e
             except Exception as e:  # timeout, connection refused, model not pulled...
-                raise LLMError(f"{type(e).__name__}: {e}") from e
-        raise LLMError(f"Invalid structured output after {self.retries + 1} attempts: {last_error}")
+                raise LLMError(f"Model call failed ({type(e).__name__}).") from e
+        # Validation errors can embed model output, which may repeat sensitive
+        # participant content. Do not carry the raw validation detail into traces.
+        raise LLMError(f"Invalid structured output after {self.retries + 1} attempts.") from last_error
 
 
 class FakeLLM:

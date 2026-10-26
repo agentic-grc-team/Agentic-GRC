@@ -8,6 +8,7 @@ import OrganizationWorkspace from "./features/organizations/OrganizationWorkspac
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
 import InterviewWorkspace from "./features/interviews/InterviewWorkspace.jsx";
 import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
+import AssessmentWorkspace from "./features/assessments/AssessmentWorkspace.jsx";
 
 const EVIDENCE_PATH = "/evidence";
 
@@ -215,6 +216,19 @@ function App() {
         </button>
 
         <button
+          className={`rail-navigation-item ${!isEvidencePage && currentView === "assessments" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => showView("assessments")}
+          disabled={!user?.accessToken}
+          aria-label="Assessments"
+          aria-current={!isEvidencePage && currentView === "assessments" ? "page" : undefined}
+        >
+          <span className="rail-current-icon" aria-hidden="true">◇</span>
+          <span>Assessments</span>
+          {!isEvidencePage && currentView === "assessments" && <span className="rail-active-dot" />}
+        </button>
+
+        <button
           className={`rail-navigation-item ${!isEvidencePage && currentView === "interview" ? "is-active" : ""}`}
           type="button"
           onClick={() => showView("interview")}
@@ -281,13 +295,15 @@ function App() {
             <strong>
               {isEvidencePage
                 ? "Evidence upload"
-                : currentView === "reports"
-                  ? "Reports"
-                  : currentView === "expert-reviews"
-                    ? "Expert reviews"
-                    : currentView === "interview"
-                      ? "Interview"
-                      : "Organization setup"}
+                : currentView === "assessments"
+                  ? "Assessments"
+                  : currentView === "interview"
+                    ? "Interview"
+                    : currentView === "reports"
+                      ? "Reports"
+                      : currentView === "expert-reviews"
+                        ? "Expert reviews"
+                        : "Organization setup"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -314,7 +330,16 @@ function App() {
             onOrganizationChange={setSelectedOrganizationId}
           />
         ) : user?.accessToken ? (
-          currentView === "reports" ? (
+          currentView === "assessments" ? (
+            <AssessmentWorkspace
+              key={user.id}
+              accessToken={user.accessToken}
+              sessionId={user.id}
+              isPlatformAdmin={user.is_platform_admin}
+              initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
+            />
+          ) : currentView === "reports" ? (
             <ReportWorkspace
               accessToken={user.accessToken}
               sessionId={user.id}

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from .schemas import Missing, Question
 
-INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.2.0"
+INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.3.0"
 FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.3.0"
-CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.2.0"
+CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.3.0"
 
 _ROLE = (
     "You are a cybersecurity consultant interviewing an organization to assess its security controls. "
@@ -33,7 +33,9 @@ def interpret(question: Question, turns: list[dict]) -> tuple[str, str]:
         "- specificity: 'detailed' only if the answer includes the required detail; otherwise 'vague'.\n"
         "  For 'partial', detailed = they say what is missing. For 'not_applicable', detailed = they give a reason.\n"
         "- mentions_scope: true if they say which accounts, systems or people it applies to.\n"
-        "- mentions_evidence: true if they mention something verifiable (policy, configuration, report, tool).\n"
+        "- mentions_evidence: true only if the participant's MOST RECENT answer identifies a specific, reviewable "
+        "evidence item or source (such as a named policy, report, configuration, or tool). Do not count a general "
+        "claim that evidence exists, or evidence mentioned before the agent's latest evidence request.\n"
         "- summary: one sentence in English paraphrasing the participant.\n"
         "- key_quote: a short literal fragment of the participant's LAST message.\n"
         "- confidence: 0 to 1, how sure you are of your interpretation."
@@ -85,6 +87,23 @@ def clarify(question: Question, participant_message: str) -> tuple[str, str]:
     user = (
         f"Question: {question.text}\nWhat we need to learn: {question.intent}\n"
         f"Participant's message: {participant_message}"
+    )
+    return system, user
+
+
+def ambiguity_clarification(
+    question: Question, participant_message: str, interpretation_summary: str
+) -> tuple[str, str]:
+    system = (
+        f"{_ROLE}\n\nThe participant answered, but the meaning is unclear. Ask ONE focused, short question "
+        "that resolves the specific ambiguity in the answer and relates it to the control question. Do not "
+        "assume a status, suggest an answer, or ask for evidence yet. Return JSON with the field 'question'."
+    )
+    user = (
+        f"Control question: {question.text}\n"
+        f"What we need to learn: {question.intent}\n"
+        f"Participant's latest answer: {participant_message}\n"
+        f"Tentative interpretation (may be uncertain): {interpretation_summary}"
     )
     return system, user
 
