@@ -1,17 +1,24 @@
-"""Every table that stores organization data must carry a non-null organization_id covered by a foreign key."""
+"""Every tenant-owned table must carry a non-null organization_id covered by a foreign key."""
 
 import pytest
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.db.base import Base
 
-# Identity and lookup tables hold no organization data.
+# Identity, lookup, and shared framework/knowledge-base catalog tables hold no
+# organization-specific data. Tenant-owned assessment records remain covered.
 TABLES_WITHOUT_ORGANIZATION_ID = {
     "auth.users",
     "users",
     "organizations",
     "industry_sectors",
     "organization_sizes",
+    "frameworks",
+    "framework_versions",
+    "kb_versions",
+    "interview_blocks",
+    "assessment_modules",
+    "questions",
 }
 
 

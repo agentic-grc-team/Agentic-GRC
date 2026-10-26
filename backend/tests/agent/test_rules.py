@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentic_grc_agent.rules import decide_next_step
-from agentic_grc_agent.schemas import (
+from app.agent.rules import decide_next_step
+from app.agent.schemas import (
     Action,
     AnswerCategory,
     AnswerInterpretation,
@@ -55,9 +55,11 @@ def test_vague_yes_after_evidence_request_asks_for_detail_not_evidence_again():
     assert step.missing is Missing.detail and step.rule_id == "rule:yes_vague_ask_detail"
 
 
-def test_detailed_yes_closes_when_no_follow_ups_left():
+def test_detailed_yes_requests_evidence_even_when_no_follow_ups_left():
     step = decide_next_step(interp(category="yes", specificity="detailed", scope=True), 3, 3)
-    assert step.status is ControlStatus.implemented and step.rule_id == "rule:yes_detailed_limit"
+    assert step.action is Action.follow_up
+    assert step.missing is Missing.evidence
+    assert step.rule_id == "rule:yes_detailed_ask_evidence"
 
 
 def test_vague_yes_at_limit_is_not_marked_compliant():
@@ -81,9 +83,16 @@ def test_clarification_never_closes_even_at_limit():
     assert decide_next_step(interp(intent="clarification_request"), 3, 3).action is Action.clarify
 
 
-def test_low_confidence_close_goes_to_human():
+def test_low_confidence_answer_requires_clarification_before_human_review():
     step = decide_next_step(interp(category="no", confidence=0.3), 0, 3)
-    assert step.requires_human_review
+    assert step.action is Action.clarify
+    assert not step.requires_human_review
+
+    unresolved = decide_next_step(
+        interp(category="no", confidence=0.3), 0, 3, ambiguity_clarifications_used=1
+    )
+    assert unresolved.status is ControlStatus.not_assessed
+    assert unresolved.requires_human_review
 
 
 def test_same_input_same_decision():
@@ -91,7 +100,7 @@ def test_same_input_same_decision():
     assert decide_next_step(i, 1, 3) == decide_next_step(i, 1, 3)
 
 
-CASES = yaml.safe_load((Path(__file__).parents[1] / "evals" / "interpret_cases.yaml").read_text())["cases"]
+CASES = yaml.safe_load((Path(__file__).parents[2] / "evals" / "interpret_cases.yaml").read_text())["cases"]
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])

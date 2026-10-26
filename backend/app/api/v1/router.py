@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     evidence,
     expert_reviews,
     health,
+    interviews,
     organizations,
     reference_data,
     reports,
@@ -20,6 +21,7 @@ api_router.include_router(health.router)
 api_router.include_router(reference_data.router)
 api_router.include_router(organizations.router)
 api_router.include_router(assessments.router)
+api_router.include_router(interviews.router)
 api_router.include_router(traces.router)
 api_router.include_router(
     evidence.router,

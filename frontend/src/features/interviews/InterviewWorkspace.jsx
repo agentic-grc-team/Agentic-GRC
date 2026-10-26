@@ -143,7 +143,7 @@ export default function InterviewWorkspace({
         setError("The interview could not be started. Try again.");
         return;
       }
-      setInterview({ organizationId, assessmentId, data });
+      setInterview({ organizationId, assessmentId, data, openedAt: seq });
     } catch (caught) {
       if (seq === startSeqRef.current) {
         setError(describeInterviewError(caught));
@@ -209,7 +209,7 @@ export default function InterviewWorkspace({
 
       {interview && (
         <InterviewConversation
-          key={`${interview.organizationId}:${interview.assessmentId}`}
+          key={`${interview.organizationId}:${interview.assessmentId}:${interview.openedAt}`}
           organizationId={interview.organizationId}
           assessmentId={interview.assessmentId}
           interview={interview.data}

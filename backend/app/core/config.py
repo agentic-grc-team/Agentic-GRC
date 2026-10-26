@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -11,11 +12,14 @@ from sqlalchemy import URL
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = Path(os.environ.get("AGRC_ENV_FILE", str(BACKEND_DIR / ".env")))
+if not ENV_FILE.is_absolute():
+    ENV_FILE = BACKEND_DIR / ENV_FILE
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=BACKEND_DIR / ".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         extra="ignore",
@@ -34,6 +38,20 @@ class Settings(BaseSettings):
     supabase_secret_key: SecretStr | None = None
     app_base_url: str = "http://127.0.0.1:4178"
     app_environment: Literal["development", "test", "production"] = "development"
+    interview_data_mode: Literal["synthetic", "approved_anonymized", "real"] = "synthetic"
+    interview_anonymized_data_approved: bool = False
+    interview_external_transfer_approved: bool = False
+    interview_retention_approved: bool = False
+    interview_deletion_approved: bool = False
+    interview_redaction_approved: bool = False
+    interview_storage_approved: bool = False
+    interview_topology_documented: bool = False
+    agrc_ollama_host: str = "http://127.0.0.1:11434"
+    agrc_llm_model: str = "llama3.1:8b"
+    agrc_llm_timeout_s: float = 8
+    agrc_llm_retries: int = 1
+    agrc_max_follow_ups: int = 3
+    agrc_kb_path: Path | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -61,10 +79,69 @@ class Settings(BaseSettings):
             raise ValueError("SUPABASE_URL must be a valid project URL without credentials.")
         return normalized
 
+    @field_validator("agrc_ollama_host")
+    @classmethod
+    def validate_interview_model_host(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        parsed = urlsplit(normalized)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "AGRC_OLLAMA_HOST must be an HTTP(S) URL without credentials, query, or fragment."
+            )
+        return normalized
+
     @model_validator(mode="after")
     def validate_deployment_security(self) -> Settings:
+        model_host = urlsplit(self.agrc_ollama_host)
+        is_local_model_host = model_host.hostname in {"localhost", "127.0.0.1", "::1"}
+        if not is_local_model_host:
+            if model_host.scheme != "https":
+                raise ValueError("A remote interview model host must use HTTPS.")
+            if not self.interview_external_transfer_approved:
+                raise ValueError(
+                    "A remote interview model requires INTERVIEW_EXTERNAL_TRANSFER_APPROVED=true."
+                )
+            if not self.interview_topology_documented:
+                raise ValueError(
+                    "A remote interview model requires INTERVIEW_TOPOLOGY_DOCUMENTED=true."
+                )
+
         if bool(self.smtp_username) != (self.smtp_password is not None):
             raise ValueError("Set both SMTP_USERNAME and SMTP_PASSWORD, or leave both unset.")
+        if (
+            self.interview_data_mode == "approved_anonymized"
+            and not self.interview_anonymized_data_approved
+        ):
+            raise ValueError(
+                "Approved anonymized interview data requires "
+                "INTERVIEW_ANONYMIZED_DATA_APPROVED=true."
+            )
+        if self.interview_data_mode == "real":
+            required_interview_approvals = (
+                ("INTERVIEW_EXTERNAL_TRANSFER_APPROVED", self.interview_external_transfer_approved),
+                ("INTERVIEW_RETENTION_APPROVED", self.interview_retention_approved),
+                ("INTERVIEW_DELETION_APPROVED", self.interview_deletion_approved),
+                ("INTERVIEW_REDACTION_APPROVED", self.interview_redaction_approved),
+                ("INTERVIEW_STORAGE_APPROVED", self.interview_storage_approved),
+                ("INTERVIEW_TOPOLOGY_DOCUMENTED", self.interview_topology_documented),
+            )
+            missing_interview_approvals = [
+                name for name, approved in required_interview_approvals if not approved
+            ]
+            if missing_interview_approvals:
+                missing = ", ".join(missing_interview_approvals)
+                raise ValueError(
+                    "Real interview data is blocked until all data-policy gates are approved: "
+                    + missing
+                    + "."
+                )
         if self.app_environment == "production":
             if self.allow_demo_report:
                 raise ValueError("ALLOW_DEMO_REPORT must be false in production.")
