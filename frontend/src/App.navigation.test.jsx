@@ -22,11 +22,21 @@ vi.mock("./features/organizations/OrganizationWorkspace.jsx", () => ({
 vi.mock("./features/expertReviews/ExpertReviewWorkspace.jsx", () => ({
   default: () => <div>Expert reviews view</div>,
 }));
+vi.mock("./features/interviews/InterviewWorkspace.jsx", () => ({
+  default: ({ initialOrganizationId, initialAssessmentId }) => (
+    <div>Interview view {initialOrganizationId}/{initialAssessmentId}</div>
+  ),
+}));
 vi.mock("./features/reports/ReportWorkspace.jsx", () => ({
   default: () => <div>Reports view</div>,
 }));
 vi.mock("./features/assessments/AssessmentWorkspace.jsx", () => ({
-  default: () => <div>Assessments view</div>,
+  default: ({ onStartInterview }) => (
+    <div>
+      Assessments view
+      <button type="button" onClick={() => onStartInterview("org-1", "assessment-1")}>Go to interview</button>
+    </div>
+  ),
 }));
 vi.mock("./features/organizations/EvidencePage.jsx", () => ({
   default: ({ onNavigate }) => (
@@ -53,6 +63,7 @@ describe("App navigation", () => {
     expect(Array.from(items).map((node) => node.getAttribute("aria-label"))).toEqual([
       "Client onboarding",
       "Assessments",
+      "Interview",
       "Expert reviews",
       "Reports",
       "Evidence upload",
@@ -92,6 +103,29 @@ describe("App navigation", () => {
     expect(breadcrumb()).toBe("Expert reviews");
     expect(screen.getByRole("button", { name: "Expert reviews" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "Client onboarding" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("opens the Interview screen from the rail", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Interview" }));
+
+    expect(screen.getByText(/Interview view/)).toBeInTheDocument();
+    expect(screen.queryByText("Organizations view")).not.toBeInTheDocument();
+    expect(breadcrumb()).toBe("Interview");
+    expect(screen.getByRole("button", { name: "Interview" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Client onboarding" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("opens the interview of an assessment chosen on the Assessments screen", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Assessments" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to interview" }));
+
+    expect(screen.getByText("Interview view org-1/assessment-1")).toBeInTheDocument();
+    expect(breadcrumb()).toBe("Interview");
+    expect(screen.getByRole("button", { name: "Interview" })).toHaveAttribute("aria-current", "page");
   });
 
   it("opens the Evidence upload page from the rail", () => {
