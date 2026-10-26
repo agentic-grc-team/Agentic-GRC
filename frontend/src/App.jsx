@@ -126,6 +126,7 @@ function App() {
   const [currentView, setCurrentView] = useState("organizations");
   const [pathname, setPathname] = useState(window.location.pathname);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [interviewAssessmentId, setInterviewAssessmentId] = useState("");
   const isEvidencePage = pathname === EVIDENCE_PATH;
   const evidencePath = selectedOrganizationId
     ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
@@ -179,8 +180,15 @@ function App() {
     }
   }, [isLoading, user]);
 
+  function openInterview(organizationId, assessmentId) {
+    setSelectedOrganizationId(organizationId);
+    setInterviewAssessmentId(assessmentId);
+    showView("interview");
+  }
+
   function handleSignOut() {
     setSelectedOrganizationId("");
+    setInterviewAssessmentId("");
     signOut();
   }
 
@@ -338,6 +346,7 @@ function App() {
               isPlatformAdmin={user.is_platform_admin}
               initialOrganizationId={selectedOrganizationId}
               onOrganizationChange={setSelectedOrganizationId}
+              onStartInterview={openInterview}
             />
           ) : currentView === "reports" ? (
             <ReportWorkspace
@@ -348,10 +357,11 @@ function App() {
             />
           ) : currentView === "interview" ? (
             <InterviewWorkspace
-              key={user.id}
+              key={`${user.id}:${interviewAssessmentId}`}
               accessToken={user.accessToken}
               sessionId={user.id}
               initialOrganizationId={selectedOrganizationId}
+              initialAssessmentId={interviewAssessmentId}
               onOrganizationChange={setSelectedOrganizationId}
             />
           ) : currentView === "expert-reviews" ? (
