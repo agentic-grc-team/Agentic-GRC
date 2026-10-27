@@ -66,8 +66,10 @@ jobs:
           --deselect tests/test_organization_hu.py::OrganizationInvitationFlowTests::test_invitation_email_creates_verified_user_and_membership
 
   frontend:
-    name: Frontend tests and build
+    name: Frontend tests, build, and browser E2E
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: "0"
     defaults:
       run:
         working-directory: frontend
@@ -88,3 +90,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser E2E
+        run: npm run test:e2e

@@ -17,5 +17,9 @@ __pycache__/
 # Agent benchmark outputs
 backend/evals/results/
 
+# Playwright artifacts
+frontend/playwright-report/
+frontend/test-results/
+
 
 /uploaded_evidence/
