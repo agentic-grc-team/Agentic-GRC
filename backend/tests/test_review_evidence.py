@@ -165,3 +165,23 @@ def test_api_requires_authentication(api, monkeypatch):
 
     assert response.status_code in (401, 403)
     service.assert_not_called()
+@pytest.mark.parametrize(
+    "length, expected",
+    [
+        (999, "A" * 999),
+        (1000, "A" * 1000),
+        (1001, "A" * 997 + "..."),
+    ],
+    ids=["below-limit", "at-limit", "over-limit"],
+)
+def test_marks_only_truncated_excerpts(length, expected):
+    sources, skipped = _source_entries([
+        {
+            "type": "interview_turn",
+            "ref": "interview_turn:1",
+            "excerpt": "  " + "A" * length + "  ",
+        },
+    ])
+
+    assert skipped == 0
+    assert sources[0].excerpt == expected
