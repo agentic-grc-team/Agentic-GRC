@@ -192,3 +192,42 @@ def test_document_reference_round_trip():
 @pytest.mark.parametrize("reference", ["doc:1", "interview_turn:3", "document_span:not-a-uuid", ""])
 def test_other_references_are_not_evidence_files(reference):
     assert evidence_file_id_from_reference(reference) is None
+
+def test_list_links_requires_membership(client, monkeypatch):
+    monkeypatch.setattr(f"{ENDPOINT}.list_links_for_assessment", lambda *args: pytest.fail("must not be called"))
+
+    response = client.get(
+        "/api/v1/evidence/links",
+        params={"organization_id": str(uuid.uuid4()), "assessment_id": str(ASSESSMENT_ID)},
+    )
+
+    assert response.status_code == 403
+
+
+def test_list_links_of_an_unknown_assessment_is_not_found(client, monkeypatch):
+    monkeypatch.setattr(f"{ENDPOINT}.get_assessment", lambda db, organization_id, assessment_id: None)
+    monkeypatch.setattr(f"{ENDPOINT}.list_links_for_assessment", lambda *args: pytest.fail("must not be called"))
+
+    response = client.get(
+        "/api/v1/evidence/links",
+        params={"organization_id": str(ORG_ID), "assessment_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 404
+
+
+def test_list_links_returns_links_with_document_references(client, monkeypatch):
+    monkeypatch.setattr(f"{ENDPOINT}.get_assessment", lambda db, organization_id, assessment_id: object())
+    monkeypatch.setattr(f"{ENDPOINT}.list_links_for_assessment", lambda db, organization_id, assessment_id: [fake_link()])
+
+    response = client.get(
+        "/api/v1/evidence/links",
+        params={"organization_id": str(ORG_ID), "assessment_id": str(ASSESSMENT_ID)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["evidence_file_id"] == str(EVIDENCE_ID)
+    assert body[0]["assessment_control_id"] == str(CONTROL_ID)
+    assert body[0]["reference"] == f"document_span:{EVIDENCE_ID}"

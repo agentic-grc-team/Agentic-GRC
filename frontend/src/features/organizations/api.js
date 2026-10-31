@@ -5,9 +5,12 @@ export function listOrganizations(accessToken, { activeMembershipsOnly = false }
   return apiRequest(path, { accessToken });
 }
 
-export function uploadEvidence(organizationId, file, accessToken, signal) {
+export function uploadEvidence(organizationId, file, accessToken, signal, assessmentId = "") {
   const body = new FormData();
   body.append("organization_id", organizationId);
+  if (assessmentId) {
+    body.append("assessment_id", assessmentId);
+  }
   body.append("file", file);
   return apiRequest("/evidence/", { method: "POST", accessToken, body, signal });
 }

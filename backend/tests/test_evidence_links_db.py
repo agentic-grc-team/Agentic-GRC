@@ -14,6 +14,7 @@ from app.services.evidence_links import (
     EvidenceNotFoundError,
     link_evidence_to_control,
     list_evidence_for_control,
+    list_links_for_assessment,
     unlink_evidence_from_control,
 )
 from tests.test_assessments_db import make_assessment, make_control, make_organization, make_user
@@ -243,3 +244,24 @@ def test_duplicate_link_rejected_by_database(db):
     db.add(EvidenceControlLink(**fields))
     with pytest.raises(IntegrityError, match="uq_evidence_control_links_control_evidence"):
         db.commit()
+
+def test_assessment_links_are_scoped_to_the_assessment_and_organization(db):
+    organization, assessment, control = make_context(db)
+    other_assessment = make_assessment(db, organization)
+    other_control = make_control(db, organization, other_assessment)
+    other_organization = make_organization(db)
+    foreign_assessment = make_assessment(db, other_organization)
+    foreign_control = make_control(db, other_organization, foreign_assessment)
+
+    mine = store(db, organization, assessment_id=assessment.id)
+    elsewhere = store(db, organization, assessment_id=other_assessment.id)
+    foreign = store(db, other_organization, assessment_id=foreign_assessment.id)
+
+    link_evidence_to_control(db, organization.id, mine.id, control.id, None)
+    link_evidence_to_control(db, organization.id, elsewhere.id, other_control.id, None)
+    link_evidence_to_control(db, other_organization.id, foreign.id, foreign_control.id, None)
+
+    links = list_links_for_assessment(db, organization.id, assessment.id)
+
+    assert [(link.evidence_file_id, link.assessment_control_id) for link in links] == [(mine.id, control.id)]
+    assert list_links_for_assessment(db, organization.id, foreign_assessment.id) == []

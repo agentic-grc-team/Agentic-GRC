@@ -326,3 +326,43 @@ def test_scope_requires_login(api, scope_controls):
     response = client.get(SCOPE_URL)
 
     assert response.status_code == 401
+
+CONTROLS_URL = f"{URL}/{ASSESSMENT_ID}/controls"
+
+
+def test_member_gets_in_scope_controls_with_ids(api):
+    first_id, second_id = uuid.uuid4(), uuid.uuid4()
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", membership("representative"))
+    api.setattr(
+        "app.api.v1.endpoints.assessments.list_in_scope_controls",
+        lambda db, organization_id, assessment_id: [
+            SimpleNamespace(id=first_id, control_code="PR.AA-01", control_title="Identities are managed"),
+            SimpleNamespace(id=second_id, control_code="PR.AA-03", control_title="Users are authenticated"),
+        ],
+    )
+
+    response = client.get(CONTROLS_URL)
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": str(first_id), "code": "PR.AA-01", "title": "Identities are managed"},
+        {"id": str(second_id), "code": "PR.AA-03", "title": "Users are authenticated"},
+    ]
+
+
+def test_non_member_cannot_list_assessment_controls(api):
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", no_membership)
+
+    response = client.get(CONTROLS_URL)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Organization not found."
+
+
+def test_controls_of_unknown_assessment_return_404(api):
+    api.setattr("app.api.v1.endpoints.assessments._active_membership", membership("consultant"))
+
+    response = client.get(f"{URL}/{uuid.uuid4()}/controls")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Assessment not found."

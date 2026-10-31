@@ -10,6 +10,12 @@ vi.mock("../organizations/api.js", () => ({
   listOrganizations: vi.fn(),
 }));
 
+vi.mock("./AssessmentEvidence.jsx", () => ({
+  default: ({ organizationId, assessmentId }) => (
+    <div data-testid="assessment-evidence">{`${organizationId}:${assessmentId}`}</div>
+  ),
+}));
+
 vi.mock("./api.js", () => ({
   listAssessments: vi.fn(),
   createAssessment: vi.fn(),
@@ -80,6 +86,12 @@ describe("AssessmentWorkspace", () => {
     getAssessmentScope.mockImplementation((organizationId, assessmentId) =>
       Promise.resolve(scopeFor(assessment(assessmentId, "Q3 baseline", organizationId))),
     );
+  });
+
+  it("offers evidence for the selected assessment once its scope is shown", async () => {
+    renderWorkspace();
+
+    expect(await screen.findByTestId("assessment-evidence")).toHaveTextContent("org-1:assess-1");
   });
 
   it("shows the scope of the first assessment of the selected organization", async () => {
