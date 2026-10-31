@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AssessmentControl,
+    AssessmentSession,
     ControlResult,
     DecisionTraceRecord,
     EvidenceFile,
+    InterviewTurn,
     User,
 )
 from app.schemas.evidence import EvidenceFileRead
@@ -66,6 +68,76 @@ def _source_entries(entries):
         )
 
     return sources, skipped
+
+
+INTERVIEW_REFERENCE_PREFIX = "interview_turn:"
+MAX_TRANSCRIPT_EXCERPT = 1000
+
+
+def _interview_turn_id(reference: str) -> UUID | None:
+    if not reference.startswith(INTERVIEW_REFERENCE_PREFIX):
+        return None
+
+    try:
+        return UUID(reference[len(INTERVIEW_REFERENCE_PREFIX):])
+    except ValueError:
+        return None
+
+
+def _resolve_interview_statements(
+    db: Session,
+    result: ControlResult,
+    sources: list[ReviewEvidenceSource],
+) -> None:
+    """Quote cited participant answers from this assessment's transcript.
+
+    A cited turn that is found replaces any saved excerpt, so a result cannot
+    show text the participant never gave. Other citations keep their saved
+    excerpt and stay marked as not quoted from the transcript.
+    """
+    turn_ids = {
+        turn_id
+        for source in sources
+        if source.source_type == "interview_turn"
+        and (turn_id := _interview_turn_id(source.reference)) is not None
+    }
+
+    if not turn_ids:
+        return
+
+    rows = db.execute(
+        select(InterviewTurn.id, InterviewTurn.content)
+        .join(
+            AssessmentSession,
+            (AssessmentSession.organization_id == InterviewTurn.organization_id)
+            & (AssessmentSession.id == InterviewTurn.session_id),
+        )
+        .where(
+            InterviewTurn.id.in_(turn_ids),
+            InterviewTurn.organization_id == result.organization_id,
+            InterviewTurn.speaker == "participant",
+            AssessmentSession.assessment_id == result.assessment_id,
+        )
+    ).all()
+
+    statements = {turn_id: content for turn_id, content in rows}
+
+    for source in sources:
+        if source.source_type != "interview_turn":
+            continue
+
+        content = statements.get(_interview_turn_id(source.reference))
+
+        if content is None:
+            continue
+
+        content = content.strip()
+
+        if len(content) > MAX_TRANSCRIPT_EXCERPT:
+            content = content[: MAX_TRANSCRIPT_EXCERPT - 3] + "..."
+
+        source.excerpt = content or None
+        source.from_transcript = True
 
 
 def get_review_evidence(
@@ -168,6 +240,8 @@ def get_review_evidence(
             if source.document is None:
                 # Do not expose claimed excerpts from unresolved documents.
                 source.excerpt = None
+
+    _resolve_interview_statements(db, result, sources)
 
     linked = list_evidence_for_control(
         db,
