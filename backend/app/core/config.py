@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     agrc_llm_model: str = "llama3.1:8b"
     agrc_llm_timeout_s: float = 8
     agrc_llm_retries: int = 1
+    agrc_llm_keep_alive: str = "30m"
+    agrc_llm_num_predict: int = Field(default=320, ge=32, le=2048)
     agrc_max_follow_ups: int = 3
     agrc_kb_path: Path | None = None
     smtp_host: str | None = None

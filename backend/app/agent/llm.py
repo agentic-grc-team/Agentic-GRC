@@ -36,16 +36,40 @@ class LLM(Protocol):
         self, *, prompt_id: str, prompt_version: str, system: str, user: str, schema: type[T]
     ) -> tuple[T, CallMeta]: ...
 
+    def warm_up(self) -> int | None: ...
+
 
 class OllamaLLM:
     """Local model served by Ollama. Data never leaves the machine."""
 
-    def __init__(self, model_name: str, host: str, timeout_s: float, retries: int = 1):
+    def __init__(
+        self,
+        model_name: str,
+        host: str,
+        timeout_s: float,
+        retries: int = 1,
+        keep_alive: str = "30m",
+        num_predict: int = 320,
+    ):
         import ollama  # imported here so tests do not need the package
 
         self.model_name = model_name
         self.retries = retries
+        self.keep_alive = keep_alive
+        self.num_predict = num_predict
         self._client = ollama.Client(host=host, timeout=timeout_s)
+
+    def warm_up(self) -> int | None:
+        """Load the model into memory before the first turn. Returns the load time in ms, or None if it failed.
+
+        Never raises: if Ollama is down, the interview still starts and the normal fallback applies.
+        """
+        start = time.perf_counter()
+        try:
+            self._client.generate(model=self.model_name, prompt="", keep_alive=self.keep_alive)
+            return int((time.perf_counter() - start) * 1000)
+        except Exception:
+            return None
 
     def structured(self, *, prompt_id, prompt_version, system, user, schema):
         start = time.perf_counter()
@@ -56,7 +80,8 @@ class OllamaLLM:
                     model=self.model_name,
                     messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                     format=schema.model_json_schema(),  # Ollama constrains the output to this schema
-                    options={"temperature": 0},
+                    options={"temperature": 0, "num_predict": self.num_predict},
+                    keep_alive=self.keep_alive,
                 )
                 obj = schema.model_validate_json(resp["message"]["content"])
                 latency = int((time.perf_counter() - start) * 1000)
@@ -78,6 +103,9 @@ class FakeLLM:
     def __init__(self, handlers: dict[str, Callable[[str], BaseModel | Exception]]):
         self.handlers = handlers
         self.calls: list[tuple[str, str]] = []
+
+    def warm_up(self) -> int:
+        return 0
 
     def structured(self, *, prompt_id, prompt_version, system, user, schema):
         self.calls.append((prompt_id, user))
