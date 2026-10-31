@@ -1215,7 +1215,9 @@ describe("ReportWorkspace", () => {
       render(<ReportWorkspace accessToken="test-token" />);
 
       await screen.findByText("Assessment: Demo assessment (sample data)");
-      expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "test-token");
+      await waitFor(() =>
+        expect(getReportPreview).toHaveBeenCalledWith("org-1", DEMO_ASSESSMENT_ID, "test-token"),
+      );
     } finally {
       vi.unstubAllEnvs();
     }
