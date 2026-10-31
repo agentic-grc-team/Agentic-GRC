@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -53,7 +53,10 @@ def _source_entries(entries):
         excerpt = entry.get("excerpt")
 
         if isinstance(excerpt, str):
-            excerpt = excerpt.strip()[:1000] or None
+            excerpt = excerpt.strip()
+            if len(excerpt) > 1000:
+                excerpt = excerpt[:997] + "..."
+            excerpt = excerpt or None
         else:
             excerpt = None
 
@@ -77,7 +80,7 @@ def get_review_evidence(
 
     if result is None:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Review result not found.",
         )
 
@@ -93,7 +96,7 @@ def get_review_evidence(
 
     if control is None:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Assessment control not found.",
         )
 
