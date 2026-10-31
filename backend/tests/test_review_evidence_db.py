@@ -7,7 +7,13 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.v1.dependencies import get_db_session
-from app.db.models import EvidenceControlLink, OrganizationMembership
+from app.db.models import (
+    AssessmentParticipant,
+    AssessmentSession,
+    EvidenceControlLink,
+    InterviewTurn,
+    OrganizationMembership,
+)
 from app.main import app
 from app.security.auth import get_current_user
 from app.services.evidence_links import (
@@ -355,3 +361,160 @@ def test_unknown_result_is_not_found(db):
         get_review_evidence(db, uuid4(), user)
 
     assert error.value.status_code == 404
+
+def add_turn(db, org, assessment, content, speaker="participant"):
+    session = AssessmentSession(
+        organization_id=org.id,
+        assessment_id=assessment.id,
+        session_type="kickoff",
+    )
+    db.add(session)
+    db.flush()
+
+    participant_id = None
+
+    if speaker == "participant":
+        participant = AssessmentParticipant(
+            organization_id=org.id,
+            assessment_id=assessment.id,
+            participant_type="assessed_org_representative",
+            role_title="IT manager",
+        )
+        db.add(participant)
+        db.flush()
+        participant_id = participant.id
+
+    turn = InterviewTurn(
+        organization_id=org.id,
+        session_id=session.id,
+        sequence_no=1,
+        speaker=speaker,
+        participant_id=participant_id,
+        turn_type="answer" if speaker == "participant" else "question",
+        content=content,
+    )
+    db.add(turn)
+    db.commit()
+
+    return turn
+
+
+def result_citing_turn(db, org, assessment, control, turn, excerpt=None):
+    source = {
+        "type": "interview_turn",
+        "ref": f"interview_turn:{turn.id}",
+    }
+
+    if excerpt is not None:
+        source["excerpt"] = excerpt
+
+    trace = make_trace(db, org, assessment, sources=[source])
+
+    return make_result(
+        db,
+        org,
+        control,
+        trace_id=trace.id,
+        evidence_refs=[],
+    )
+
+
+def test_interview_citation_is_quoted_from_the_transcript(db):
+    org, user, assessment, control = make_assessment_context(db)
+    turn = add_turn(db, org, assessment, "  We enforce MFA for admins only.  ")
+    result = result_citing_turn(db, org, assessment, control, turn)
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert len(evidence.sources) == 1
+    assert evidence.sources[0].excerpt == "We enforce MFA for admins only."
+    assert evidence.sources[0].from_transcript is True
+
+
+def test_transcript_text_replaces_a_saved_excerpt(db):
+    org, user, assessment, control = make_assessment_context(db)
+    turn = add_turn(db, org, assessment, "We enforce MFA for admins only.")
+    result = result_citing_turn(
+        db, org, assessment, control, turn, excerpt="MFA everywhere."
+    )
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert evidence.sources[0].excerpt == "We enforce MFA for admins only."
+
+
+def test_long_transcript_statement_is_shortened(db):
+    org, user, assessment, control = make_assessment_context(db)
+    turn = add_turn(db, org, assessment, "a" * 3000)
+    result = result_citing_turn(db, org, assessment, control, turn)
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert len(evidence.sources[0].excerpt) == 1000
+    assert evidence.sources[0].excerpt.endswith("...")
+
+
+def test_turn_from_another_assessment_is_not_quoted(db):
+    org, user, assessment, control = make_assessment_context(db)
+    other = make_assessment(db, org)
+    turn = add_turn(db, org, other, "Statement from a different assessment.")
+    result = result_citing_turn(
+        db, org, assessment, control, turn, excerpt="saved"
+    )
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert evidence.sources[0].excerpt == "saved"
+    assert evidence.sources[0].from_transcript is False
+
+
+def test_turn_from_another_organization_is_not_quoted(db):
+    org, user, assessment, control = make_assessment_context(db)
+    other_org, _, other_assessment, _ = make_assessment_context(db)
+    turn = add_turn(
+        db, other_org, other_assessment, "Another tenant's statement."
+    )
+    result = result_citing_turn(db, org, assessment, control, turn)
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert evidence.sources[0].excerpt is None
+    assert evidence.sources[0].from_transcript is False
+    assert "Another tenant" not in evidence.model_dump_json()
+
+
+def test_agent_turn_is_not_quoted_as_a_statement(db):
+    org, user, assessment, control = make_assessment_context(db)
+    turn = add_turn(
+        db, org, assessment, "Do you use MFA?", speaker="agent"
+    )
+    result = result_citing_turn(db, org, assessment, control, turn)
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert evidence.sources[0].excerpt is None
+    assert evidence.sources[0].from_transcript is False
+
+
+def test_unresolvable_interview_reference_keeps_its_saved_excerpt(db):
+    org, user, assessment, control = make_assessment_context(db)
+    trace = make_trace(
+        db,
+        org,
+        assessment,
+        sources=[
+            {
+                "type": "interview_turn",
+                "ref": "interview_turn:not-a-uuid",
+                "excerpt": "saved only",
+            },
+        ],
+    )
+    result = make_result(
+        db, org, control, trace_id=trace.id, evidence_refs=[]
+    )
+
+    evidence = get_review_evidence(db, result.id, user)
+
+    assert evidence.sources[0].excerpt == "saved only"
+    assert evidence.sources[0].from_transcript is False
