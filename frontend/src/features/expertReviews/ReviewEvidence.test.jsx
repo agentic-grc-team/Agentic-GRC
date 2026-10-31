@@ -97,6 +97,52 @@ describe("ReviewEvidence", () => {
     );
   });
 
+  it("marks which interview statements come from the transcript", async () => {
+    getReviewEvidence.mockResolvedValue({
+      ...emptyEvidence,
+      sources: [
+        {
+          source_type: "interview_turn",
+          reference: "interview_turn:turn-1",
+          excerpt: "We enforce MFA for admins only.",
+          from_transcript: true,
+        },
+        {
+          source_type: "interview_turn",
+          reference: "interview_turn:turn-2",
+          excerpt: "Saved only.",
+          from_transcript: false,
+        },
+        {
+          source_type: "interview_turn",
+          reference: "interview_turn:turn-3",
+          excerpt: null,
+          from_transcript: false,
+        },
+      ],
+    });
+
+    render(
+      <ReviewEvidence resultId="result-1" accessToken="token" />,
+    );
+
+    expect(
+      await screen.findByText("We enforce MFA for admins only."),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText("Quoted from the interview transcript."),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText(/Saved citation, not found in this assessment/),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText("No saved excerpt available."),
+    ).toBeInTheDocument();
+  });
+
   it("shows missing documents and malformed-source warnings", async () => {
     getReviewEvidence.mockResolvedValue({
       ...emptyEvidence,
