@@ -24,5 +24,11 @@ describe("evidence API", () => {
     expect(options.body.get("file").name).toBe("policy.txt");
     expect(options.signal).toBe(controller.signal);
     expect(options.headers.has("Content-Type")).toBe(false);
+    expect(options.body.has("assessment_id")).toBe(false);
+  });
+
+  it("sends the assessment an evidence file belongs to", async () => {
+    await uploadEvidence("beta", new File(["evidence"], "policy.txt"), "token", undefined, "assess-1");
+    expect(fetch.mock.calls[0][1].body.get("assessment_id")).toBe("assess-1");
   });
 });
