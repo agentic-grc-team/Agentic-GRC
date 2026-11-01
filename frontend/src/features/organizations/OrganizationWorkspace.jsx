@@ -426,9 +426,9 @@ export default function OrganizationWorkspace({
                 <div className="empty-state-mark" aria-hidden="true">✳</div>
                 <div>
                   <h3>This workspace is ready</h3>
-                  <p>It starts with no assessment records. Assessment conversations will be added in a later step.</p>
+                  <p>Create an assessment in Assessments, then run its interview and review the results.</p>
                 </div>
-                <span className="empty-state-status">EMPTY BY DESIGN</span>
+                <span className="empty-state-status">READY</span>
               </div>
 
               {selectedOrganization.role === "administrator" && (

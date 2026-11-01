@@ -33,6 +33,7 @@ class ReviewEvidenceSource(BaseModel):
     source_type: Literal["document_span", "interview_turn", "other"]
     reference: str
     excerpt: str | None = None
+    from_transcript: bool = False
     document: EvidenceFileRead | None = None
 
 

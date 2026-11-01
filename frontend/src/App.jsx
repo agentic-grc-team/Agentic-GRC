@@ -6,6 +6,7 @@ import InvitationActivation from "./auth/InvitationActivation.jsx";
 import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
+import InterviewWorkspace from "./features/interviews/InterviewWorkspace.jsx";
 import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
 import AssessmentWorkspace from "./features/assessments/AssessmentWorkspace.jsx";
 
@@ -125,6 +126,7 @@ function App() {
   const [currentView, setCurrentView] = useState("organizations");
   const [pathname, setPathname] = useState(window.location.pathname);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [interviewAssessmentId, setInterviewAssessmentId] = useState("");
   const isEvidencePage = pathname === EVIDENCE_PATH;
   const evidencePath = selectedOrganizationId
     ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
@@ -178,8 +180,15 @@ function App() {
     }
   }, [isLoading, user]);
 
+  function openInterview(organizationId, assessmentId) {
+    setSelectedOrganizationId(organizationId);
+    setInterviewAssessmentId(assessmentId);
+    showView("interview");
+  }
+
   function handleSignOut() {
     setSelectedOrganizationId("");
+    setInterviewAssessmentId("");
     signOut();
   }
 
@@ -225,6 +234,19 @@ function App() {
           <span className="rail-current-icon" aria-hidden="true">◇</span>
           <span>Assessments</span>
           {!isEvidencePage && currentView === "assessments" && <span className="rail-active-dot" />}
+        </button>
+
+        <button
+          className={`rail-navigation-item ${!isEvidencePage && currentView === "interview" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => showView("interview")}
+          disabled={!user?.accessToken}
+          aria-label="Interview"
+          aria-current={!isEvidencePage && currentView === "interview" ? "page" : undefined}
+        >
+          <span className="rail-current-icon" aria-hidden="true">✎</span>
+          <span>Interview</span>
+          {!isEvidencePage && currentView === "interview" && <span className="rail-active-dot" />}
         </button>
 
         <button
@@ -283,11 +305,13 @@ function App() {
                 ? "Evidence upload"
                 : currentView === "assessments"
                   ? "Assessments"
-                  : currentView === "reports"
-                    ? "Reports"
-                    : currentView === "expert-reviews"
-                      ? "Expert reviews"
-                      : "Organization setup"}
+                  : currentView === "interview"
+                    ? "Interview"
+                    : currentView === "reports"
+                      ? "Reports"
+                      : currentView === "expert-reviews"
+                        ? "Expert reviews"
+                        : "Organization setup"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -322,12 +346,22 @@ function App() {
               isPlatformAdmin={user.is_platform_admin}
               initialOrganizationId={selectedOrganizationId}
               onOrganizationChange={setSelectedOrganizationId}
+              onStartInterview={openInterview}
             />
           ) : currentView === "reports" ? (
             <ReportWorkspace
               accessToken={user.accessToken}
               sessionId={user.id}
               initialOrganizationId={selectedOrganizationId}
+              onOrganizationChange={setSelectedOrganizationId}
+            />
+          ) : currentView === "interview" ? (
+            <InterviewWorkspace
+              key={`${user.id}:${interviewAssessmentId}`}
+              accessToken={user.accessToken}
+              sessionId={user.id}
+              initialOrganizationId={selectedOrganizationId}
+              initialAssessmentId={interviewAssessmentId}
               onOrganizationChange={setSelectedOrganizationId}
             />
           ) : currentView === "expert-reviews" ? (

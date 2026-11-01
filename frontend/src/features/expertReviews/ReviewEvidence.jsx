@@ -168,8 +168,8 @@ export default function ReviewEvidence({ resultId, accessToken, sessionId }) {
 
       <p>
         Statements from the interview are attestations, not
-        documentary evidence. Excerpts below are saved citations,
-        not a verified transcript lookup.
+        documentary evidence. Statements marked as quoted from
+        the transcript are the participant's saved answers.
       </p>
 
       {interviews.length === 0 ? (
@@ -183,7 +183,14 @@ export default function ReviewEvidence({ resultId, accessToken, sessionId }) {
               </span>
 
               {source.excerpt ? (
-                <blockquote>{source.excerpt}</blockquote>
+                <>
+                  <blockquote>{source.excerpt}</blockquote>
+                  <p className="review-source-reference">
+                    {source.from_transcript
+                      ? "Quoted from the interview transcript."
+                      : "Saved citation, not found in this assessment's transcript."}
+                  </p>
+                </>
               ) : (
                 <p>No saved excerpt available.</p>
               )}
