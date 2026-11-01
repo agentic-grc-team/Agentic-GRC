@@ -40,7 +40,7 @@ class LLM(Protocol):
 
 
 class OllamaLLM:
-    """Local model served by Ollama. Data never leaves the machine."""
+    """Structured-output client for Ollama; data locality depends on the configured endpoint."""
 
     def __init__(
         self,

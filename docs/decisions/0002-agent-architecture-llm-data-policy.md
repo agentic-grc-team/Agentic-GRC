@@ -17,7 +17,7 @@ The decisions are backed by a working proof of concept: a 3-question interview (
 | Area | Decision | Why |
 | --- | --- | --- |
 | Orchestration | LangGraph (Python) | Explicit state machine fits a structured interview; built-in interrupt and checkpointing give pause/resume (HU-09) |
-| LLM runtime | Ollama, self-hosted | No assessment data leaves the platform; no per-token cost |
+| LLM runtime | Ollama, self-hosted for the local POC | Local inference avoids hosted LLM calls and per-token cost; assessment records remain stored in PostgreSQL, which may be remote. |
 | Model | `llama3.1:8b`, chosen by benchmark over `qwen2.5:7b` (100% vs 60% correct next step) | Must handle English, structured JSON output and the 10 s turn limit on demo hardware |
 | Role of the LLM | Interpret answers, phrase follow-ups and clarifications only | Small local models are unreliable at orchestration; decisions must be explainable |
 | Decisions | Deterministic rules in code, each with a `rule:` id | Same input gives the same result; every decision is traceable |
@@ -100,7 +100,7 @@ The checkpoint is working state, not the record of truth. Answers, results and t
 
 ## Data policy
 
-No assessment data is sent to external APIs. All LLM and embedding calls go to models served by Ollama on infrastructure the platform controls.
+For the original local proof of concept, LLM prompts go to the Ollama deployment instead of a hosted LLM API. Interview answers, transcripts, results, and checkpoints are still persisted in PostgreSQL, which may be remote. This historical policy applies to that local POC; it is not an assurance that all assessment data remains on the backend machine. See ADR 0003 for the current production-like data gates and topology requirements.
 
 | Data | May leave the platform? | Treatment |
 | --- | --- | --- |

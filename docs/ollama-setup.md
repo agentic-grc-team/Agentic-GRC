@@ -4,9 +4,9 @@ Guide for setting up, configuring, and benchmarking Ollama for the Agentic GRC i
 
 ## 1. What runs where
 
-Ollama runs locally on the same machine that runs the backend for the demo.
-The agent and backend communicate with Ollama over HTTP at `AGRC_OLLAMA_HOST` (default: `http://127.0.0.1:11434`).
-In accordance with our data governance policy and Architecture Decision Record (0002), all inference is performed on-device: **no assessment data ever leaves the machine**.
+For the default demo setup, Ollama runs on the backend host at `http://127.0.0.1:11434`.
+The backend sends interview prompts to the endpoint configured by `AGRC_OLLAMA_HOST`.
+With the loopback default, inference runs on the backend host and prompts are not sent to a hosted LLM provider. Assessment answers, transcripts, results, and LangGraph checkpoints are persisted to the configured PostgreSQL/Supabase database, which may be remote. If `AGRC_OLLAMA_HOST` points to a remote model host, interview content is sent to that endpoint; remote endpoints require HTTPS, explicit transfer approval, and a documented topology. These settings do not anonymize the content.
 
 ## 2. Installation
 
