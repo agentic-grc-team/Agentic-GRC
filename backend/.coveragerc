@@ -1,0 +1,8 @@
+# Backend coverage report (AGRC-64). CI fails if total coverage of app/ drops below fail_under.
+[run]
+source = app
+
+[report]
+fail_under = 85
+show_missing = true
+skip_covered = true
