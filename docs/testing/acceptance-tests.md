@@ -25,7 +25,7 @@ What each test checks:
 
 1. A member of another organization and a suspended member get 404 with no assessment data when listing, opening, reading the scope of, or creating an assessment; no assessment is created.
 2. A consultant creates an assessment; the consultant and a representative both see the organization and the scope (PR → PR.AA → PR.AA-01, PR.AA-03, PR.AA-05 with the official CSF 2.0 wording). A representative cannot create an assessment (403).
-3. A control added as out of scope (DE.CM-01) is not shown; only the three in-scope controls and their function are listed.
+3. A control added as out of scope (DE.CM-01) is not shown; only the three in-scope controls and their function are listed. Note: the consultant does not select functions or categories when creating an assessment yet. The scope comes from the knowledge-base version (demo-0.2: PR.AA-01, PR.AA-03, PR.AA-05), so this criterion is checked against that fixed scope; selecting the scope is not implemented.
 4. Reopened by another member through a new client, the assessment, its scope and the assessment list all return the same start date, NIST-CSF 2.0 and KB version demo-0.2.
 
 Each test was also checked against a deliberately broken implementation (scope without the in-scope filter, scope endpoint without the access check, no controls on creation, representatives allowed to create); the matching test failed every time.
@@ -35,7 +35,32 @@ Recorded runs:
 | Date | Where | Result |
 | --- | --- | --- |
 | 2026-10-24 | Local, PostgreSQL 16, all migrations | 4 passed |
+| 2026-11-01 | Local, PostgreSQL 16, all migrations | 4 passed |
 
 ## HU-25 — Inspect reasoning traces and source references
 
-Jira: AGRC-82 · Task: AGRC-65 · Implementation: AGRC-60. Planned after the Alpha presentation.
+Jira: AGRC-82 · Task: AGRC-65 · Implementation: AGRC-60 (trace view), AGRC-72 (persisted trace references) · Test file: `backend/tests/acceptance/test_hu25_inspect_reasoning_trace.py`
+
+In every test the assessment is created through the API and a representative answers the first interview question, so the agent saves a real draft result with its decision trace. The language model is replaced by a deterministic fake.
+
+| AC | Given / When / Then | Test | Result |
+| --- | --- | --- | --- |
+| 1 | **Given** an authorized administrator or expert opens a result, **when** the trace view is selected, **then** the assessment, control, result version, and organization context are identifiable. | `test_hu25_ac1_result_context_is_identifiable` | Pass |
+| 2 | **Given** a trace is available, **when** the authorized reviewer opens it, **then** the view shows the trace steps and source references linked to the result. | `test_hu25_ac2_trace_steps_and_source_references_are_shown` | Pass |
+| 3 | **Given** no trace exists or trace loading fails, **when** the view is opened, **then** the user sees a clear unavailable state and the system does not display a fabricated trace. | `test_hu25_ac3_no_trace_gives_an_unavailable_state_and_nothing_is_invented` | Pass |
+| 4 | **Given** the user lacks access to the organization or assessment, **when** they request a trace or export, **then** access is denied and trace data is not disclosed. | `test_hu25_ac4_users_without_access_get_no_trace_data` | Pass |
+
+What each test checks:
+
+1. The consultant of the organization and a platform administrator open the agent's draft and see the organization (id and name), the assessment (id and title), the control (code and title), version 1 and author "agent". After the consultant corrects the draft, the trace of the new result shows version 2 and author "aligo_consultant".
+2. The steps are the recorded decisions for this control in this assessment, oldest first. The decision that produced the result is among them (`status_assessed`, with the result's status), and its source reference is `interview_turn:<id>` of the representative's answer, which is stored in the same organization with the answer text.
+3. A result with no linked decision returns its context, no linked decision and no steps: decisions of the other control are not borrowed. An unknown result is "not found", not an empty trace. The screen side is covered by `ReviewTrace.test.jsx`: "says clearly when no decision is linked and does not invent one", "warns when the linked decision is missing from the steps" and "shows an unavailable state on failure and retries with the latest token".
+4. A consultant of another organization and a suspended consultant get 404, and the organization's representative gets 403 (HU-03), for the result trace, the assessment traces and the trace export. No response contains a trace id or the answer text. Asking with the outsider's own organization and this assessment's id returns no traces.
+
+Each test was also checked against a deliberately broken implementation (steps not filtered by control, no access check on the result trace, representatives allowed to read traces, a fixed result version, the result's own decision left out); the matching test failed every time.
+
+Recorded runs:
+
+| Date | Where | Result |
+| --- | --- | --- |
+| 2026-11-01 | Local, PostgreSQL 16, all migrations | 4 passed |
