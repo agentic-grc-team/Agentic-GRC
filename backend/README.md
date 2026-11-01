@@ -75,10 +75,15 @@ The agent uses the assessment's exact `kb_version` and filters its question mapp
 
 ## Tests
 
-Run unit tests with:
+Run the tests, the lint check and the coverage report the same way CI does:
 
 ```powershell
-python -m unittest discover -v
+ruff check .
+python -m pytest -v --cov=app --cov-report=term
 ```
+
+CI fails if Ruff reports anything (rules in `ruff.toml`) or if coverage of `app/` drops below `fail_under` in `.coveragerc`.
+The concurrency test in `tests/test_expert_review_db.py` commits data, so it runs only on a throwaway database:
+set `AGRC_COMMITTING_DB_TESTS=1` there (CI does). Never set it against the shared Supabase database.
 
 Auth service and configuration tests do not require network access. Organization workflow integration tests require a reachable Supabase PostgreSQL database with the migrations applied; they are skipped if PostgreSQL is unavailable.

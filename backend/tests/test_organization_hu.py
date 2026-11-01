@@ -81,7 +81,7 @@ class OrganizationInvitationFlowTests(unittest.TestCase):
 
     def test_duplicate_organization_name_requires_explicit_confirmation(self) -> None:
         name = f"Client {uuid4()}"
-        original = self._create_organization(name)
+        self._create_organization(name)
 
         with self.assertRaises(HTTPException) as duplicate:
             self._create_organization(name)

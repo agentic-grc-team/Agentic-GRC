@@ -1,5 +1,6 @@
 """Expert review persistence and concurrency integration tests."""
 
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -450,13 +451,15 @@ def test_expert_review_rollback_removes_all_new_records(db):
 def test_expert_review_concurrent_modify_requests():
     settings = get_settings()
 
-    # This test commits setup data, so run it only on our local Docker DB.
-    if (
-        settings.db_host != "127.0.0.1"
-        or settings.db_port != 55432
-        or settings.db_name != "agentic_grc_test"
-    ):
-        pytest.skip("Requires the dedicated local Docker test database.")
+    # This test commits setup data, so run it only on a throwaway database:
+    # the local Docker test DB, or one where AGRC_COMMITTING_DB_TESTS=1 is set (CI).
+    on_local_test_db = (
+        settings.db_host == "127.0.0.1"
+        and settings.db_port == 55432
+        and settings.db_name == "agentic_grc_test"
+    )
+    if not on_local_test_db and os.getenv("AGRC_COMMITTING_DB_TESTS") != "1":
+        pytest.skip("Requires a throwaway test database (set AGRC_COMMITTING_DB_TESTS=1).")
 
     engine = get_engine()
 
