@@ -137,6 +137,21 @@ def unlink_evidence_from_control(
     return result.rowcount > 0
 
 
+def list_links_for_assessment(
+    db: Session, organization_id: UUID, assessment_id: UUID
+) -> list[EvidenceControlLink]:
+    """Every evidence link of one assessment, oldest first. Always filtered by organization."""
+    statement = (
+        select(EvidenceControlLink)
+        .where(
+            EvidenceControlLink.organization_id == organization_id,
+            EvidenceControlLink.assessment_id == assessment_id,
+        )
+        .order_by(EvidenceControlLink.created_at, EvidenceControlLink.id)
+    )
+    return list(db.scalars(statement))
+
+
 def list_evidence_for_control(
     db: Session,
     organization_id: UUID,

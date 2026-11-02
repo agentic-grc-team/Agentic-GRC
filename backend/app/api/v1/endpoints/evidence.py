@@ -22,6 +22,7 @@ from app.services.evidence_links import (
     document_reference,
     link_evidence_to_control,
     list_evidence_for_control,
+    list_links_for_assessment,
     unlink_evidence_from_control,
 )
 
@@ -185,6 +186,23 @@ def _link_read(link) -> EvidenceControlLinkRead:
         created_at=link.created_at,
         reference=document_reference(link.evidence_file_id),
     )
+
+
+@router.get("/links", response_model=list[EvidenceControlLinkRead])
+def read_assessment_links(
+    organization_id: uuid.UUID = Query(...),
+    assessment_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    if not _active_membership(db, organization_id, user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: Active membership required.")
+    if get_assessment(db, organization_id, assessment_id) is None:
+        raise HTTPException(status_code=404, detail="Assessment not found.")
+    return [
+        _link_read(link)
+        for link in list_links_for_assessment(db, organization_id, assessment_id)
+    ]
 
 
 @router.post("/{evidence_id}/controls", response_model=EvidenceControlLinkRead)

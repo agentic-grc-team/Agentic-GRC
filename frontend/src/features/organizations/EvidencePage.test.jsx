@@ -40,7 +40,7 @@ describe("EvidencePage organization context", () => {
     expect(screen.getByRole("combobox")).toHaveValue("beta");
     expect(screen.getByText("Beta", { selector: "strong" })).toBeInTheDocument();
     await drop();
-    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("beta", expect.any(File), "token", expect.any(AbortSignal)));
+    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("beta", expect.any(File), "token", expect.any(AbortSignal), ""));
   });
 
   it("requires an explicit selection without URL context", async () => {
@@ -194,6 +194,6 @@ describe("EvidencePage session changes", () => {
 
     uploadEvidence.mockClear();
     await drop();
-    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal)));
+    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal), ""));
   });
 });

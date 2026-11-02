@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { listOrganizations } from "../organizations/api.js";
 import { createAssessment, getAssessmentScope, listAssessments } from "./api.js";
+import AssessmentEvidence from "./AssessmentEvidence.jsx";
 import AssessmentScope from "./AssessmentScope.jsx";
 import { assessmentStatusLabel } from "./statusLabels.js";
 import "./AssessmentWorkspace.css";
@@ -294,6 +295,15 @@ export default function AssessmentWorkspace({
       {isLoadingScope && <p role="status">Loading assessment scope…</p>}
       {scopeError && <p role="alert">{scopeError}</p>}
       {scope && <AssessmentScope scope={scope} />}
+      {scope && selectedOrganizationId && selectedAssessmentId && (
+        <AssessmentEvidence
+          key={`${selectedOrganizationId}:${selectedAssessmentId}`}
+          organizationId={selectedOrganizationId}
+          assessmentId={selectedAssessmentId}
+          accessToken={accessToken}
+          sessionId={sessionKey}
+        />
+      )}
     </section>
   );
 }

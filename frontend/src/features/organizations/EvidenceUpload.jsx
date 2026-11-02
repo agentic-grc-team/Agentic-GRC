@@ -29,7 +29,14 @@ function describeError(status, detail) {
   return `Upload failed (${status}).`;
 }
 
-export default function EvidenceUpload({ organizationId, accessToken, sessionId = "", disabled = false }) {
+export default function EvidenceUpload({
+  organizationId,
+  accessToken,
+  sessionId = "",
+  disabled = false,
+  assessmentId = "",
+  onUploaded,
+}) {
   const inputRef = useRef(null);
   const requestRef = useRef(null);
   const uploadingRef = useRef(false);
@@ -55,7 +62,7 @@ export default function EvidenceUpload({ organizationId, accessToken, sessionId 
       requestRef.current = null;
       uploadingRef.current = false;
     };
-  }, [organizationId, sessionId]);
+  }, [organizationId, assessmentId, sessionId]);
 
   async function uploadFile(file) {
     if (isDisabled || uploadingRef.current) {
@@ -78,7 +85,13 @@ export default function EvidenceUpload({ organizationId, accessToken, sessionId 
     setResult(null);
 
     try {
-      const body = await uploadEvidence(organizationId, file, tokenRef.current, controller.signal);
+      const body = await uploadEvidence(
+        organizationId,
+        file,
+        tokenRef.current,
+        controller.signal,
+        assessmentId,
+      );
       if (controller.signal.aborted) {
         return;
       }
@@ -86,6 +99,7 @@ export default function EvidenceUpload({ organizationId, accessToken, sessionId 
       setStatus("success");
       setMessage(body.info || "File uploaded and parsed successfully.");
       setResult(body);
+      onUploaded?.(body);
     } catch (error) {
       if (controller.signal.aborted) {
         return;

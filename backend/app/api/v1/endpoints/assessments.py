@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_db_session
 from app.api.v1.endpoints.organizations import _active_membership
 from app.db.models import Organization, User
-from app.schemas.assessments import AssessmentCreate, AssessmentRead, AssessmentScopeRead
+from app.schemas.assessments import (
+    AssessmentControlRead,
+    AssessmentCreate,
+    AssessmentRead,
+    AssessmentScopeRead,
+)
 from app.security.auth import get_current_user
 from app.services.assessment_scope import group_controls_by_domain
 from app.services.assessments import (
@@ -131,3 +136,26 @@ def read_assessment_scope(
             [(control.control_code, control.control_title) for control in controls]
         ),
     )
+
+
+@router.get(
+    "/{organization_id}/assessments/{assessment_id}/controls",
+    response_model=list[AssessmentControlRead],
+)
+def read_assessment_controls(
+    organization_id: UUID,
+    assessment_id: UUID,
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+) -> list[AssessmentControlRead]:
+    """The in-scope controls with their ids, so evidence can be linked to them."""
+    _require_assessment_access(db, organization_id, user)
+    if get_assessment(db, organization_id, assessment_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assessment not found.",
+        )
+    return [
+        AssessmentControlRead.model_validate(control)
+        for control in list_in_scope_controls(db, organization_id, assessment_id)
+    ]

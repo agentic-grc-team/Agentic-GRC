@@ -162,3 +162,81 @@
 .assessment-interview-button {
   margin-bottom: 22px;
 }
+.assessment-evidence {
+  margin-top: 22px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.assessment-evidence h2 {
+  margin: 6px 0 10px;
+  color: #eef1f4;
+  font: 600 18px var(--display);
+}
+
+.assessment-evidence .evidence-upload {
+  margin: 0 0 18px;
+}
+
+.assessment-evidence-controls,
+.assessment-evidence-controls ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assessment-evidence-controls > li {
+  padding: 11px 13px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-raised);
+  color: #c3cbd0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.assessment-evidence-heading {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.assessment-evidence-controls ul li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assessment-evidence-controls .assessment-note {
+  margin: 0 0 6px;
+}
+
+.assessment-evidence-attach {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.assessment-evidence-attach label {
+  flex: 0 0 100%;
+  color: #aeb8c0;
+  font-size: 10px;
+}
+
+.assessment-evidence-attach select {
+  flex: 1 1 220px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #303946;
+  border-radius: 6px;
+  background: #0e1218;
+  color: #e4e9ea;
+  font-size: 11px;
+}

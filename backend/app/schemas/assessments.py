@@ -56,6 +56,16 @@ class AssessmentRead(BaseModel):
     created_at: datetime
 
 
+class AssessmentControlRead(BaseModel):
+    """An in-scope control with the id that evidence links refer to."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    code: str = Field(validation_alias="control_code")
+    title: str = Field(validation_alias="control_title")
+
+
 class ScopeControlRead(BaseModel):
     code: str
     title: str
