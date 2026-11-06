@@ -290,12 +290,13 @@ class InterviewNodes:
                 rationale=step.reason,
             )
             trace_update = {"traces": [trace]}
+        turn_type = "evidence_request" if missing is Missing.evidence else "follow_up"
         return {
             **trace_update,
             "pending_message": text,
             "follow_ups_used": s.get("follow_ups_used", 0) + 1,
             "evidence_asked": s.get("evidence_asked", False) or missing is Missing.evidence,
-            "turns": [self._turn(s, q.code, "agent", "follow_up", text)],
+            "turns": [self._turn(s, q.code, "agent", turn_type, text)],
         }
 
     def close_control(self, s: InterviewState) -> dict:

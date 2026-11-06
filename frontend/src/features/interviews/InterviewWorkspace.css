@@ -185,3 +185,8 @@
   color: var(--quiet);
   font: 10px var(--mono);
 }
+
+.interview-evidence-upload {
+  border: 1px solid #6cae92;
+  border-radius: 14px;
+}

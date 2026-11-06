@@ -93,8 +93,11 @@ def test_evidence_is_requested_once_even_if_the_answer_turns_vague():
     s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["a", "b", "c", "d"])
 
     assert [t.decision_type for t in tracer.records].count("evidence_requested") == 1
+    evidence_requests = [t for t in s["turns"] if t["turn_type"] == "evidence_request"]
+    assert len(evidence_requests) == 1
+
     follow_ups = [t["content"] for t in s["turns"] if t["turn_type"] == "follow_up"]
-    assert follow_ups[1:] == ["How is it enforced?", "How is it enforced?"]  # asks for detail instead
+    assert follow_ups == ["How is it enforced?", "How is it enforced?"]  # asks for detail instead
     r = s["results"]["IAM-01"]
     assert r["status"] == "not_assessed" and r["requires_human_review"]  # still vague at the limit
 
