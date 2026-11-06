@@ -360,6 +360,8 @@ def _build_graph(context: _AgentContext, checkpointer=None, tracer=None):
             settings.agrc_ollama_host,
             settings.agrc_llm_timeout_s,
             settings.agrc_llm_retries,
+            keep_alive=settings.agrc_llm_keep_alive,
+            num_predict=settings.agrc_llm_num_predict,
         )
     except Exception as exc:
         raise HTTPException(

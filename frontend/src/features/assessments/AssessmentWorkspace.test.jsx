@@ -325,4 +325,5 @@ describe("AssessmentWorkspace", () => {
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
     expect(screen.queryByRole("button", { name: /Go to interview/ })).not.toBeInTheDocument();
-  });});
+  });
+});

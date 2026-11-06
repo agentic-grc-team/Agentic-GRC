@@ -3,7 +3,7 @@
 First vertical slice of the Agentic GRC agent (E0-04 / E0-06, HU-05, HU-06, HU-08):
 a conversational interview over 3 identity-and-access questions, in English,
 with adaptive follow-ups, deterministic status rules and a decision trace for every step.
-Runs entirely on a local Ollama model: no assessment data leaves the machine.
+By default, inference runs through Ollama on the backend host. Interview answers, transcripts, results, and checkpoints are still persisted to the configured PostgreSQL/Supabase database, which may be remote. A remote `AGRC_OLLAMA_HOST` receives interview content and requires HTTPS, explicit transfer approval, and a documented topology.
 
 The agent lives in `backend/app/agent/` and the interview API runs it through
 `app/services/interview_agent.py`. Commands below run from the `backend/` folder.
