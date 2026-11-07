@@ -171,6 +171,15 @@ export default function InterviewConversation({ organizationId, assessmentId, in
           organizationId={organizationId}
           assessmentId={assessmentId}
           accessToken={accessToken}
+          interviewContext={{
+            sessionId: session.id,
+            requestTurnId: latestTurn.id,
+          }}
+          title={
+            latestTurn.evidence_control_code
+              ? `Upload evidence for ${latestTurn.evidence_control_code}`
+              : "Upload evidence"
+          }
         />
       )}
       {isSending && (

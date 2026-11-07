@@ -186,7 +186,6 @@
   font: 10px var(--mono);
 }
 
-.interview-evidence-upload {
-  border: 1px solid #6cae92;
-  border-radius: 14px;
+.interview-conversation .evidence-upload {
+  border: 2px solid #8ed9b8;
 }

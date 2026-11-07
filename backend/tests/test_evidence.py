@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.security.auth import get_current_user
 from app.api.v1.dependencies import get_db_session
+from unittest.mock import Mock
+from sqlalchemy.orm import Session
 
 client = TestClient(app)
 TEST_ORG_ID = str(uuid.uuid4())
@@ -17,7 +19,7 @@ ASSESSMENT_ID = uuid.uuid4()
 URL = "/api/v1/evidence/"
 
 def mock_get_db_session():
-    yield None
+    yield Mock(spec=Session)
 
 def mock_get_current_user():
     class MockUser:
