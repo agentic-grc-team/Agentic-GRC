@@ -16,7 +16,7 @@ ollama pull llama3.1:8b
 
 # 2. Python 3.11+, from the backend/ folder
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # 3. Agent tests (no Ollama and no database needed: they use a fake LLM)
 pytest tests/agent

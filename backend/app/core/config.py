@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     supabase_secret_key: SecretStr | None = None
     app_base_url: str = "http://127.0.0.1:4178"
     app_environment: Literal["development", "test", "production"] = "development"
+    # Comma-separated browser origins allowed to call the API cross-origin, for example
+    # "https://agentic-grc.pages.dev". Leave empty when the frontend proxies /api (same origin).
+    cors_allowed_origins: str = ""
     interview_data_mode: Literal["synthetic", "approved_anonymized", "real"] = "synthetic"
     interview_anonymized_data_approved: bool = False
     interview_external_transfer_approved: bool = False
@@ -80,6 +83,31 @@ class Settings(BaseSettings):
         if not parsed.hostname or parsed.username or parsed.password:
             raise ValueError("SUPABASE_URL must be a valid project URL without credentials.")
         return normalized
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, value: str) -> str:
+        origins = []
+        for raw_origin in value.split(","):
+            origin = raw_origin.strip().rstrip("/")
+            if not origin:
+                continue
+            parsed = urlsplit(origin)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "CORS_ALLOWED_ORIGINS must list origins such as https://app.example.com, "
+                    "without paths, wildcards, or credentials."
+                )
+            origins.append(origin)
+        return ",".join(origins)
 
     @field_validator("agrc_ollama_host")
     @classmethod
@@ -157,7 +185,16 @@ class Settings(BaseSettings):
                 raise ValueError("Configure SMTP_HOST and SMTP_SENDER_EMAIL in production.")
             if not self.smtp_starttls:
                 raise ValueError("SMTP_STARTTLS must be enabled in production.")
+            insecure_origins = [
+                origin for origin in self.cors_origins if not origin.startswith("https://")
+            ]
+            if insecure_origins:
+                raise ValueError("CORS_ALLOWED_ORIGINS must use HTTPS in production.")
         return self
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin for origin in self.cors_allowed_origins.split(",") if origin]
 
     @property
     def sqlalchemy_url(self) -> URL:

@@ -8,7 +8,7 @@ FastAPI service for the first organization, login, and invitation workflows. API
 cd backend
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 # Set the Supabase, PostgreSQL, and SMTP values described below.
 alembic upgrade head
@@ -61,6 +61,7 @@ FastAPI validates each bearer token with Supabase Auth's user endpoint and uses 
 - Invitation links: `APP_BASE_URL`.
 - Outbound organization email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`, `SMTP_STARTTLS`, and `SMTP_TIMEOUT_SECONDS`.
 - Runtime mode: `APP_ENVIRONMENT`.
+- Cross-origin frontend: `CORS_ALLOWED_ORIGINS`, a comma-separated list of origins such as `https://agentic-grc.pages.dev` (HTTPS in production). Leave it empty locally, where Vite proxies `/api`. Deployment: [docs/deployment.md](../docs/deployment.md).
 - Demo report: `ALLOW_DEMO_REPORT` (default false; refused in production).
 - Interview data gate: `INTERVIEW_DATA_MODE` defaults to `synthetic`; anonymized testing requires an approval flag, and real mode requires each transfer, retention, deletion, redaction, storage, and topology gate.
 - Interview agent (development): `AGRC_OLLAMA_HOST`, `AGRC_LLM_MODEL`, `AGRC_LLM_TIMEOUT_S`, `AGRC_LLM_RETRIES`, `AGRC_MAX_FOLLOW_UPS`, and optionally `AGRC_KB_PATH`. The current adapter is the local Ollama proof of concept; GCP remains the provisional production inference target and is not configured by this adapter.

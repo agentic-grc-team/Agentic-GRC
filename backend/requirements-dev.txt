@@ -1,0 +1,6 @@
+# Runtime dependencies plus the tools used by tests and CI. The container image installs only
+# requirements.txt.
+-r requirements.txt
+pytest==8.0.0
+pytest-cov>=7.0,<8.0
+ruff==0.17.0

@@ -45,10 +45,12 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements-dev.txt
 
       # Lint gate (AGRC-64): rules and exceptions are in backend/ruff.toml.
       - name: Lint (Ruff)
@@ -103,3 +105,25 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  backend-image:
+    name: Backend container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t agentic-grc-api:ci backend
+
+      # The health endpoint needs no database, so the image can be checked on its own.
+      - name: Start container and check health
+        run: |
+          docker run -d --name api -p 8000:8000 agentic-grc-api:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/v1/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs api
+          exit 1
