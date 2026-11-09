@@ -114,3 +114,36 @@ def test_ollama_llm_warm_up_success_and_failure(monkeypatch):
 def test_fake_llm_warm_up():
     fake = FakeLLM({})
     assert fake.warm_up() == 0
+
+
+@pytest.mark.parametrize(
+    ("api_key", "expected_headers"),
+    [(None, None), ("model-token", {"Authorization": "Bearer model-token"})],
+)
+def test_ollama_llm_sends_bearer_token_only_when_configured(monkeypatch, api_key, expected_headers):
+    pytest.importorskip("ollama")
+    import ollama
+
+    recorded = {}
+
+    class FakeClient:
+        def __init__(self, host=None, timeout=None, **kwargs):
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(ollama, "Client", FakeClient)
+
+    OllamaLLM(model_name="m", host="https://models.example.org", timeout_s=5.0, api_key=api_key)
+
+    assert recorded.get("headers") == expected_headers
+
+
+def test_agent_settings_keep_api_key_out_of_repr(monkeypatch):
+    monkeypatch.setenv("AGRC_OLLAMA_API_KEY", "model-token")
+    importlib.reload(config_module)
+    try:
+        settings = config_module.Settings()
+        assert settings.ollama_api_key == "model-token"
+        assert "model-token" not in repr(settings)
+    finally:
+        monkeypatch.delenv("AGRC_OLLAMA_API_KEY", raising=False)
+        importlib.reload(config_module)

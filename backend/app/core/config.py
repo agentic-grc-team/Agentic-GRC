@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     interview_storage_approved: bool = False
     interview_topology_documented: bool = False
     agrc_ollama_host: str = "http://127.0.0.1:11434"
+    agrc_ollama_api_key: SecretStr | None = None
     agrc_llm_model: str = "llama3.1:8b"
     agrc_llm_timeout_s: float = 8
     agrc_llm_retries: int = 1
@@ -114,6 +115,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "A remote interview model requires INTERVIEW_TOPOLOGY_DOCUMENTED=true."
                 )
+            if self.agrc_ollama_api_key is None:
+                raise ValueError(
+                    "A remote interview model requires AGRC_OLLAMA_API_KEY "
+                    "(Ollama itself has no authentication)."
+                )
 
         if bool(self.smtp_username) != (self.smtp_password is not None):
             raise ValueError("Set both SMTP_USERNAME and SMTP_PASSWORD, or leave both unset.")
@@ -158,6 +164,12 @@ class Settings(BaseSettings):
             if not self.smtp_starttls:
                 raise ValueError("SMTP_STARTTLS must be enabled in production.")
         return self
+
+    @property
+    def ollama_api_key(self) -> str | None:
+        if self.agrc_ollama_api_key is None:
+            return None
+        return self.agrc_ollama_api_key.get_secret_value()
 
     @property
     def sqlalchemy_url(self) -> URL:

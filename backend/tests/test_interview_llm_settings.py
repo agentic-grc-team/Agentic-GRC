@@ -11,14 +11,19 @@ def test_interview_service_builds_ollama_with_settings(monkeypatch):
         _env_file=None,
         agrc_llm_keep_alive="10m",
         agrc_llm_num_predict=200,
+        agrc_ollama_api_key="model-token",
     )
     monkeypatch.setattr(ia, "get_settings", lambda: test_settings)
 
     recorded_kwargs = []
 
     class RecorderOllama:
-        def __init__(self, model_name, host, timeout_s, retries, keep_alive=None, num_predict=None):
-            recorded_kwargs.append({"keep_alive": keep_alive, "num_predict": num_predict})
+        def __init__(
+            self, model_name, host, timeout_s, retries, keep_alive=None, num_predict=None, api_key=None
+        ):
+            recorded_kwargs.append(
+                {"keep_alive": keep_alive, "num_predict": num_predict, "api_key": api_key}
+            )
             self.model_name = model_name
 
     monkeypatch.setattr("app.agent.llm.OllamaLLM", RecorderOllama)
@@ -30,6 +35,7 @@ def test_interview_service_builds_ollama_with_settings(monkeypatch):
     assert len(recorded_kwargs) == 1
     assert recorded_kwargs[0]["keep_alive"] == "10m"
     assert recorded_kwargs[0]["num_predict"] == 200
+    assert recorded_kwargs[0]["api_key"] == "model-token"
 
 
 SECRET = "sb_secret_must-not-be-printed"

@@ -50,6 +50,7 @@ class OllamaLLM:
         retries: int = 1,
         keep_alive: str = "30m",
         num_predict: int = 320,
+        api_key: str | None = None,
     ):
         import ollama  # imported here so tests do not need the package
 
@@ -57,7 +58,12 @@ class OllamaLLM:
         self.retries = retries
         self.keep_alive = keep_alive
         self.num_predict = num_predict
-        self._client = ollama.Client(host=host, timeout=timeout_s)
+        client_kwargs = {}
+        if api_key:
+            # Ollama has no authentication of its own: a remote endpoint sits behind a proxy
+            # that checks this bearer token. The key is never logged or written to traces.
+            client_kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
+        self._client = ollama.Client(host=host, timeout=timeout_s, **client_kwargs)
 
     def warm_up(self) -> int | None:
         """Load the model into memory before the first turn. Returns the load time in ms, or None if it failed.
