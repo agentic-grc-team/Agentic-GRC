@@ -198,3 +198,15 @@ class ReportView(BaseModel):
     pending: list[PendingItem]  # sorted by control code
     exclusions: list[Exclusion]  # sorted by control code
     summary: ReportSummary
+
+
+REPORT_EXPORT_FORMAT = "agentic-grc.assessment-report"
+REPORT_EXPORT_VERSION = "1.0"
+
+
+class ReportExport(BaseModel):
+    """Structured export of a report view (HU-21). Same content as the preview and the PDF."""
+
+    export_format: Literal["agentic-grc.assessment-report"] = REPORT_EXPORT_FORMAT
+    export_version: Literal["1.0"] = REPORT_EXPORT_VERSION
+    report: ReportView

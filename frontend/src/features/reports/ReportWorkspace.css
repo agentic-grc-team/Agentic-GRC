@@ -257,6 +257,10 @@
   gap: 12px;
 }
 
+.report-download-actions .secondary-button {
+  min-height: 40px;
+}
+
 @media (max-width: 760px) {
   .report-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -268,5 +272,13 @@
 
   .report-header .primary-button {
     align-self: stretch;
+  }
+
+  .report-header .report-download-actions {
+    align-self: stretch;
+  }
+
+  .report-download-actions > button {
+    flex: 1 1 auto;
   }
 }
