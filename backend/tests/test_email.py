@@ -40,7 +40,7 @@ class InvitationEmailTests(unittest.TestCase):
     def test_requires_smtp_configuration(self) -> None:
         with self.assertRaises(EmailDeliveryError):
             send_invitation_email(
-                Settings(),
+                Settings(_env_file=None),
                 recipient="person@example.com",
                 organization_name="Northstar Health",
                 role="consultant",
