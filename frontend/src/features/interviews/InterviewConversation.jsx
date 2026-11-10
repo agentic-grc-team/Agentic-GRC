@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import InterviewAvatar from "./InterviewAvatar.jsx";
 import { getInterview, submitInterviewTurn } from "./api.js";
 import { describeInterviewError, isRetryableInterviewError } from "./errors.js";
 
@@ -31,6 +32,8 @@ export default function InterviewConversation({ organizationId, assessmentId, in
   const [turns, setTurns] = useState(() => mergeTurns([], interview.turns || []));
   const [closed, setClosed] = useState(Boolean(session?.closed));
   const [answer, setAnswer] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimerRef = useRef(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
@@ -49,6 +52,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
     activeRef.current = true;
     return () => {
       activeRef.current = false;
+      clearTimeout(typingTimerRef.current);
     };
   }, []);
 
@@ -66,6 +70,19 @@ export default function InterviewConversation({ organizationId, assessmentId, in
     }
   }, [awaitingAnswer, isSending, turns.length]);
 
+  function updateAnswer(event) {
+    const value = event.target.value;
+    setAnswer(value);
+    setIsTyping(Boolean(value.trim()));
+    clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => setIsTyping(false), 1800);
+  }
+
+  function stopTyping() {
+    clearTimeout(typingTimerRef.current);
+    setIsTyping(false);
+  }
+
   async function submit(event) {
     event.preventDefault();
     const content = answer.trim();
@@ -73,6 +90,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
       return;
     }
 
+    stopTyping();
     sendingRef.current = true;
     setIsSending(true);
     setError("");
@@ -149,6 +167,10 @@ export default function InterviewConversation({ organizationId, assessmentId, in
         )}
       </header>
 
+      <InterviewAvatar
+        state={isSending ? "processing" : isTyping && awaitingAnswer ? "typing" : "idle"}
+      />
+
       <ol className="interview-turns" role="log" aria-label="Interview conversation" aria-live="polite">
         {turns.map((turn) => (
           <li key={turn.id} className={`interview-turn is-${turn.speaker === "agent" ? "agent" : "participant"}`}>
@@ -180,7 +202,8 @@ export default function InterviewConversation({ organizationId, assessmentId, in
             id="interview-answer"
             ref={answerRef}
             value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
+            onChange={updateAnswer}
+            onBlur={stopTyping}
             maxLength={MAX_ANSWER_LENGTH}
             rows={5}
             disabled={isSending || !awaitingAnswer}
