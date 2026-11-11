@@ -9,11 +9,15 @@ export function getOrganization(organizationId, accessToken) {
   return apiRequest(`/organizations/${encodeURIComponent(organizationId)}`, { accessToken });
 }
 
-export function uploadEvidence(organizationId, file, accessToken, signal, assessmentId = "") {
+export function uploadEvidence(organizationId, file, accessToken, signal, assessmentId = "", interviewContext,) {
   const body = new FormData();
   body.append("organization_id", organizationId);
   if (assessmentId) {
     body.append("assessment_id", assessmentId);
+  }
+  if (interviewContext) {
+    body.append("interview_session_id", interviewContext.sessionId);
+    body.append("evidence_request_turn_id", interviewContext.requestTurnId);
   }
   body.append("file", file);
   return apiRequest("/evidence/", { method: "POST", accessToken, body, signal });

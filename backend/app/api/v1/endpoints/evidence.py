@@ -24,7 +24,9 @@ from app.services.evidence_links import (
     list_evidence_for_control,
     list_links_for_assessment,
     unlink_evidence_from_control,
+    resolve_requested_evidence_control,
 )
+from app.services.interviews import require_active_evidence_request
 
 router = APIRouter()
 
@@ -81,6 +83,8 @@ def _sha256_of(path: str) -> str:
 async def upload_evidence(
     organization_id: str = Form(...),
     assessment_id: str | None = Form(None),
+    interview_session_id: uuid.UUID | None = Form(None),
+    evidence_request_turn_id: uuid.UUID | None = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
@@ -102,7 +106,18 @@ async def upload_evidence(
             raise HTTPException(status_code=400, detail="Invalid assessment ID format.")
         if get_assessment(db, org_uuid, assessment_uuid) is None:
             raise HTTPException(status_code=404, detail="Assessment not found.")
-
+    from_interview = (
+        interview_session_id is not None or evidence_request_turn_id is not None
+    )
+    if from_interview and (
+        assessment_uuid is None
+        or interview_session_id is None
+        or evidence_request_turn_id is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Interview evidence requires an assessment, session, and evidence request.",
+        )
     if file.size and file.size > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 10MB limit.")
 
@@ -123,6 +138,20 @@ async def upload_evidence(
             raise HTTPException(status_code=413, detail="File exceeds 10MB limit.")
 
         extracted_text = extract_text(file_location, file_extension)
+        control = None
+        if from_interview:
+            require_active_evidence_request(
+                db, org_uuid, assessment_uuid, interview_session_id,
+                evidence_request_turn_id, user,
+            )
+            control = resolve_requested_evidence_control(
+                db, org_uuid, assessment_uuid, evidence_request_turn_id,
+            )
+            if control is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This evidence request does not identify a single in-scope control.",
+                )
         record = store_evidence_file(
             db,
             organization_id=org_uuid,
@@ -135,15 +164,29 @@ async def upload_evidence(
             size_bytes=size_bytes,
             sha256=_sha256_of(file_location),
             extracted_text=extracted_text,
+            commit=not from_interview,
         )
+        if control is not None:
+            link_evidence_to_control(
+                db,
+                org_uuid,
+                record.id,
+                control.id,
+                user.id,
+                commit=False,
+            )
+            db.commit()
 
     except HTTPException:
+        db.rollback()
         _remove_file(file_location)
         raise
     except ValueError as ve:
+        db.rollback()
         _remove_file(file_location)
         raise HTTPException(status_code=422, detail=str(ve))
     except Exception:
+        db.rollback()
         _remove_file(file_location)
         raise HTTPException(status_code=500, detail="Internal server error.")
 

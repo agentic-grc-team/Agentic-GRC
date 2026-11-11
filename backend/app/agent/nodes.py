@@ -265,15 +265,22 @@ class InterviewNodes:
         q = self._question(s)
         step = NextStep.model_validate(s["last_step"])
         missing = step.missing or Missing.redirect
-        quote = s["last_interpretation"].get("key_quote") or self._turns_for(s, q.code)[-1]["content"][:80]
+        quote = (
+            s["last_interpretation"].get("key_quote")
+            or self._turns_for(s, q.code)[-1]["content"][:80]
+        )
+
         if missing is Missing.evidence:
             text = prompts.evidence_request(q, quote)
         else:
             system, user = prompts.follow_up(q, self._turns_for(s, q.code), quote, missing)
             try:
                 out, _ = self.d.llm.structured(
-                    prompt_id=prompts.FOLLOW_UP_ID, prompt_version=prompts.FOLLOW_UP_VERSION,
-                    system=system, user=user, schema=FollowUpQuestion,
+                    prompt_id=prompts.FOLLOW_UP_ID,
+                    prompt_version=prompts.FOLLOW_UP_VERSION,
+                    system=system,
+                    user=user,
+                    schema=FollowUpQuestion,
                 )
                 text = out.question.strip()
                 if not text.endswith("?") or len(text) > 400:
@@ -281,23 +288,32 @@ class InterviewNodes:
             except LLMError:
                 text = prompts.FALLBACK_FOLLOW_UPS[missing].format(quote=quote, question=q.text)
 
+        turn_type = "evidence_request" if missing is Missing.evidence else "follow_up"
+        turn = self._turn(s, q.code, "agent", turn_type, text)
+
         trace_update = {}
         if missing is Missing.evidence:
+            sources = self._sources(s, q.code)
+            sources.append(TraceSource(type="interview_turn", ref=f"turn:{turn['seq']}"))
             trace = self._trace(
-                s, q, decision_type="evidence_requested", sources=self._sources(s, q.code),
-                prompt_id=step.rule_id, prompt_version="0.1.0",
+                s,
+                q,
+                decision_type="evidence_requested",
+                sources=sources,
+                prompt_id=step.rule_id,
+                prompt_version="0.1.0",
                 output={"request": text, "evidence_examples": q.evidence_examples},
                 rationale=step.reason,
             )
             trace_update = {"traces": [trace]}
+
         return {
             **trace_update,
             "pending_message": text,
             "follow_ups_used": s.get("follow_ups_used", 0) + 1,
             "evidence_asked": s.get("evidence_asked", False) or missing is Missing.evidence,
-            "turns": [self._turn(s, q.code, "agent", "follow_up", text)],
+            "turns": [turn],
         }
-
     def close_control(self, s: InterviewState) -> dict:
         q = self._question(s)
         step = NextStep.model_validate(s["last_step"])

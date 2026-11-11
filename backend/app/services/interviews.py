@@ -31,12 +31,11 @@ from app.schemas.interviews import (
     InterviewRead,
     InterviewSessionCreate,
     InterviewSessionRead,
-    InterviewSourceReference,
     InterviewTurnCreate,
     InterviewTurnRead,
     InterviewTurnReceipt,
 )
-
+from app.services.evidence_links import resolve_requested_evidence_control
 
 _NOT_FOUND = "Interview assessment not found."
 _SESSION_NOT_FOUND = "Interview session not found."
@@ -445,7 +444,74 @@ def save_interview_turn(
     db.refresh(turn)
     return InterviewTurnReceipt(turn=_turn_read(turn), idempotent_replay=False)
 
+def require_active_evidence_request(
+    db: Session,
+    organization_id: UUID,
+    assessment_id: UUID,
+    session_id: UUID,
+    request_turn_id: UUID,
+    user: User,
+) -> None:
+    """Require the caller's active interview to be awaiting this evidence request."""
+    _organization, assessment, _membership = _require_assessment_access(
+        db, organization_id, assessment_id, user
+    )
 
+    session = db.scalar(
+        select(AssessmentSession)
+        .where(
+            AssessmentSession.id == session_id,
+            AssessmentSession.organization_id == organization_id,
+            AssessmentSession.assessment_id == assessment_id,
+        )
+        .with_for_update()
+    )
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_SESSION_NOT_FOUND)
+
+    session_participant = db.scalar(
+        select(SessionParticipant.participant_id)
+        .join(
+            AssessmentParticipant,
+            (AssessmentParticipant.id == SessionParticipant.participant_id)
+            & (AssessmentParticipant.organization_id == SessionParticipant.organization_id),
+        )
+        .where(
+            SessionParticipant.organization_id == organization_id,
+            SessionParticipant.session_id == session_id,
+            AssessmentParticipant.assessment_id == assessment_id,
+            AssessmentParticipant.user_id == user.id,
+        )
+        .limit(1)
+    )
+    if session_participant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_SESSION_NOT_FOUND)
+
+    if session.ended_at is not None or assessment.status != "in_progress":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This interview is no longer active.",
+        )
+
+    latest_turn = db.scalar(
+        select(InterviewTurn)
+        .where(
+            InterviewTurn.organization_id == organization_id,
+            InterviewTurn.session_id == session_id,
+        )
+        .order_by(InterviewTurn.sequence_no.desc())
+        .limit(1)
+    )
+    if (
+        latest_turn is None
+        or latest_turn.id != request_turn_id
+        or latest_turn.speaker != "agent"
+        or latest_turn.turn_type != "evidence_request"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This evidence request is no longer active.",
+        )
 def _require_assessment_access(
     db: Session,
     organization_id: UUID,
@@ -642,7 +708,7 @@ def _build_interview_read(
         session=(
             _session_read(session, assessment.status) if session is not None else None
         ),
-        turns=[_turn_read(turn) for turn in turns],
+        turns=[_turn_read(turn, db, assessment.id) for turn in turns],
         in_scope_controls=[
             InterviewControlRead(
                 id=control.id,
@@ -691,7 +757,24 @@ def _session_read(
     )
 
 
-def _turn_read(turn: InterviewTurn) -> InterviewTurnRead:
+def _turn_read(
+    turn: InterviewTurn,
+    db: Session | None = None,
+    assessment_id: UUID | None = None,
+) -> InterviewTurnRead:
+    control = None
+    if (
+        turn.turn_type == "evidence_request"
+        and db is not None
+        and assessment_id is not None
+    ):
+        control = resolve_requested_evidence_control(
+            db,
+            turn.organization_id,
+            assessment_id,
+            turn.id,
+        )
+
     return InterviewTurnRead(
         id=turn.id,
         sequence_no=turn.sequence_no,
@@ -703,11 +786,9 @@ def _turn_read(turn: InterviewTurn) -> InterviewTurnRead:
         content=turn.content,
         language_code=turn.language_code,
         created_at=turn.created_at,
+        evidence_control_code=control.control_code if control is not None else None,
         source_references=[
-            InterviewSourceReference(
-                type="interview_turn",
-                ref=f"interview_turn:{turn.id}",
-            )
+            {"type": "interview_turn", "ref": f"interview_turn:{turn.id}"}
         ],
     )
 
