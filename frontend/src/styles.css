@@ -79,17 +79,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .topbar { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 18px; padding: 0 35px; border-bottom: 1px solid var(--line-soft); background: rgba(12, 15, 20, .76); }
 .breadcrumb { display: flex; align-items: center; gap: 10px; color: #75808d; font-size: 11px; }
 .breadcrumb strong { color: #c8ced4; font-weight: 500; }
-.topbar-actions { display: flex; align-items: center; gap: 16px; }
+.topbar-actions { display: flex; min-width: 0; align-items: center; gap: 16px; }
+.topbar-actions > .api-status { flex: 0 0 auto; }
 .api-status { display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; color: #9aa4af; font-size: 10px; }
 .api-status:disabled { opacity: 1; }
 .api-status.status-offline { cursor: pointer; color: var(--coral); }
 .status-indicator { width: 6px; height: 6px; border-radius: 50%; background: #84909b; }
 .status-online .status-indicator { background: var(--mint-strong); box-shadow: 0 0 8px #6de0a276; }
 .status-offline .status-indicator { background: var(--coral); }
-.account-chip { display: flex; align-items: center; gap: 8px; max-width: 200px; color: #b5bdc6; font-size: 10px; }
-.account-avatar { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 1px solid #435248; border-radius: 50%; background: #202a23; color: var(--mint); font-size: 10px; }
-.account-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sign-out-button, .text-button { border: 0; background: none; color: #93a09e; cursor: pointer; font-size: 10px; }
+.account-chip {
+  display: grid;
+  min-width: 0;
+  max-width: 260px;
+  gap: 2px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  background: var(--mint);
+  color: #122017;
+  line-height: 1.25;
+}
+.account-email { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.account-role { overflow: hidden; color: #2e4b3c; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.sign-out-button { min-height: 32px; flex: 0 0 auto; padding: 0 10px; border: 1px solid #435248; border-radius: 7px; background: none; color: #c8ced4; cursor: pointer; font-size: 11px; white-space: nowrap; }
+.text-button { border: 0; background: none; color: #93a09e; cursor: pointer; font-size: 10px; }
 .sign-out-button:hover, .text-button:hover { color: var(--mint); }
 .global-error { margin: 16px 35px 0; }
 
@@ -279,8 +291,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .topbar-actions { gap: 10px; }
   .topbar-actions > .api-status { font-size: 0; }
   .topbar-actions > .api-status .status-indicator { width: 8px; height: 8px; }
-  .account-chip { max-width: 100px; }
-  .account-email { display: none; }
+  .account-chip { max-width: 180px; padding-inline: 8px; }
+  .account-email { font-size: 11px; }
   .workspace-layout { min-height: calc(100vh - 59px); grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .workspace-sidebar { max-height: 148px; overflow-y: auto; padding: 12px 13px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
   .sidebar-section-heading { padding-bottom: 8px; }
@@ -304,6 +316,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 
 @media (max-width: 480px) {
+  .topbar { flex-wrap: wrap; justify-content: flex-end; gap: 8px 12px; padding-block: 8px; }
+  .breadcrumb { margin-right: auto; }
   .activation-page { padding: 14px; }
   .activation-card { padding: 27px 18px; }
 }

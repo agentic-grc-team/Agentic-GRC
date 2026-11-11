@@ -12,6 +12,7 @@ from app.db.models import User
 from app.schemas.interviews import (
     InterviewRead,
     InterviewSessionCreate,
+    InterviewSessionRead,
     InterviewTurnCreate,
     InterviewTurnReceipt,
 )
@@ -20,6 +21,7 @@ from app.services.interview_agent import advance_interview_agent, start_intervie
 from app.services.interviews import (
     create_or_resume_interview,
     read_interview,
+    read_kickoff_session,
     save_interview_turn,
 )
 
@@ -102,6 +104,19 @@ def get_interview(
     user: User = Depends(get_current_user),
 ) -> InterviewRead:
     return read_interview(db, organization_id, assessment_id, user, session_id)
+
+
+@router.get(
+    "/{organization_id}/assessments/{assessment_id}/interview/status",
+    response_model=InterviewSessionRead | None,
+)
+def get_kickoff_status(
+    organization_id: UUID,
+    assessment_id: UUID,
+    db: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+) -> InterviewSessionRead | None:
+    return read_kickoff_session(db, organization_id, assessment_id, user)
 
 
 @router.post(

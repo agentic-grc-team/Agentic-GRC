@@ -5,12 +5,50 @@ import { useAuth } from "./auth/AuthProvider.jsx";
 import InvitationActivation from "./auth/InvitationActivation.jsx";
 import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
+import { getOrganization } from "./features/organizations/api.js";
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
 import InterviewWorkspace from "./features/interviews/InterviewWorkspace.jsx";
 import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
 import AssessmentWorkspace from "./features/assessments/AssessmentWorkspace.jsx";
 
 const EVIDENCE_PATH = "/evidence";
+const organizationRoleLabels = {
+  administrator: "Administrator",
+  consultant: "Consultant",
+  representative: "Representative",
+};
+
+function AccountChip({ user, organizationId }) {
+  const [organization, setOrganization] = useState(null);
+  const { accessToken, is_platform_admin: isPlatformAdmin } = user;
+
+  useEffect(() => {
+    if (!accessToken || !organizationId || isPlatformAdmin) return undefined;
+
+    let active = true;
+    getOrganization(organizationId, accessToken)
+      .then((result) => {
+        if (active) setOrganization(result);
+      })
+      .catch(() => {
+        if (active) setOrganization(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [accessToken, organizationId, isPlatformAdmin]);
+
+  const role = isPlatformAdmin
+    ? "Platform administrator"
+    : organizationRoleLabels[organization?.role];
+
+  return (
+    <div className="account-chip" title={user.email}>
+      <span className="account-email">{user.email}</span>
+      {role && <span className="account-role" title={organization?.name}>{role}</span>}
+    </div>
+  );
+}
 
 function ApiStatus({ status, onRetry }) {
   const labels = {
@@ -164,8 +202,11 @@ function App() {
   const [currentView, setCurrentView] = useState("organizations");
   const [pathname, setPathname] = useState(window.location.pathname);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [reviewOrganizationId, setReviewOrganizationId] = useState("");
   const [interviewAssessmentId, setInterviewAssessmentId] = useState("");
   const isEvidencePage = pathname === EVIDENCE_PATH;
+  const isExpertReview = !isEvidencePage && currentView === "expert-reviews";
+  const headerOrganizationId = isExpertReview ? reviewOrganizationId : selectedOrganizationId;
   const evidencePath = selectedOrganizationId
     ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
     : EVIDENCE_PATH;
@@ -175,6 +216,10 @@ function App() {
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
+
+  useEffect(() => {
+    if (!isExpertReview) setReviewOrganizationId("");
+  }, [isExpertReview]);
 
   function navigate(path) {
     window.history.pushState({}, "", path);
@@ -226,6 +271,7 @@ function App() {
 
   function handleSignOut() {
     setSelectedOrganizationId("");
+    setReviewOrganizationId("");
     setInterviewAssessmentId("");
     signOut();
   }
@@ -356,10 +402,11 @@ function App() {
             <ApiStatus status={apiStatus} onRetry={refreshApiStatus} />
             {user && (
               <>
-                <div className="account-chip" title={user.email}>
-                  <span className="account-avatar" aria-hidden="true">{(user.email || "U").slice(0, 1).toUpperCase()}</span>
-                  <span className="account-email">{user.email}</span>
-                </div>
+                <AccountChip
+                  key={JSON.stringify([user.id, headerOrganizationId])}
+                  user={user}
+                  organizationId={headerOrganizationId}
+                />
                 <button className="sign-out-button" type="button" onClick={handleSignOut}>Sign out</button>
               </>
             )}
@@ -407,6 +454,7 @@ function App() {
               key={user.id}
               accessToken={user.accessToken}
               sessionId={user.id}
+              onOrganizationChange={setReviewOrganizationId}
             />
           ) : (
             <>

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App.jsx";
-import { listOrganizations } from "./features/organizations/api.js";
+import { getOrganization, listOrganizations } from "./features/organizations/api.js";
 
 const { authMock } = vi.hoisted(() => ({
   authMock: {
@@ -26,6 +26,7 @@ vi.mock("./api/client.js", () => ({
 
 vi.mock("./features/organizations/api.js", () => ({
   listOrganizations: vi.fn(),
+  getOrganization: vi.fn().mockResolvedValue(null),
   listMyInvitations: vi.fn().mockResolvedValue([]),
   listIndustrySectors: vi.fn().mockResolvedValue([]),
   listOrganizationSizes: vi.fn().mockResolvedValue([]),
@@ -44,6 +45,7 @@ describe("App sign-in options", () => {
       isSupabaseConfigured: true,
     });
     vi.clearAllMocks();
+    getOrganization.mockResolvedValue(null);
     window.history.replaceState({}, "", "/");
     listOrganizations.mockResolvedValue([
       { id: "alpha", name: "Alpha", sector: "Other", size: "Unknown", role: "consultant" },
@@ -93,6 +95,21 @@ describe("App sign-in options", () => {
     expect(await screen.findByRole("combobox")).toHaveValue("beta");
     fireEvent.click(screen.getByRole("link", { name: /Back to workspaces/ }));
     expect(await screen.findByRole("heading", { level: 1, name: "Beta" })).toBeInTheDocument();
+  });
+
+  it("shows the account role for the selected workspace and updates it on a switch", async () => {
+    authMock.user = { id: "member", accessToken: "token", email: "member@example.com" };
+    getOrganization.mockImplementation(async (id) => ({
+      role: id === "alpha" ? "consultant" : "representative",
+    }));
+    render(<App />);
+
+    expect(screen.getByText("member@example.com", { selector: ".account-email" })).toBeInTheDocument();
+    expect(await screen.findByText("Consultant", { selector: ".account-role" })).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Beta/ }));
+    expect(await screen.findByText("Representative", { selector: ".account-role" })).toBeInTheDocument();
+    expect(screen.queryByText("Consultant", { selector: ".account-role" })).not.toBeInTheDocument();
   });
 
   it("requires organization selection when opening evidence without context", async () => {

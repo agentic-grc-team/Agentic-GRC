@@ -16,6 +16,7 @@ const { authMock } = vi.hoisted(() => ({
 
 vi.mock("./auth/AuthProvider.jsx", () => ({ useAuth: () => authMock }));
 vi.mock("./api/client.js", () => ({ checkApiHealth: vi.fn().mockResolvedValue({}) }));
+vi.mock("./features/organizations/api.js", () => ({ getOrganization: vi.fn().mockResolvedValue(null) }));
 vi.mock("./features/organizations/OrganizationWorkspace.jsx", () => ({
   default: () => <div>Organizations view</div>,
 }));
