@@ -1,23 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { listAssessments } from "../assessments/api.js";
+import { assessmentStatusLabel } from "../assessments/statusLabels.js";
 import { listOrganizations } from "../organizations/api.js";
 import { openInterview } from "./api.js";
 import InterviewConversation from "./InterviewConversation.jsx";
 import { describeInterviewError } from "./errors.js";
 import "./InterviewWorkspace.css";
-
-const STATUS_LABELS = {
-  draft: "Draft",
-  in_progress: "In progress",
-  in_review: "In review",
-  completed: "Completed",
-  archived: "Archived",
-};
-
-function statusLabel(status) {
-  return STATUS_LABELS[status] || status;
-}
 
 export default function InterviewWorkspace({
   accessToken,
@@ -188,7 +177,7 @@ export default function InterviewWorkspace({
           >
             <option value="">Select an assessment</option>
             {assessments.map((item) => (
-              <option key={item.id} value={item.id}>{item.title} · {statusLabel(item.status)}</option>
+              <option key={item.id} value={item.id}>{item.title} · {assessmentStatusLabel(item.status)}</option>
             ))}
           </select>
         </label>

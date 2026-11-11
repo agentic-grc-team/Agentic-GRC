@@ -173,6 +173,18 @@ describe("InterviewWorkspace", () => {
       .not.toBe(submitInterviewTurn.mock.calls[0][2].client_request_id);
   });
 
+  it("uses the shared assessment status label for assessments awaiting review", async () => {
+    listAssessments.mockResolvedValue([
+      { id: "review-1", title: "Review assessment", status: "awaiting_review" },
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByRole("option", {
+      name: "Review assessment · Awaiting review",
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start or resume interview" })).toBeDisabled();
+  });
+
   it("does not send a blank answer", async () => {
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();

@@ -66,6 +66,24 @@ describe("App sign-in options", () => {
     expect(authMock.signInWithGoogle).not.toHaveBeenCalled();
   });
 
+  it("toggles password visibility without submitting or changing the password", async () => {
+    render(<App />);
+    await screen.findByText("Backend health check passed");
+
+    const password = screen.getByLabelText("Password", { exact: true });
+    expect(password).toHaveAttribute("type", "password");
+    fireEvent.change(password, { target: { value: "example-password" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    expect(password).toHaveValue("example-password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveValue("example-password");
+    expect(authMock.signIn).not.toHaveBeenCalled();
+  });
+
   it("preserves the selected workspace when navigating to evidence and back", async () => {
     authMock.user = { accessToken: "token", email: "member@example.com" };
     render(<App />);
