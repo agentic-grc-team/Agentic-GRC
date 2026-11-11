@@ -20,8 +20,10 @@ def store_evidence_file(
     size_bytes: int,
     sha256: str,
     extracted_text: str,
+    *,
+    commit: bool = True,
 ) -> EvidenceFile:
-    """Record one uploaded evidence document. A complete action, so this service commits."""
+    """Record one uploaded document, optionally leaving the commit to the caller."""
     record = EvidenceFile(
         organization_id=organization_id,
         assessment_id=assessment_id,
@@ -35,6 +37,9 @@ def store_evidence_file(
         extracted_text=extracted_text,
     )
     db.add(record)
+    if not commit:
+        db.flush()
+        return record
     try:
         db.commit()
     except Exception:

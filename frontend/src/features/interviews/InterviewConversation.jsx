@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { getInterview, submitInterviewTurn } from "./api.js";
 import { describeInterviewError, isRetryableInterviewError } from "./errors.js";
+import EvidenceUpload from "../organizations/EvidenceUpload.jsx";
 
 const MAX_ANSWER_LENGTH = 10000;
 
@@ -59,7 +60,8 @@ export default function InterviewConversation({ organizationId, assessmentId, in
   const latestTurn = turns[turns.length - 1];
   const latestAgentTurn = [...turns].reverse().find((turn) => turn.speaker === "agent");
   const awaitingAnswer = !closed && latestTurn?.speaker === "agent";
-
+  const showEvidenceUpload =
+    awaitingAnswer && latestTurn?.turn_type === "evidence_request";
   useEffect(() => {
     if (awaitingAnswer && !isSending) {
       answerRef.current?.focus();
@@ -163,7 +165,23 @@ export default function InterviewConversation({ organizationId, assessmentId, in
         ))}
         <li ref={endRef} className="interview-end" aria-hidden="true" />
       </ol>
-
+      {showEvidenceUpload && (
+        <EvidenceUpload
+          key={latestTurn.id}
+          organizationId={organizationId}
+          assessmentId={assessmentId}
+          accessToken={accessToken}
+          interviewContext={{
+            sessionId: session.id,
+            requestTurnId: latestTurn.id,
+          }}
+          title={
+            latestTurn.evidence_control_code
+              ? `Upload evidence for ${latestTurn.evidence_control_code}`
+              : "Upload evidence"
+          }
+        />
+      )}
       {isSending && (
         <p className="interview-status" role="status">The assistant is reviewing your answer…</p>
       )}
