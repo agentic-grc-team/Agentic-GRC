@@ -205,7 +205,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
             onChange={updateAnswer}
             onBlur={stopTyping}
             maxLength={MAX_ANSWER_LENGTH}
-            rows={5}
+            rows={3}
             disabled={isSending || !awaitingAnswer}
             placeholder={awaitingAnswer ? "Describe how this works in your organization." : ""}
           />

@@ -47,7 +47,7 @@ export default function InterviewAvatar({ state }) {
 
   return (
     <div className={`interview-avatar-figure interview-avatar-${state}`} aria-hidden="true">
-      <div className="interview-avatar-halo" />
+      <div className="interview-avatar-backdrop" />
 
       <div className="interview-avatar-portrait">
         <img

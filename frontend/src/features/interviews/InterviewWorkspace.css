@@ -185,3 +185,48 @@
   color: var(--quiet);
   font: 10px var(--mono);
 }
+
+.interview-pickers[hidden] { display: none; }
+.interview-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.interview-context button {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--mint);
+  font: inherit;
+  cursor: pointer;
+}
+.interview-conversation .interview-turn.is-agent {
+  max-width: 100%;
+}
+.interview-form textarea {
+  min-height: 88px;
+}
+@media (max-width: 700px) {
+  .interview-workspace {
+    width: calc(100% - 24px);
+  }
+  .interview-workspace .interview-conversation {
+    padding: 14px;
+  }
+  .interview-workspace .interview-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .interview-workspace .interview-scope {
+    align-self: flex-start;
+  }
+  .interview-workspace .interview-turns {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+    overflow: visible;
+  }
+}

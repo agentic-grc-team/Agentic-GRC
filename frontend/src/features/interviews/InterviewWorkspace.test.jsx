@@ -298,6 +298,7 @@ describe("InterviewWorkspace", () => {
       turns: [turn(), receipt().turn, receipt().agent_turns[0]],
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
 
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
@@ -314,6 +315,7 @@ describe("InterviewWorkspace", () => {
       turns: [turn(), receipt().turn],
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
 
     expect(await screen.findByText(/The interview is complete/)).toBeInTheDocument();
@@ -333,6 +335,7 @@ describe("InterviewWorkspace", () => {
       turns: [turn(), receipt().turn, receipt().agent_turns[0]],
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
 
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
@@ -467,6 +470,19 @@ describe("InterviewWorkspace", () => {
     expect(container.querySelector(".interview-avatar-figure")).toBeNull();
     sendAnswer("We use Okta with MFA.");
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
+  });
+
+  it("collapses selection on start and retains the answer when selection is toggled", async () => {
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    expect(screen.queryByRole("button", { name: "Start or resume interview" })).toBeNull();
+    fireEvent.change(answerBox(), { target: { value: "Draft answer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
+    expect(screen.getByRole("button", { name: "Start or resume interview" })).toBeEnabled();
+    expect(answerBox()).toHaveValue("Draft answer");
+    fireEvent.click(screen.getByRole("button", { name: "Hide selection" }));
+    expect(answerBox()).toHaveValue("Draft answer");
+    expect(screen.queryByRole("button", { name: "Start or resume interview" })).toBeNull();
   });
 
 });

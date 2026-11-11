@@ -1,20 +1,25 @@
+/* The scene and character are separate so facial animations stay aligned. */
 .interview-avatar-figure {
   position: relative;
   display: flex;
   justify-content: center;
-  height: clamp(260px, 36vh, 400px);
+  align-items: flex-end;
+  width: 100%;
+  height: clamp(320px, 48vh, 520px);
   margin: 0 auto 12px;
   overflow: hidden;
   isolation: isolate;
 }
-.interview-avatar-halo {
+.interview-avatar-backdrop {
   position: absolute;
-  width: min(88%, 440px);
-  top: 8%;
-  bottom: 0;
-  border-radius: 50%;
-  border: 1px solid #6de0b71a;
-  background: radial-gradient(ellipse at center, #23534266, #23534218 70%);
+  inset: 0;
+  background-image:
+    linear-gradient(to top, var(--panel, #10161d), transparent 20%, transparent 82%, var(--panel, #10161d)),
+    linear-gradient(to right, var(--panel, #10161d), transparent 12%, transparent 88%, var(--panel, #10161d)),
+    url("/avatars/interview-office.png");
+  background-size: cover;
+  background-position: center;
+  opacity: .85;
 }
 .interview-avatar-portrait {
   position: relative;
@@ -22,6 +27,8 @@
   max-width: 100%;
   aspect-ratio: 1333 / 1180;
   animation: interview-avatar-breathe 6s ease-in-out infinite;
+  -webkit-mask-image: linear-gradient(to bottom, #000 94%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 94%, transparent 100%);
 }
 .interview-avatar-base,
 .interview-avatar-face-layer {
@@ -67,9 +74,6 @@
 .interview-avatar-typing .interview-avatar-head-motion {
   --interview-avatar-nod-strength: 1;
 }
-.interview-avatar-processing .interview-avatar-halo {
-  animation: interview-avatar-pulse 2s ease-in-out infinite;
-}
 @keyframes interview-avatar-breathe {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-3px); }
@@ -82,12 +86,15 @@
       rotate(calc(.25deg * var(--interview-avatar-nod-strength)));
   }
 }
-@keyframes interview-avatar-pulse {
-  0%, 100% { opacity: .6; }
-  50% { opacity: 1; }
-}
 @media (max-width: 600px) {
-  .interview-avatar-figure { height: 260px; }
+  .interview-avatar-figure {
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+  .interview-avatar-portrait {
+    width: 85%;
+    height: auto;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .interview-avatar-figure *,
