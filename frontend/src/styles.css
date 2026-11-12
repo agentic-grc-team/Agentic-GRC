@@ -33,7 +33,7 @@ body {
 
 button, input, select { font: inherit; }
 button { color: inherit; }
-button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
   outline: 2px solid var(--mint-strong);
   outline-offset: 3px;
 }
@@ -76,11 +76,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .rail-bottom span { margin-top: 4px; color: #737e8b; font-size: 10px; }
 
 .app-main { display: flex; min-width: 0; min-height: 100vh; flex: 1; flex-direction: column; margin-left: 236px; }
-.topbar { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 18px; padding: 0 35px; border-bottom: 1px solid var(--line-soft); background: rgba(12, 15, 20, .76); }
-.breadcrumb { display: flex; align-items: center; gap: 10px; color: #75808d; font-size: 11px; }
-.breadcrumb strong { color: #c8ced4; font-weight: 500; }
-.topbar-actions { display: flex; min-width: 0; align-items: center; gap: 16px; }
+.topbar { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 35px; border-bottom: 1px solid var(--line-soft); background: rgba(12, 15, 20, .76); }
+.breadcrumb { display: flex; align-items: center; gap: 10px; color: #aeb8c0; font-size: 13px; }
+.breadcrumb strong { color: var(--text); font-weight: 600; }
+.topbar-actions { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; }
 .topbar-actions > .api-status { flex: 0 0 auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.organization-context { display: flex; flex-direction: column; min-width: 0; max-width: 260px; align-items: flex-start; gap: 4px; }
+.organization-context:empty { display: none; }
+.organization-context-name { color: var(--text); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.organization-context-button {
+  min-height: 32px;
+  padding: 3px 8px;
+  border: 1px solid #52665a;
+  border-radius: 6px;
+  background: none;
+  color: var(--mint);
+  cursor: pointer;
+  font-size: 12px;
+}
+.organization-context-button:hover { background: #202f26; }
 .api-status { display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; color: #9aa4af; font-size: 10px; }
 .api-status:disabled { opacity: 1; }
 .api-status.status-offline { cursor: pointer; color: var(--coral); }
@@ -286,8 +301,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .rail-current, .rail-disabled { width: 38px; justify-content: center; padding: 0; }
   .rail-bottom { justify-content: center; padding: 13px 0 2px; }
   .app-main { margin-left: 0; }
-  .topbar { min-height: 58px; padding: 0 15px; }
-  .breadcrumb { gap: 6px; font-size: 9px; }
+  .topbar { min-height: 58px; padding: 8px 15px; }
+  .breadcrumb { gap: 6px; font-size: 12px; }
   .topbar-actions { gap: 10px; }
   .topbar-actions > .api-status { font-size: 0; }
   .topbar-actions > .api-status .status-indicator { width: 8px; height: 8px; }
@@ -316,8 +331,39 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 
 @media (max-width: 480px) {
-  .topbar { flex-wrap: wrap; justify-content: flex-end; gap: 8px 12px; padding-block: 8px; }
-  .breadcrumb { margin-right: auto; }
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 8px;
+    padding: 12px 14px;
+  }
+
+  .topbar-actions { display: contents; }
+  .topbar .breadcrumb { grid-column: 1; grid-row: 1; }
+  .topbar-actions > .api-status {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .organization-context {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 8px;
+  }
+
+  .topbar .account-chip {
+    grid-column: 1;
+    grid-row: 3;
+    max-width: none;
+  }
+
+  .topbar .sign-out-button { grid-column: 2; grid-row: 3; }
   .activation-page { padding: 14px; }
   .activation-card { padding: 27px 18px; }
 }
@@ -356,7 +402,7 @@ a.rail-navigation-item { text-decoration: none; }
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
-  color: #717b87;
+  color: #aeb8c0;
   cursor: pointer;
   text-align: left;
   font-size: 12px;

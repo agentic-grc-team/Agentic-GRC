@@ -14,6 +14,7 @@ export default function InterviewWorkspace({
   initialOrganizationId = "",
   initialAssessmentId = "",
   onOrganizationChange,
+  participantName,
 }) {
   const accessTokenRef = useRef(accessToken);
   const startSeqRef = useRef(0);
@@ -268,6 +269,7 @@ export default function InterviewWorkspace({
           organizationId={interview.organizationId}
           assessmentId={interview.assessmentId}
           interview={interview.data}
+          participantName={participantName}
           onSessionClosed={markSessionClosed}
           accessToken={accessToken}
         />

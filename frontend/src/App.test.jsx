@@ -100,6 +100,7 @@ describe("App sign-in options", () => {
   it("shows the account role for the selected workspace and updates it on a switch", async () => {
     authMock.user = { id: "member", accessToken: "token", email: "member@example.com" };
     getOrganization.mockImplementation(async (id) => ({
+      name: id === "alpha" ? "Alpha" : "Beta",
       role: id === "alpha" ? "consultant" : "representative",
     }));
     render(<App />);
@@ -110,6 +111,12 @@ describe("App sign-in options", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Beta/ }));
     expect(await screen.findByText("Representative", { selector: ".account-role" })).toBeInTheDocument();
     expect(screen.queryByText("Consultant", { selector: ".account-role" })).not.toBeInTheDocument();
+    expect(screen.getByText("Beta", { selector: ".organization-context-name" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: /Upload evidence/ }));
+    expect(await screen.findByRole("combobox")).toHaveValue("beta");
+    fireEvent.click(screen.getByRole("button", { name: "Change organization" }));
+    expect(await screen.findByRole("button", { name: /Beta/ })).toHaveAttribute("aria-current", "true");
   });
 
   it("requires organization selection when opening evidence without context", async () => {

@@ -302,13 +302,16 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
             <optgroup key={assessmentId} label={items[0].assessment_title || assessmentId}>
               {items.map((item) => (
                 <option key={item.result_id} value={item.result_id}>
-                  {item.control_code} · {item.control_title}
+                  {item.control_code}
                 </option>
               ))}
             </optgroup>
           ))}
         </select>
       </label>
+      {review.assessment_title && (
+        <p className="muted-copy">Assessment: {review.assessment_title}</p>
+      )}
       <h1>{review.control_code}</h1>
       <h2>{review.control_title}</h2>
 
