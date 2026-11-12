@@ -18,12 +18,12 @@ const organizationRoleLabels = {
   representative: "Representative",
 };
 
-function AccountChip({ user, organizationId }) {
+function AccountChip({ user, organizationId, onOpenOrganizations }) {
   const [organization, setOrganization] = useState(null);
   const { accessToken, is_platform_admin: isPlatformAdmin } = user;
 
   useEffect(() => {
-    if (!accessToken || !organizationId || isPlatformAdmin) return undefined;
+    if (!accessToken || !organizationId) return undefined;
 
     let active = true;
     getOrganization(organizationId, accessToken)
@@ -36,17 +36,31 @@ function AccountChip({ user, organizationId }) {
     return () => {
       active = false;
     };
-  }, [accessToken, organizationId, isPlatformAdmin]);
+  }, [accessToken, organizationId]);
 
   const role = isPlatformAdmin
     ? "Platform administrator"
     : organizationRoleLabels[organization?.role];
 
   return (
-    <div className="account-chip" title={user.email}>
-      <span className="account-email">{user.email}</span>
-      {role && <span className="account-role" title={organization?.name}>{role}</span>}
-    </div>
+    <>
+      <div className="organization-context">
+        {organization?.name && (
+          <span className="organization-context-name">
+            <span className="sr-only">Active organization: </span>{organization.name}
+          </span>
+        )}
+        {onOpenOrganizations && (
+          <button className="organization-context-button" type="button" onClick={onOpenOrganizations}>
+            {organizationId ? "Change organization" : "Choose organization"}
+          </button>
+        )}
+      </div>
+      <div className="account-chip" title={user.email}>
+        <span className="account-email">{user.email}</span>
+        {role && <span className="account-role">{role}</span>}
+      </div>
+    </>
   );
 }
 
@@ -384,7 +398,7 @@ function App() {
           <div className="breadcrumb">
             <span>Platform</span>
             <span aria-hidden="true">/</span>
-            <strong>
+            <strong aria-current="page">
               {isEvidencePage
                 ? "Evidence upload"
                 : currentView === "assessments"
@@ -406,6 +420,9 @@ function App() {
                   key={JSON.stringify([user.id, headerOrganizationId])}
                   user={user}
                   organizationId={headerOrganizationId}
+                  onOpenOrganizations={isEvidencePage || currentView !== "organizations"
+                    ? () => showView("organizations")
+                    : undefined}
                 />
                 <button className="sign-out-button" type="button" onClick={handleSignOut}>Sign out</button>
               </>
@@ -448,6 +465,7 @@ function App() {
               initialOrganizationId={selectedOrganizationId}
               initialAssessmentId={interviewAssessmentId}
               onOrganizationChange={setSelectedOrganizationId}
+              participantName={user.displayName}
             />
           ) : currentView === "expert-reviews" ? (
             <ExpertReviewWorkspace

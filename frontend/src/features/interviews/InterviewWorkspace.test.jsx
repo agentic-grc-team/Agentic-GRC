@@ -122,6 +122,25 @@ describe("InterviewWorkspace", () => {
     expect(log).toHaveTextContent("How do you manage user access?");
     expect(screen.getByText("2 controls in scope")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "NIST CSF baseline" })).toBeInTheDocument();
+    expect(log).toHaveTextContent("Agentic GRC Assistant");
+    expect(screen.queryByText("Example evidence.")).not.toBeInTheDocument();
+  });
+
+  it("labels the participant's own turns and gives an example for the active evidence request", async () => {
+    openInterview.mockResolvedValue(interview({
+      turns: [
+        turn({ speaker: "participant", participant_id: "participant-other", turn_type: "answer", content: "Earlier answer" }),
+        turn({ id: "turn-2", sequence_no: 2, speaker: "participant", participant_id: "participant-1", turn_type: "answer", content: "We use MFA." }),
+        turn({ id: "turn-3", sequence_no: 3, turn_type: "evidence_request", evidence_control_code: "PR.AA-03", content: "Please upload supporting evidence." }),
+      ],
+    }));
+    renderWorkspace({ initialAssessmentId: "assessment-1", participantName: "Alex Example" });
+
+    const log = await openSelectedInterview();
+    expect(log).toHaveTextContent("ParticipantEarlier answer");
+    expect(log).toHaveTextContent("Alex ExampleWe use MFA.");
+    const upload = screen.getByRole("button", { name: /Drag and drop a file here/ });
+    expect(upload).toHaveAccessibleDescription(/policy requiring MFA for administrator accounts/);
   });
 
   it("only allows starting an interview for an assessment in progress", async () => {

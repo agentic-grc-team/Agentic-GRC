@@ -8,8 +8,12 @@ const AuthContext = createContext(null);
 
 function accountFromSession(account, session) {
   const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
+  const { display_name, full_name, name } = session.user?.user_metadata ?? {};
   return {
     ...account,
+    displayName: [display_name, full_name, name].find(
+      (value) => typeof value === "string" && value.trim(),
+    )?.trim() || "",
     accessToken: session.access_token,
     expiresAt: new Date(expirySeconds * 1000).toISOString(),
   };
