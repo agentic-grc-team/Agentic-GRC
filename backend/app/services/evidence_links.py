@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import AssessmentControl, EvidenceControlLink, EvidenceFile
+from app.db.models import AssessmentControl, EvidenceControlLink, EvidenceFile, DecisionTraceRecord, DecisionTraceSourceRecord
 
 DOCUMENT_REFERENCE_PREFIX = "document_span:"
 
@@ -59,6 +59,42 @@ def _find_link(
     )
     return db.scalars(statement).first()
 
+def resolve_requested_evidence_control(
+    db: Session,
+    organization_id: UUID,
+    assessment_id: UUID,
+    request_turn_id: UUID,
+) -> AssessmentControl | None:
+    traces = db.scalars(
+        select(DecisionTraceRecord)
+        .join(
+            DecisionTraceSourceRecord,
+            (DecisionTraceSourceRecord.trace_id == DecisionTraceRecord.id)
+            & (DecisionTraceSourceRecord.organization_id == DecisionTraceRecord.organization_id),
+        )
+        .where(
+            DecisionTraceRecord.organization_id == organization_id,
+            DecisionTraceRecord.assessment_id == assessment_id,
+            DecisionTraceRecord.decision_type == "evidence_requested",
+            DecisionTraceSourceRecord.interview_turn_id == request_turn_id,
+        )
+    ).all()
+
+    if len(traces) != 1:
+        return None
+
+    control_codes = set(traces[0].control_ids)
+    if len(control_codes) != 1:
+        return None
+
+    return db.scalar(
+        select(AssessmentControl).where(
+            AssessmentControl.organization_id == organization_id,
+            AssessmentControl.assessment_id == assessment_id,
+            AssessmentControl.control_code == next(iter(control_codes)),
+            AssessmentControl.in_scope.is_(True),
+        )
+    )
 
 def link_evidence_to_control(
     db: Session,
@@ -66,13 +102,15 @@ def link_evidence_to_control(
     evidence_file_id: UUID,
     assessment_control_id: UUID,
     linked_by_user_id: UUID | None,
+    *,
+    commit: bool = True,
 ) -> tuple[EvidenceControlLink, bool]:
     """Link an evidence file to a control of the same organization.
 
     Returns the link and whether it was created, so linking the same pair twice is harmless.
     A file that was uploaded for one assessment cannot be linked to a control of another;
     a file uploaded without an assessment can be linked to any control of the organization.
-    A complete action, so this service commits.
+    Commits by default. Pass commit=False to manage the transaction in the caller.
     """
     evidence = db.scalars(
         select(EvidenceFile).where(
@@ -107,6 +145,9 @@ def link_evidence_to_control(
         linked_by_user_id=linked_by_user_id,
     )
     db.add(link)
+    if not commit:
+        db.flush()
+        return link, True
     try:
         db.commit()
     except IntegrityError:

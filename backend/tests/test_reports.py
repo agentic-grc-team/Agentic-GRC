@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import UUID, uuid4
@@ -881,6 +882,165 @@ def test_api_invalid_uuid_returns_422():
         "/api/v1/organizations/not-a-valid-uuid/assessments/also-invalid/report"
     )
     assert response.status_code == 422
+
+
+def test_api_member_known_assessment_json_export_returns_200():
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    content_disp = response.headers.get("content-disposition", "")
+    assert "attachment" in content_disp
+    assert f"agentic-grc-report-{KNOWN_ASSESSMENT_ID}.json" in content_disp
+    data = json.loads(response.text)
+    assert data["export_format"] == "agentic-grc.assessment-report"
+    assert data["export_version"] == "1.0"
+
+
+def test_json_export_report_matches_report_view():
+    report_resp = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report"
+    )
+    export_resp = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert report_resp.status_code == 200
+    assert export_resp.status_code == 200
+
+    report_data = report_resp.json()
+    export_report = export_resp.json()["report"]
+
+    report_data.pop("generated_at", None)
+    export_report.pop("generated_at", None)
+    assert export_report == report_data
+
+
+def test_json_export_keeps_pending_out_of_results():
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 200
+    report = response.json()["report"]
+    assert any(p["code"] == "PR.AA-05" for p in report["pending"])
+    assert not any(r["code"] == "PR.AA-05" for r in report["results"])
+
+
+def test_json_export_no_auth_returns_401():
+    app.dependency_overrides.pop(get_current_user, None)
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 401
+
+
+def test_json_export_non_member_org_returns_404():
+    response = client.get(
+        f"/api/v1/organizations/{NON_MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Assessment not found."
+
+
+def test_json_export_unknown_assessment_returns_404():
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{UNKNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Assessment not found."
+
+
+def test_json_export_never_contains_draft_text():
+    draft_marker = "DRAFT-MARKER-123-SECRET"
+    ctrl = ControlInScope(
+        code="PR.AA-05",
+        title="Access permissions",
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation=draft_marker,
+                created_at=FIXED_DT,
+                review=None,
+            )
+        ],
+    )
+    inp = make_test_report_input(controls=[ctrl])
+
+    class DraftReportSource:
+        def load(self, db, organization_id: UUID, assessment_id: UUID) -> ReportInput | None:
+            return inp
+
+    app.dependency_overrides[get_report_source] = lambda: DraftReportSource()
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 200
+    assert draft_marker not in response.text
+
+
+def test_json_export_preserves_unicode():
+    ctrl = ControlInScope(
+        code="PR.AA-01",
+        title="Identities and credentials",
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation="Política de contraseñas con autenticación multifactor; ¿cobertura total? ¡Aún no!",
+                created_at=FIXED_DT,
+                review=ResultReview(
+                    outcome="accepted",
+                    reviewer_name="José Muñoz Güell",
+                    reviewed_at=FIXED_DT,
+                ),
+            )
+        ],
+    )
+    inp = ReportInput(
+        organization=OrganizationInfo(
+            id=MEMBER_ORG_ID,
+            name="Compañía Ñandú Ltda.",
+            sector="Financial services",
+            size="51-250 employees",
+        ),
+        assessment=AssessmentInfo(
+            id=KNOWN_ASSESSMENT_ID,
+            title="Evaluación de Seguridad",
+            framework="NIST CSF 2.0",
+            kb_version="kb-1.0",
+            status="completed",
+            started_at=FIXED_DT,
+        ),
+        controls=[ctrl],
+    )
+
+    class SpanishReportSource:
+        def load(self, db, organization_id: UUID, assessment_id: UUID) -> ReportInput | None:
+            return inp
+
+    app.dependency_overrides[get_report_source] = lambda: SpanishReportSource()
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 200
+    raw_text = response.content.decode("utf-8")
+    assert "Compañía Ñandú Ltda." in raw_text
+    assert "José Muñoz Güell" in raw_text
+    assert "autenticación" in raw_text
+    assert "¿cobertura total?" in raw_text
+    assert "¡Aún no!" in raw_text
+
+
+def test_json_export_has_no_email_addresses():
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 200
+    assert "@" not in response.text
+
 
 
 # --- 5. Demo Source Tests ---

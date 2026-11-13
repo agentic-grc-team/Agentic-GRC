@@ -3,13 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listAssessments } from "../assessments/api.js";
 import { listOrganizations } from "../organizations/api.js";
-import { DEMO_ASSESSMENT_ID, downloadReportPdf, getReportPreview } from "./api.js";
+import {
+  DEMO_ASSESSMENT_ID,
+  downloadReportJson,
+  downloadReportPdf,
+  getReportPreview,
+} from "./api.js";
 import ReportWorkspace from "./ReportWorkspace.jsx";
 
 vi.mock("./api.js", async (importOriginal) => ({
   ...(await importOriginal()),
   getReportPreview: vi.fn(),
   downloadReportPdf: vi.fn(),
+  downloadReportJson: vi.fn(),
 }));
 
 vi.mock("../organizations/api.js", () => ({
@@ -189,6 +195,7 @@ describe("ReportWorkspace", () => {
     listAssessments.mockReset();
     getReportPreview.mockReset();
     downloadReportPdf.mockReset();
+    downloadReportJson.mockReset();
     listOrganizations.mockResolvedValue(mockOrganizations);
     listAssessments.mockResolvedValue(mockAssessments);
     getReportPreview.mockResolvedValue(mockReportView);
@@ -1440,6 +1447,63 @@ describe("ReportWorkspace", () => {
     await waitFor(() => {
       expect(onOrganizationChange).toHaveBeenCalledWith("org-2");
     });
+  });
+
+  it("JSON download success calls downloadReportJson, shows 'Preparing JSON…', disables both buttons, shows 'JSON export downloaded.', and re-enables both buttons", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:test-json");
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const downloadDeferred = deferred();
+    downloadReportJson.mockReturnValueOnce(downloadDeferred.promise);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const pdfBtn = screen.getByRole("button", { name: "Download PDF" });
+    const jsonBtn = screen.getByRole("button", { name: "Download JSON" });
+
+    fireEvent.click(jsonBtn);
+
+    expect(downloadReportJson).toHaveBeenCalledWith("org-1", "assess-1", "test-token");
+    expect(jsonBtn).toBeDisabled();
+    expect(pdfBtn).toBeDisabled();
+    expect(jsonBtn).toHaveTextContent("Preparing JSON…");
+    expect(pdfBtn).toHaveTextContent("Download PDF");
+
+    downloadDeferred.resolve({
+      blob: new Blob(["{}"], { type: "application/json" }),
+      filename: "agentic-grc-report-x.json",
+    });
+
+    await screen.findByText("JSON export downloaded.");
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test-json");
+    });
+    expect(jsonBtn).not.toBeDisabled();
+    expect(pdfBtn).not.toBeDisabled();
+    expect(jsonBtn).toHaveTextContent("Download JSON");
+    expect(pdfBtn).toHaveTextContent("Download PDF");
+  });
+
+  it("JSON download failure shows alert with the 404 message and preview remains visible", async () => {
+    downloadReportJson.mockRejectedValueOnce({
+      status: 404,
+      message: "Assessment not found.",
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
+
+    const jsonBtn = screen.getByRole("button", { name: "Download JSON" });
+    fireEvent.click(jsonBtn);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("No report is available for this organization yet.");
+    expect(
+      screen.getByRole("heading", { name: "Identity and access — demo assessment" })
+    ).toBeInTheDocument();
   });
 });
 

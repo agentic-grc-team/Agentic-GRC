@@ -129,6 +129,7 @@ class InterviewTurnRead(BaseModel):
     language_code: str | None
     created_at: datetime
     source_references: list[InterviewSourceReference] = Field(default_factory=list)
+    evidence_control_code: str | None = None
 
 
 class InterviewRead(BaseModel):

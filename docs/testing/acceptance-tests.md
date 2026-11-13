@@ -36,6 +36,7 @@ Recorded runs:
 | --- | --- | --- |
 | 2026-10-24 | Local, PostgreSQL 16, all migrations | 4 passed |
 | 2026-11-01 | Local, PostgreSQL 16, all migrations | 4 passed |
+| 2026-11-09 | CI (Backend tests job), PostgreSQL 16, all migrations (Sprint 5 main) | 4 passed |
 
 ## HU-25 — Inspect reasoning traces and source references
 
@@ -64,3 +65,26 @@ Recorded runs:
 | Date | Where | Result |
 | --- | --- | --- |
 | 2026-11-01 | Local, PostgreSQL 16, all migrations | 4 passed |
+| 2026-11-09 | CI (Backend tests job), PostgreSQL 16, all migrations (Sprint 5 main) | 4 passed |
+
+### Sprint 5 validation
+
+Checked on 2026-11-09 against main after #36 (Ollama warm-up), #39 (evidence attached to controls), #40 and #43.
+
+- The four HU-25 acceptance tests pass, and so do the 12 screen tests in `ReviewTrace.test.jsx`.
+- The trace code did not change in Sprint 5. The trace endpoints (`traces.py`, `expert_reviews.py`), the trace services and schemas, and `ReviewTrace.jsx` are the same as at the end of Sprint 4. The only Sprint 5 changes in related services are two model settings in `interview_agent.py` (#36) and attaching evidence to controls in `evidence_links.py` (#39). Neither changes how traces are recorded or shown.
+- All four criteria are still met as tested above.
+
+Known limits, not covered by the criteria:
+
+- Agent decisions cite interview answers only (`interview_turn` sources). Evidence attached to a control (#39) appears in the Expert Review evidence panel, not as a step or source in the trace.
+- The criteria were checked by the automated tests. They have not been checked on a deployed environment, because none exists yet.
+
+Checks for the end-to-end test on the deployed environment (one per criterion, done in the browser):
+
+| AC | Check |
+| --- | --- |
+| 1 | As the consultant, open an agent draft in Expert Review and open its trace. Organization, Assessment, Control and "Result version 1 (AI draft)" are shown. After correcting the draft, the trace shows "2 (Consultant version)". |
+| 2 | The trace lists the decisions for that control, oldest first, including "Status assessed", and its source points to the representative's answer. |
+| 3 | A result without a linked decision shows "No recorded decision is linked to this result version." and no invented steps. |
+| 4 | Signed in as the organization's representative, no trace content (steps, answer text) is shown. |

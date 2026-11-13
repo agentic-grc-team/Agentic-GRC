@@ -13,22 +13,18 @@ export function getReportPreview(organizationId, assessmentId, accessToken) {
   return apiRequest(reportPath(organizationId, assessmentId), { accessToken });
 }
 
-export async function downloadReportPdf(organizationId, assessmentId, accessToken) {
+async function downloadReportFile(organizationId, assessmentId, accessToken, { extension, accept }) {
   const headers = new Headers();
-  headers.set("Accept", "application/pdf");
+  headers.set("Accept", accept);
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const url = `${apiBaseUrl}${reportPath(organizationId, assessmentId)}.pdf`;
+  const url = `${apiBaseUrl}${reportPath(organizationId, assessmentId)}.${extension}`;
 
   let response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      headers,
-      credentials: "omit",
-    });
+    response = await fetch(url, { method: "GET", headers, credentials: "omit" });
   } catch {
     throw new Error("Could not reach the API. Check that the backend is running.");
   }
@@ -41,7 +37,21 @@ export async function downloadReportPdf(organizationId, assessmentId, accessToke
   const blob = await response.blob();
   const disposition = response.headers?.get?.("Content-Disposition");
   const match = typeof disposition === "string" ? disposition.match(/filename="?([^";]+)"?/i) : null;
-  const filename = match ? match[1] : `agentic-grc-report-${assessmentId}.pdf`;
+  const filename = match ? match[1] : `agentic-grc-report-${assessmentId}.${extension}`;
 
   return { blob, filename };
+}
+
+export function downloadReportPdf(organizationId, assessmentId, accessToken) {
+  return downloadReportFile(organizationId, assessmentId, accessToken, {
+    extension: "pdf",
+    accept: "application/pdf",
+  });
+}
+
+export function downloadReportJson(organizationId, assessmentId, accessToken) {
+  return downloadReportFile(organizationId, assessmentId, accessToken, {
+    extension: "json",
+    accept: "application/json",
+  });
 }
