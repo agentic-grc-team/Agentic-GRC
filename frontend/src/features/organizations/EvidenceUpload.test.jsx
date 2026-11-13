@@ -62,7 +62,7 @@ describe("EvidenceUpload for an assessment", () => {
     );
     fireEvent.change(container.querySelector("input[type=file]"), { target: { files: [new File(["evidence"], "policy.txt")] } });
     await screen.findByText("Evidence");
-    expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token", expect.any(AbortSignal), "assess-1");
+    expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token", expect.any(AbortSignal), "assess-1", undefined);
     expect(onUploaded).toHaveBeenCalledWith(stored);
   });
 
@@ -139,7 +139,7 @@ describe("EvidenceUpload session changes", () => {
     rerender(<EvidenceUpload organizationId="alpha" accessToken="token-2" sessionId="user-a" />);
     drop();
     await screen.findByText("Evidence");
-    expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal), "");
+    expect(uploadEvidence).toHaveBeenCalledWith("alpha", expect.any(File), "token-2", expect.any(AbortSignal), "", undefined);
   });
 
   it("aborts the request and ignores the response after unmount", async () => {

@@ -34,7 +34,7 @@ from app.services.langgraph_checkpointer import (
     interview_thread_config,
     open_interview_checkpointer,
 )
-
+from app.services.evidence_links import resolve_requested_evidence_control
 
 _TURN_REF = re.compile(r"^turn:(\d+)$")
 _DEFAULT_KB_PATH = Path(__file__).resolve().parents[1] / "agent" / "data" / "kb_demo.yaml"
@@ -213,7 +213,7 @@ def _run_interview_graph(
                 )
             )
 
-        return [_turn_read(turn) for turn in generated_rows]
+        return [_turn_read(turn, db, interview_session.assessment_id) for turn in generated_rows]
 
 
 def _load_agent_context(db: Session, interview_session: AssessmentSession) -> _AgentContext:
@@ -570,7 +570,24 @@ def _persist_graph_traces(
             record_interview_trace(db, trace, source_ids, record_id=trace_id)
 
 
-def _turn_read(turn: InterviewTurn) -> InterviewTurnRead:
+def _turn_read(
+    turn: InterviewTurn,
+    db: Session | None = None,
+    assessment_id: UUID | None = None,
+) -> InterviewTurnRead:
+    control = None
+    if (
+        turn.turn_type == "evidence_request"
+        and db is not None
+        and assessment_id is not None
+    ):
+        control = resolve_requested_evidence_control(
+            db,
+            turn.organization_id,
+            assessment_id,
+            turn.id,
+        )
+
     return InterviewTurnRead(
         id=turn.id,
         sequence_no=turn.sequence_no,
@@ -582,6 +599,7 @@ def _turn_read(turn: InterviewTurn) -> InterviewTurnRead:
         content=turn.content,
         language_code=turn.language_code,
         created_at=turn.created_at,
+        evidence_control_code=control.control_code if control is not None else None,
         source_references=[
             {"type": "interview_turn", "ref": f"interview_turn:{turn.id}"}
         ],
