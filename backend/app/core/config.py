@@ -100,6 +100,18 @@ class Settings(BaseSettings):
             )
         return normalized
 
+    @field_validator("agrc_ollama_api_key", mode="before")
+    @classmethod
+    def treat_blank_model_api_key_as_unset(cls, value: object) -> object:
+        # An empty or whitespace-only key (e.g. "AGRC_OLLAMA_API_KEY=" copied from .env.example)
+        # counts as no key, so a remote host fails the startup check instead of the proxy.
+        if isinstance(value, SecretStr):
+            value = value.get_secret_value()
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
     @model_validator(mode="after")
     def validate_deployment_security(self) -> Settings:
         model_host = urlsplit(self.agrc_ollama_host)

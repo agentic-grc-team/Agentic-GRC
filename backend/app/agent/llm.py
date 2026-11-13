@@ -10,14 +10,28 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Callable, Protocol, TypeVar
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
 T = TypeVar("T", bound=BaseModel)
 
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
 
 class LLMError(RuntimeError):
     pass
+
+
+def ensure_secure_model_host(host: str) -> None:
+    """Reject a non-loopback model host that does not use HTTPS.
+
+    Interview answers, and the bearer token when one is set, would otherwise cross the
+    network in cleartext. Loopback HTTP stays allowed for local development.
+    """
+    parsed = urlsplit(host.strip())
+    if parsed.hostname not in LOOPBACK_HOSTS and parsed.scheme != "https":
+        raise ValueError("A remote interview model host must use HTTPS.")
 
 
 @dataclass
@@ -52,12 +66,16 @@ class OllamaLLM:
         num_predict: int = 320,
         api_key: str | None = None,
     ):
+        # Checked here, at the one place every caller goes through (backend and scripts alike),
+        # before any client exists that could send a request.
+        ensure_secure_model_host(host)
         import ollama  # imported here so tests do not need the package
 
         self.model_name = model_name
         self.retries = retries
         self.keep_alive = keep_alive
         self.num_predict = num_predict
+        api_key = api_key.strip() if api_key else None
         client_kwargs = {}
         if api_key:
             # Ollama has no authentication of its own: a remote endpoint sits behind a proxy

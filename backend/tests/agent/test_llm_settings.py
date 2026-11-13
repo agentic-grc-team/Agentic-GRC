@@ -147,3 +147,46 @@ def test_agent_settings_keep_api_key_out_of_repr(monkeypatch):
     finally:
         monkeypatch.delenv("AGRC_OLLAMA_API_KEY", raising=False)
         importlib.reload(config_module)
+
+
+def _record_client_creation(monkeypatch):
+    pytest.importorskip("ollama")
+    import ollama
+
+    created = []
+
+    class FakeClient:
+        def __init__(self, host=None, timeout=None, **kwargs):
+            created.append({"host": host, **kwargs})
+
+    monkeypatch.setattr(ollama, "Client", FakeClient)
+    return created
+
+
+@pytest.mark.parametrize("api_key", [None, "model-token"])
+def test_ollama_llm_rejects_remote_http_before_creating_the_client(monkeypatch, api_key):
+    created = _record_client_creation(monkeypatch)
+
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        OllamaLLM(model_name="m", host="http://models.example.org", timeout_s=5.0, api_key=api_key)
+
+    assert created == []
+
+
+@pytest.mark.parametrize(
+    "host", ["http://localhost:11434", "http://127.0.0.1:11434", "http://[::1]:11434"]
+)
+def test_ollama_llm_allows_loopback_http_without_a_key(monkeypatch, host):
+    created = _record_client_creation(monkeypatch)
+
+    OllamaLLM(model_name="m", host=host, timeout_s=5.0)
+
+    assert created == [{"host": host}]
+
+
+def test_ollama_llm_ignores_a_whitespace_only_key(monkeypatch):
+    created = _record_client_creation(monkeypatch)
+
+    OllamaLLM(model_name="m", host="https://models.example.org", timeout_s=5.0, api_key="   ")
+
+    assert "headers" not in created[0]

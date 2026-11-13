@@ -22,6 +22,16 @@ def test_local_model_host_needs_no_key_or_approvals():
     assert settings.ollama_api_key is None
 
 
+def test_blank_model_api_key_counts_as_unset_locally():
+    settings = _settings(agrc_ollama_host="http://127.0.0.1:11434", agrc_ollama_api_key="  ")
+    assert settings.ollama_api_key is None
+
+
+def test_model_api_key_is_trimmed():
+    settings = _settings(agrc_ollama_host=REMOTE, agrc_ollama_api_key=f" {TOKEN}\n", **APPROVED)
+    assert settings.ollama_api_key == TOKEN
+
+
 def test_remote_model_host_with_https_key_and_approvals_is_accepted():
     settings = _settings(agrc_ollama_host=REMOTE + "/", agrc_ollama_api_key=TOKEN, **APPROVED)
     assert settings.agrc_ollama_host == REMOTE
@@ -52,6 +62,8 @@ def test_remote_model_host_with_https_key_and_approvals_is_accepted():
             "INTERVIEW_TOPOLOGY_DOCUMENTED",
         ),
         ({"agrc_ollama_host": REMOTE, **APPROVED}, "AGRC_OLLAMA_API_KEY"),
+        ({"agrc_ollama_host": REMOTE, "agrc_ollama_api_key": "", **APPROVED}, "AGRC_OLLAMA_API_KEY"),
+        ({"agrc_ollama_host": REMOTE, "agrc_ollama_api_key": "   ", **APPROVED}, "AGRC_OLLAMA_API_KEY"),
         (
             {"agrc_ollama_host": "https://user:pass@models.example.org", **APPROVED},
             "without credentials",

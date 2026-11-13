@@ -58,11 +58,13 @@ Every runtime setting can be configured in `backend/.env` (or via environment va
 
 ### Remote model host
 
-Local development keeps the default: Ollama on `http://127.0.0.1:11434`, with no key. To use a model on another machine, the backend refuses to start unless all of these are set:
+Local development keeps the default: Ollama on `http://127.0.0.1:11434`, with no key. To use a model on another machine, the backend checks its settings at startup, before `/health` answers, and refuses to start unless all of these are set:
 
 - `AGRC_OLLAMA_HOST` is an `https://` URL without credentials in it.
-- `AGRC_OLLAMA_API_KEY` is set. Ollama has no authentication of its own, so the remote host must put it behind a reverse proxy that checks `Authorization: Bearer <key>` and rejects other requests. The backend sends this header on every call.
+- `AGRC_OLLAMA_API_KEY` is set to a non-blank value (an empty or whitespace-only value counts as not set). Ollama has no authentication of its own, so the remote host must put it behind a reverse proxy that checks `Authorization: Bearer <key>` and rejects other requests. The backend sends this header on every call.
 - `INTERVIEW_EXTERNAL_TRANSFER_APPROVED=true` and `INTERVIEW_TOPOLOGY_DOCUMENTED=true`, because interview answers leave the backend host.
+
+The scripts (`benchmark_models.py`, `run_interview.py`) do not load the backend settings, so the model client itself also refuses any non-loopback host that is not `https://`, before it sends a request.
 
 Keep the key in `backend/.env` or in the host's secret store, never in the repository. Check the connection with `python -m app.cli warm-up-model`; it prints the host but never the key.
 
