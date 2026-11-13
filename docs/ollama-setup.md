@@ -47,6 +47,7 @@ Every runtime setting can be configured in `backend/.env` (or via environment va
 | Variable | Default | Description |
 |---|---|---|
 | `AGRC_OLLAMA_HOST` | `http://127.0.0.1:11434` | Endpoint where Ollama listens for API requests. |
+| `AGRC_OLLAMA_API_KEY` | not set | Bearer token for a remote model host (see "Remote model host"). Not needed locally. |
 | `AGRC_LLM_MODEL` | `llama3.1:8b` | Ollama model identifier to use. |
 | `AGRC_LLM_TIMEOUT_S` | `8` | Timeout per call in seconds (keeps the turn under the 10 s NFR). Set to `15` for the demo. |
 | `AGRC_LLM_RETRIES` | `1` | Number of retries on malformed structured output. |
@@ -54,6 +55,20 @@ Every runtime setting can be configured in `backend/.env` (or via environment va
 | `AGRC_LLM_NUM_PREDICT` | `320` | Maximum token cap for generated outputs to constrain latency (32 to 2048). |
 | `AGRC_MAX_FOLLOW_UPS` | `3` | Maximum adaptive follow-up questions per control before closing (HU-06). |
 | `AGRC_KB_PATH` | `None` (`backend/app/agent/data/kb_demo.yaml`) | Path to the YAML knowledge base file. |
+
+### Remote model host
+
+Local development keeps the default: Ollama on `http://127.0.0.1:11434`, with no key. To use a model on another machine, the backend checks its settings at startup, before `/health` answers, and refuses to start unless all of these are set:
+
+- `AGRC_OLLAMA_HOST` is an `https://` URL without credentials in it.
+- `AGRC_OLLAMA_API_KEY` is set to a non-blank value (an empty or whitespace-only value counts as not set). Ollama has no authentication of its own, so the remote host must put it behind a reverse proxy that checks `Authorization: Bearer <key>` and rejects other requests. The backend sends this header on every call.
+- `INTERVIEW_EXTERNAL_TRANSFER_APPROVED=true` and `INTERVIEW_TOPOLOGY_DOCUMENTED=true`, because interview answers leave the backend host.
+
+The scripts (`benchmark_models.py`, `run_interview.py`) do not load the backend settings, so the model client itself also refuses any non-loopback host that is not `https://`, before it sends a request.
+
+Keep the key in `backend/.env` or in the host's secret store, never in the repository. Check the connection with `python -m app.cli warm-up-model`; it prints the host but never the key.
+
+If the remote model is slow or unreachable, each call fails after `AGRC_LLM_TIMEOUT_S` and the interview continues with the keyword fallback: those answers get low confidence and go to expert review. Network latency adds to every turn, so measure it with the benchmark (section 5) on the real host before a demo.
 
 ## 4. Alpha demo checklist
 
@@ -106,6 +121,8 @@ A shorter-output interpret prompt (0.4.0: word limits on `summary`, `key_quote` 
   The model was unloaded from memory. Run `python -m app.cli warm-up-model` before starting, and check that `AGRC_LLM_KEEP_ALIVE` is set (default: `30m`).
 - **Every turn falls back to heuristic keyword matching**:
   The per-call timeout is too low for the hardware. Increase `AGRC_LLM_TIMEOUT_S` (e.g. `15`).
+- **The backend does not start: "A remote interview model requires ..."**:
+  `AGRC_OLLAMA_HOST` points to another machine. Either set the missing setting named in the message (see "Remote model host") or point it back to `http://127.0.0.1:11434`.
 - **Every answer returns 409 after a restart**:
   Use a fresh assessment for every demo run. A restarted session can get stuck.
 - **Security warning**:

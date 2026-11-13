@@ -53,6 +53,7 @@ def main() -> None:
         settings.llm_retries,
         keep_alive=settings.llm_keep_alive,
         num_predict=settings.llm_num_predict,
+        api_key=settings.ollama_api_key,
     )
     graph = build_graph(Deps(llm=llm, kb=kb, tracer=tracer, max_follow_ups=settings.max_follow_ups),
                         checkpointer=MemorySaver())

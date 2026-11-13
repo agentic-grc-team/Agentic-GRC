@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
 @dataclass(frozen=True)
 class Settings:
     ollama_host: str = os.getenv("AGRC_OLLAMA_HOST", "http://localhost:11434")
+    # Bearer token for a remote Ollama behind an authenticating proxy; kept out of repr and logs.
+    ollama_api_key: str | None = field(
+        default=(os.getenv("AGRC_OLLAMA_API_KEY") or "").strip() or None, repr=False
+    )
     llm_model: str = os.getenv("AGRC_LLM_MODEL", "llama3.1:8b")
     llm_timeout_s: float = float(os.getenv("AGRC_LLM_TIMEOUT_S", "8"))  # keeps the turn under the 10 s NFR
     llm_retries: int = int(os.getenv("AGRC_LLM_RETRIES", "1"))

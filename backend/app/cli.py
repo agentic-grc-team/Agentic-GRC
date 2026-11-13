@@ -75,6 +75,7 @@ def warm_up_model() -> int:
         retries=settings.agrc_llm_retries,
         keep_alive=settings.agrc_llm_keep_alive,
         num_predict=settings.agrc_llm_num_predict,
+        api_key=settings.ollama_api_key,
     )
     load_time = llm.warm_up()
     if load_time is not None:
