@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { uploadEvidence } from "./api.js";
 
@@ -38,7 +38,9 @@ export default function EvidenceUpload({
   interviewContext,
   onUploaded,
   title = "Upload evidence",
+  example,
 }) {
+  const exampleId = useId();
   const inputRef = useRef(null);
   const requestRef = useRef(null);
   const uploadingRef = useRef(false);
@@ -154,11 +156,15 @@ export default function EvidenceUpload({
         </div>
       </div>
 
+      {example && (
+        <p id={exampleId} className="evidence-example"><strong>Example evidence.</strong> {example}</p>
+      )}
       <div
         className={`evidence-dropzone${isDragging ? " is-dragging" : ""}${isUploading ? " is-busy" : ""}${isDisabled ? " is-disabled" : ""}`}
         role="button"
         tabIndex={isDisabled ? -1 : 0}
         aria-disabled={isDisabled}
+        aria-describedby={example ? exampleId : undefined}
         onClick={() => !isDisabled && inputRef.current?.click()}
         onKeyDown={handleKeyDown}
         onDragOver={handleDragOver}
