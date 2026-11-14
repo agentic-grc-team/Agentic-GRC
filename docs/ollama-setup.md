@@ -48,7 +48,7 @@ Every runtime setting can be configured in `backend/.env` (or via environment va
 |---|---|---|
 | `AGRC_OLLAMA_HOST` | `http://127.0.0.1:11434` | Endpoint where Ollama listens for API requests. |
 | `AGRC_LLM_MODEL` | `llama3.1:8b` | Ollama model identifier to use. |
-| `AGRC_LLM_TIMEOUT_S` | `8` | Timeout per call in seconds (keeps the turn under the 10 s NFR). Set to `15` for the demo. |
+| `AGRC_LLM_TIMEOUT_S` | `8` | Timeout per call in seconds (keeps the turn under the 10 s NFR). Set to `15` for the demo and `40` on the Tesla M10 VM (see `docs/deployment-vm.md`). |
 | `AGRC_LLM_RETRIES` | `1` | Number of retries on malformed structured output. |
 | `AGRC_LLM_KEEP_ALIVE` | `30m` | Duration to keep the model loaded in memory between turns. |
 | `AGRC_LLM_NUM_PREDICT` | `320` | Maximum token cap for generated outputs to constrain latency (32 to 2048). |
