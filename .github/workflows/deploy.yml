@@ -1,0 +1,134 @@
+name: Deploy
+
+# Deploys the API to Azure Container Apps and the frontend to Cloudflare Pages.
+# Setup (secrets, variables and one-time cloud resources): docs/deployment.md.
+# Pushes to main deploy only when the repository variable DEPLOY_ENABLED is "true".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Database migrations
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Supabase session pooler (IPv4, port 5432). The transaction pooler is not supported.
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ vars.DB_PORT || '5432' }}
+      DB_NAME: ${{ vars.DB_NAME || 'postgres' }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_SSLMODE: require
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Create or upgrade LangGraph checkpoint tables
+        run: python -m app.cli init-interview-checkpointer
+
+  backend:
+    name: API to Azure Container Apps
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/agentic-grc-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" backend
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy new revision
+        run: >-
+          az containerapp update
+          --name "${{ vars.AZURE_CONTAINERAPP_NAME }}"
+          --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+          --image "$IMAGE:${{ github.sha }}"
+
+      - name: Smoke test
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl -fsS "${{ vars.API_PUBLIC_URL }}/api/v1/health"; then
+              exit 0
+            fi
+            sleep 6
+          done
+          exit 1
+
+  frontend:
+    name: Frontend to Cloudflare Pages
+    needs: backend
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_PUBLIC_URL }}/api/v1
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SHOW_DEMO_REPORT: "false"
+        run: npm run build
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main
