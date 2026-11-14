@@ -25,6 +25,7 @@ export default function InterviewWorkspace({
   const [assessmentId, setAssessmentId] = useState(initialAssessmentId);
   const [interview, setInterview] = useState(null);
   const [kickoffStatus, setKickoffStatus] = useState(null);
+  const [showSetup, setShowSetup] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState("");
 
@@ -173,6 +174,7 @@ export default function InterviewWorkspace({
       }
       setKickoffStatus({ key: selectionKey, session: data.session });
       setInterview({ organizationId, assessmentId, data, openedAt: seq });
+      setShowSetup(false);
     } catch (caught) {
       if (seq === startSeqRef.current) {
         setError(describeInterviewError(caught));
@@ -220,7 +222,17 @@ export default function InterviewWorkspace({
 
       {error && <p className="inline-error" role="alert">{error}</p>}
 
-      <div className="interview-pickers">
+      {interview && (
+        <div className="interview-context">
+          <span>{organizations.find((item) => item.id === organizationId)?.name}</span>
+          <button type="button" aria-expanded={showSetup} aria-controls="interview-pickers"
+            onClick={() => setShowSetup((current) => !current)}>
+            {showSetup ? "Hide selection" : "Change assessment"}
+          </button>
+        </div>
+      )}
+
+      <div id="interview-pickers" className="interview-pickers" hidden={Boolean(interview) && !showSetup}>
         <label>
           Organization
           <select value={organizationId} onChange={changeOrganization} disabled={!organizationsLoaded}>

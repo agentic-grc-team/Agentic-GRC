@@ -627,3 +627,4 @@ a.rail-navigation-item { text-decoration: none; }
 .review-section p.review-trace-flags { color: #ffc0b1; font-size: 12px; }
 .review-trace-sources { margin: 8px 0 0; padding-left: 18px; font-size: 12px; }
 .review-trace-sources blockquote { margin: 6px 0; padding-left: 12px; border-left: 2px solid var(--mint); white-space: pre-wrap; }
+.report-download-actions { display: flex; gap: 8px; flex-wrap: wrap; }
