@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.agent.llm import FakeLLM
 from app.agent.schemas import AnswerCategory, AnswerInterpretation, Intent
 from app.api.v1.dependencies import get_db_session
-from app.db.models import InterviewTurn
+from app.db.models import AssessmentSession, InterviewTurn
 from app.db.session import get_engine
 from app.main import app
 from app.security import auth as auth_module
@@ -120,6 +121,11 @@ def test_authenticated_interview_persists_agent_turns_and_resumes(interview_api)
         headers=auth,
     ).status_code == 404
 
+    assert client.get(f"{base}/status").status_code == 401
+    no_session = client.get(f"{base}/status", headers=auth)
+    assert no_session.status_code == 200
+    assert no_session.json() is None
+
     opened = client.post(base, headers=auth, json={"session_type": "kickoff"})
     assert opened.status_code == 201, opened.text
     opened_body = opened.json()
@@ -135,6 +141,10 @@ def test_authenticated_interview_persists_agent_turns_and_resumes(interview_api)
     assert first_question["turn_type"] == "question"
     thread_id = uuid.UUID(opened_body["session"]["id"])
     thread_ids.append(thread_id)
+    active_session = client.get(f"{base}/status", headers=auth)
+    assert active_session.status_code == 200
+    assert active_session.json()["id"] == str(thread_id)
+    assert active_session.json()["closed"] is False
 
     request_id = uuid.uuid4()
     answer_body = {
@@ -208,3 +218,12 @@ def test_authenticated_interview_persists_agent_turns_and_resumes(interview_api)
     assert len(db_turns) == len(resumed_body["turns"])
     assert db_turns[1].speaker == "participant"
     assert str(db_turns[1].participant_id) == resumed_body["participant_id"]
+
+    session = db.get(AssessmentSession, thread_id)
+    session.ended_at = datetime.now(timezone.utc)
+    db.flush()
+
+    closed_session = client.get(f"{base}/status", headers=auth)
+    assert closed_session.status_code == 200
+    assert closed_session.json()["id"] == str(thread_id)
+    assert closed_session.json()["closed"] is True

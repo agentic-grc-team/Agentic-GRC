@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client.js";
 import { listAssessments } from "../assessments/api.js";
 import { listOrganizations } from "../organizations/api.js";
-import { getInterview, openInterview, submitInterviewTurn } from "./api.js";
+import { getInterview, getKickoffStatus, openInterview, submitInterviewTurn } from "./api.js";
 import InterviewWorkspace from "./InterviewWorkspace.jsx";
 
 vi.mock("./api.js", () => ({
   openInterview: vi.fn(),
   getInterview: vi.fn(),
+  getKickoffStatus: vi.fn(),
   submitInterviewTurn: vi.fn(),
 }));
 vi.mock("../assessments/api.js", () => ({ listAssessments: vi.fn() }));
@@ -82,7 +83,7 @@ function receipt(overrides = {}) {
 }
 
 async function openSelectedInterview() {
-  const button = await screen.findByRole("button", { name: "Start or resume interview" });
+  const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
   return screen.findByRole("log", { name: "Interview conversation" });
@@ -108,6 +109,7 @@ describe("InterviewWorkspace", () => {
     listAssessments.mockResolvedValue(assessments);
     openInterview.mockResolvedValue(interview());
     getInterview.mockResolvedValue(interview());
+    getKickoffStatus.mockResolvedValue(null);
     submitInterviewTurn.mockResolvedValue(receipt());
   });
 
@@ -129,7 +131,7 @@ describe("InterviewWorkspace", () => {
     await waitFor(() => expect(assessmentSelect).toBeEnabled());
     fireEvent.change(assessmentSelect, { target: { value: "assessment-2" } });
 
-    expect(screen.getByRole("button", { name: "Start or resume interview" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
     expect(screen.getByText(/Only assessments that are in progress/)).toBeInTheDocument();
   });
 
@@ -171,6 +173,18 @@ describe("InterviewWorkspace", () => {
     });
     expect(submitInterviewTurn.mock.calls[1][2].client_request_id)
       .not.toBe(submitInterviewTurn.mock.calls[0][2].client_request_id);
+  });
+
+  it("uses the shared assessment status label for assessments awaiting review", async () => {
+    listAssessments.mockResolvedValue([
+      { id: "review-1", title: "Review assessment", status: "awaiting_review" },
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByRole("option", {
+      name: "Review assessment · Awaiting review",
+    })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
   });
 
   it("does not send a blank answer", async () => {
@@ -274,19 +288,47 @@ describe("InterviewWorkspace", () => {
 
     expect(await screen.findByText(/The interview is complete/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Your answer")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
+    expect(screen.getByRole("button", { name: "View interview" })).toBeEnabled();
   });
 
   it("resumes a conversation in progress with the earlier answers", async () => {
+    getKickoffStatus.mockResolvedValue(interview().session);
     openInterview.mockResolvedValue(interview({
       resumed: true,
       turns: [turn(), receipt().turn, receipt().agent_turns[0]],
     }));
     renderWorkspace({ initialAssessmentId: "assessment-1" });
 
-    const log = await openSelectedInterview();
+    const button = await screen.findByRole("button", { name: "Resume interview" });
+    fireEvent.click(button);
+    const log = await screen.findByRole("log");
 
     expect(log).toHaveTextContent("We use Okta with MFA.");
     expect(log).toHaveTextContent("Who reviews access rights?");
+  });
+
+  it("opens a completed kickoff transcript without posting a new session", async () => {
+    const session = { id: "session-1", closed: true, ended_at: "2026-11-11T20:00:00Z" };
+    getKickoffStatus.mockResolvedValue(session);
+    getInterview.mockResolvedValue(interview({ session, turns: [turn(), receipt().turn] }));
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+
+    expect(await screen.findByText("Interview status: Completed")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View interview" }));
+    expect(await screen.findByText(/The interview is complete/)).toBeInTheDocument();
+    expect(getInterview).toHaveBeenCalledWith("org-1", "assessment-1", "session-1", "token-a");
+    expect(openInterview).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Your answer")).not.toBeInTheDocument();
+  });
+
+  it("keeps the existing open action available when the status request fails", async () => {
+    getKickoffStatus.mockRejectedValue(new ApiError(503, { detail: "Unavailable" }));
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open interview" }));
+    expect(await screen.findByRole("log")).toBeInTheDocument();
+    expect(openInterview).toHaveBeenCalledWith("org-1", "assessment-1", "token-a");
   });
 
   it("shows the updated transcript when the same interview is opened again", async () => {
@@ -299,7 +341,7 @@ describe("InterviewWorkspace", () => {
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }));
 
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
     expect(screen.getByText("We use Okta with MFA.")).toBeInTheDocument();
@@ -316,7 +358,7 @@ describe("InterviewWorkspace", () => {
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }));
 
     expect(await screen.findByText(/The interview is complete/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Your answer")).not.toBeInTheDocument();
@@ -336,7 +378,7 @@ describe("InterviewWorkspace", () => {
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }));
 
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -372,7 +414,7 @@ describe("InterviewWorkspace", () => {
       new ApiError(409, { detail: "This assessment has no in-scope controls." }),
     );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
-    const button = await screen.findByRole("button", { name: "Start or resume interview" });
+    const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });
     await waitFor(() => expect(button).toBeEnabled());
 
     fireEvent.click(button);
@@ -389,14 +431,14 @@ describe("InterviewWorkspace", () => {
       { id: "assessment-3", title: "Second assessment", status: "in_progress" },
     ]);
     renderWorkspace({ initialAssessmentId: "assessment-1" });
-    const button = await screen.findByRole("button", { name: "Start or resume interview" });
+    const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
 
     fireEvent.change(screen.getByLabelText("Assessment"), { target: { value: "assessment-3" } });
     resolveOpen(interview());
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Start or resume interview" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeEnabled());
     expect(screen.queryByRole("log")).not.toBeInTheDocument();
   });
 
@@ -475,14 +517,14 @@ describe("InterviewWorkspace", () => {
   it("collapses selection on start and retains the answer when selection is toggled", async () => {
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
-    expect(screen.queryByRole("button", { name: "Start or resume interview" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeNull();
     fireEvent.change(answerBox(), { target: { value: "Draft answer" } });
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
-    expect(screen.getByRole("button", { name: "Start or resume interview" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeEnabled();
     expect(answerBox()).toHaveValue("Draft answer");
     fireEvent.click(screen.getByRole("button", { name: "Hide selection" }));
     expect(answerBox()).toHaveValue("Draft answer");
-    expect(screen.queryByRole("button", { name: "Start or resume interview" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeNull();
   });
 
 });

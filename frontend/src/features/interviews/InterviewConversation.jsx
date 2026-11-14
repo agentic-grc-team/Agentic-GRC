@@ -28,7 +28,7 @@ function mergeTurns(current, incoming) {
   return Array.from(byId.values()).sort((a, b) => a.sequence_no - b.sequence_no);
 }
 
-export default function InterviewConversation({ organizationId, assessmentId, interview, accessToken }) {
+export default function InterviewConversation({ organizationId, assessmentId, interview, accessToken, onSessionClosed }) {
   const session = interview.session;
   const [turns, setTurns] = useState(() => mergeTurns([], interview.turns || []));
   const [closed, setClosed] = useState(Boolean(session?.closed));
@@ -130,6 +130,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
           }
           setTurns(mergeTurns([], refreshed.turns || []));
           setClosed(Boolean(refreshed.session?.closed));
+          if (refreshed.session?.closed) onSessionClosed?.(session.id);
         } catch {
           if (!activeRef.current) {
             return;
@@ -140,6 +141,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
       } else {
         setTurns((current) => mergeTurns(current, [receipt.turn, ...(receipt.agent_turns || [])]));
         setClosed(Boolean(receipt.session_closed));
+        if (receipt.session_closed) onSessionClosed?.(session.id);
       }
     } catch (caught) {
       if (!activeRef.current) {

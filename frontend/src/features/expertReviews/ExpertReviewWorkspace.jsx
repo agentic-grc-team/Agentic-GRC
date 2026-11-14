@@ -20,8 +20,9 @@ const outcomeLabels = {
 };
 
 
-export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
+export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrganizationChange }) {
   const [reviews, setReviews] = useState([]);
+  const [selectedResultId, setSelectedResultId] = useState("");
   const [comment, setComment] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,6 +58,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
     sessionRef.current = session;
 
     setReviews([]);
+    setSelectedResultId("");
     setComment("");
     setError("");
     setNotice("");
@@ -102,12 +104,25 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
     };
   }, [sessionKey]);
 
+  const review = reviews.find((item) => item.result_id === selectedResultId) ?? reviews[0];
+  const reviewOrganizationId = review?.organization_id || "";
+
+  useEffect(() => {
+    onOrganizationChange?.(reviewOrganizationId);
+  }, [onOrganizationChange, reviewOrganizationId]);
+
+  function selectResult(event) {
+    setSelectedResultId(event.target.value);
+    setComment("");
+    resetEditor();
+    setError("");
+    setNotice("");
+  }
+
   function startEditing() {
-    if (reviews.length === 0 || isSubmitting) {
+    if (!review || isSubmitting) {
       return;
     }
-
-    const review = reviews[0];
 
     setEditedStatus(review.control_status);
     setEditedExplanation(review.explanation);
@@ -124,12 +139,12 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
   }
 
   async function handleDecision(outcome) {
-    if (reviews.length === 0 || isSubmitting) {
+    if (!review || isSubmitting) {
       return;
     }
 
     const session = sessionRef.current;
-    const resultId = reviews[0].result_id;
+    const resultId = review.result_id;
     const trimmedComment = comment.trim();
 
     setError("");
@@ -223,6 +238,10 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
         currentReviews.filter((item) => item.result_id !== resultId),
       );
 
+      const nextInAssessment = reviews.find(
+        (item) => item.assessment_id === review.assessment_id && item.result_id !== resultId,
+      );
+      setSelectedResultId(nextInAssessment?.result_id ?? "");
       setComment("");
       resetEditor();
     } catch (requestError) {
@@ -265,11 +284,31 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId }) {
     );
   }
 
-  const review = reviews[0];
+  const reviewsByAssessment = new Map();
+  for (const item of reviews) {
+    if (!reviewsByAssessment.has(item.assessment_id)) {
+      reviewsByAssessment.set(item.assessment_id, []);
+    }
+    reviewsByAssessment.get(item.assessment_id).push(item);
+  }
 
   return (
     <section className="expert-review-workspace">
       <p className="eyebrow">EXPERT REVIEW</p>
+      <label className="review-comment">
+        Pending result
+        <select value={review.result_id} onChange={selectResult} disabled={isSubmitting}>
+          {Array.from(reviewsByAssessment, ([assessmentId, items]) => (
+            <optgroup key={assessmentId} label={items[0].assessment_title || assessmentId}>
+              {items.map((item) => (
+                <option key={item.result_id} value={item.result_id}>
+                  {item.control_code} · {item.control_title}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
       <h1>{review.control_code}</h1>
       <h2>{review.control_title}</h2>
 

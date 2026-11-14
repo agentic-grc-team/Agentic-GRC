@@ -265,7 +265,7 @@ def list_pending_reviews(
     )
 
     statement = (
-        select(ControlResult, AssessmentControl)
+        select(ControlResult, AssessmentControl, Assessment.title)
         .join(
             AssessmentControl,
             (AssessmentControl.id == ControlResult.assessment_control_id)
@@ -277,6 +277,11 @@ def list_pending_reviews(
                 AssessmentControl.assessment_id
                 == ControlResult.assessment_id
             ),
+        )
+        .join(
+            Assessment,
+            (Assessment.id == ControlResult.assessment_id)
+            & (Assessment.organization_id == ControlResult.organization_id),
         )
         .where(
             AssessmentControl.in_scope.is_(True),
@@ -308,11 +313,13 @@ def list_pending_reviews(
     rows = db.execute(statement).all()
     items = []
 
-    for result, control in rows:
+    for result, control, assessment_title in rows:
         items.append(
             ReviewItem(
                 result_id=str(result.id),
+                organization_id=str(result.organization_id),
                 assessment_id=str(result.assessment_id),
+                assessment_title=assessment_title,
                 control_code=control.control_code,
                 control_title=control.control_title,
                 control_status=result.control_status,

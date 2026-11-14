@@ -5,12 +5,50 @@ import { useAuth } from "./auth/AuthProvider.jsx";
 import InvitationActivation from "./auth/InvitationActivation.jsx";
 import EvidencePage from "./features/organizations/EvidencePage.jsx";
 import OrganizationWorkspace from "./features/organizations/OrganizationWorkspace.jsx";
+import { getOrganization } from "./features/organizations/api.js";
 import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspace.jsx";
 import InterviewWorkspace from "./features/interviews/InterviewWorkspace.jsx";
 import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
 import AssessmentWorkspace from "./features/assessments/AssessmentWorkspace.jsx";
 
 const EVIDENCE_PATH = "/evidence";
+const organizationRoleLabels = {
+  administrator: "Administrator",
+  consultant: "Consultant",
+  representative: "Representative",
+};
+
+function AccountChip({ user, organizationId }) {
+  const [organization, setOrganization] = useState(null);
+  const { accessToken, is_platform_admin: isPlatformAdmin } = user;
+
+  useEffect(() => {
+    if (!accessToken || !organizationId || isPlatformAdmin) return undefined;
+
+    let active = true;
+    getOrganization(organizationId, accessToken)
+      .then((result) => {
+        if (active) setOrganization(result);
+      })
+      .catch(() => {
+        if (active) setOrganization(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [accessToken, organizationId, isPlatformAdmin]);
+
+  const role = isPlatformAdmin
+    ? "Platform administrator"
+    : organizationRoleLabels[organization?.role];
+
+  return (
+    <div className="account-chip" title={user.email}>
+      <span className="account-email">{user.email}</span>
+      {role && <span className="account-role" title={organization?.name}>{role}</span>}
+    </div>
+  );
+}
 
 function ApiStatus({ status, onRetry }) {
   const labels = {
@@ -35,10 +73,12 @@ function ApiStatus({ status, onRetry }) {
 function LoginPanel({ authError, onSignIn, isSupabaseConfigured, apiStatus, onRetryApi }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
+    setShowPassword(false);
     setIsSubmitting(true);
     try {
       await onSignIn(email, password);
@@ -75,18 +115,54 @@ function LoginPanel({ authError, onSignIn, isSupabaseConfigured, apiStatus, onRe
             disabled={!isSupabaseConfigured}
           />
         </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            maxLength={128}
-            required
-            disabled={!isSupabaseConfigured}
-          />
-        </label>
+        <div className="login-password-field">
+          <label htmlFor="login-password">Password</label>
+          <div className="login-password-control">
+            <input
+              id="login-password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              maxLength={128}
+              required
+              disabled={!isSupabaseConfigured}
+            />
+            <button
+              className="login-password-toggle"
+              type="button"
+              aria-controls="login-password"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              onClick={() => setShowPassword((current) => !current)}
+              disabled={!isSupabaseConfigured || isSubmitting}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                {showPassword ? (
+                  <>
+                    <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                    <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3 3.7M6.2 6.2C3.6 8.3 2 12 2 12s4 7 10 7a9.9 9.9 0 0 0 5.1-1.7" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </>
+                )}
+              </svg>
+            </button>
+          </div>
+        </div>
         <button className="primary-button sign-in-button" type="submit" disabled={isSubmitting || !isSupabaseConfigured}>
           {isSubmitting ? "Signing in…" : "Sign in"}
           {!isSubmitting && <span aria-hidden="true">→</span>}
@@ -126,8 +202,11 @@ function App() {
   const [currentView, setCurrentView] = useState("organizations");
   const [pathname, setPathname] = useState(window.location.pathname);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [reviewOrganizationId, setReviewOrganizationId] = useState("");
   const [interviewAssessmentId, setInterviewAssessmentId] = useState("");
   const isEvidencePage = pathname === EVIDENCE_PATH;
+  const isExpertReview = !isEvidencePage && currentView === "expert-reviews";
+  const headerOrganizationId = isExpertReview ? reviewOrganizationId : selectedOrganizationId;
   const evidencePath = selectedOrganizationId
     ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
     : EVIDENCE_PATH;
@@ -137,6 +216,10 @@ function App() {
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
+
+  useEffect(() => {
+    if (!isExpertReview) setReviewOrganizationId("");
+  }, [isExpertReview]);
 
   function navigate(path) {
     window.history.pushState({}, "", path);
@@ -188,6 +271,7 @@ function App() {
 
   function handleSignOut() {
     setSelectedOrganizationId("");
+    setReviewOrganizationId("");
     setInterviewAssessmentId("");
     signOut();
   }
@@ -318,10 +402,11 @@ function App() {
             <ApiStatus status={apiStatus} onRetry={refreshApiStatus} />
             {user && (
               <>
-                <div className="account-chip" title={user.email}>
-                  <span className="account-avatar" aria-hidden="true">{(user.email || "U").slice(0, 1).toUpperCase()}</span>
-                  <span className="account-email">{user.email}</span>
-                </div>
+                <AccountChip
+                  key={JSON.stringify([user.id, headerOrganizationId])}
+                  user={user}
+                  organizationId={headerOrganizationId}
+                />
                 <button className="sign-out-button" type="button" onClick={handleSignOut}>Sign out</button>
               </>
             )}
@@ -369,6 +454,7 @@ function App() {
               key={user.id}
               accessToken={user.accessToken}
               sessionId={user.id}
+              onOrganizationChange={setReviewOrganizationId}
             />
           ) : (
             <>

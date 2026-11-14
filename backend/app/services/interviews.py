@@ -176,6 +176,41 @@ def create_or_resume_interview(
     )
 
 
+def read_kickoff_session(
+    db: Session, organization_id: UUID, assessment_id: UUID, user: User
+) -> InterviewSessionRead | None:
+    """Find the current participant's kickoff session without opening it."""
+    _organization, assessment, _membership = _require_assessment_access(
+        db, organization_id, assessment_id, user
+    )
+    participant = _find_participant(db, organization_id, assessment_id, user.id)
+    if participant is None:
+        return None
+
+    session = db.scalar(
+        select(AssessmentSession)
+        .join(
+            SessionParticipant,
+            (SessionParticipant.session_id == AssessmentSession.id)
+            & (SessionParticipant.organization_id == AssessmentSession.organization_id),
+        )
+        .where(
+            AssessmentSession.organization_id == organization_id,
+            AssessmentSession.assessment_id == assessment_id,
+            AssessmentSession.session_type == "kickoff",
+            AssessmentSession.block_id.is_(None),
+            SessionParticipant.participant_id == participant.id,
+            SessionParticipant.organization_id == organization_id,
+        )
+        .order_by(
+            AssessmentSession.ended_at.desc().nulls_first(),
+            AssessmentSession.started_at.desc().nulls_last(),
+        )
+        .limit(1)
+    )
+    return _session_read(session, assessment.status) if session is not None else None
+
+
 def read_interview(
     db: Session,
     organization_id: UUID,
