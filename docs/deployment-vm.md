@@ -9,7 +9,8 @@ Login stays on Supabase Auth. The files referenced below are in [`deploy/vm/`](.
 | `db-agentic-grc` (database VM) | PostgreSQL 18 and the nightly `pg_dump` |
 
 The university reverse proxy forwards the public URL to `agentic-grc:80`. It must allow
-responses of at least 60 s, because an interview turn takes up to ~40 s on the M10.
+responses of at least 120 s (the same as nginx). An interview turn makes two model calls on the
+M10: about 40 s per turn when the model is warm, and over 60 s when a call hits the timeout.
 
 ## Layout on the app VM
 
