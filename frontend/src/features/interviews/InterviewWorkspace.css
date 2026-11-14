@@ -230,3 +230,7 @@
     overflow: visible;
   }
 }
+
+.interview-conversation .evidence-upload {
+  border: 2px solid #8ed9b8;
+}

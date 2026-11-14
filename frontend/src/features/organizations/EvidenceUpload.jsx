@@ -35,7 +35,9 @@ export default function EvidenceUpload({
   sessionId = "",
   disabled = false,
   assessmentId = "",
+  interviewContext,
   onUploaded,
+  title = "Upload evidence",
 }) {
   const inputRef = useRef(null);
   const requestRef = useRef(null);
@@ -91,6 +93,7 @@ export default function EvidenceUpload({
         tokenRef.current,
         controller.signal,
         assessmentId,
+        interviewContext,
       );
       if (controller.signal.aborted) {
         return;
@@ -146,7 +149,7 @@ export default function EvidenceUpload({
       <div className="form-card-heading">
         <span className="step-indicator">EV</span>
         <div>
-          <h2>Upload evidence</h2>
+          <h2>{title}</h2>
           <p className="muted-copy">PDF, DOCX, TXT, CSV or XLSX, up to 10MB.</p>
         </div>
       </div>

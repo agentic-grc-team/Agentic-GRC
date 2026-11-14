@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 
 import { listAssessments } from "../assessments/api.js";
 import { listOrganizations } from "../organizations/api.js";
-import { DEMO_ASSESSMENT_ID, downloadReportPdf, getReportPreview } from "./api.js";
+import {
+  DEMO_ASSESSMENT_ID,
+  downloadReportJson,
+  downloadReportPdf,
+  getReportPreview,
+} from "./api.js";
 import "./ReportWorkspace.css";
 
 const ASSESSMENT_STATUS_LABELS = {
@@ -61,6 +66,7 @@ export default function ReportWorkspace({
   const [retryCounter, setRetryCounter] = useState(0);
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadingFormat, setDownloadingFormat] = useState(null);
   const [downloadStatus, setDownloadStatus] = useState(null);
   const [downloadError, setDownloadError] = useState(null);
 
@@ -136,6 +142,7 @@ export default function ReportWorkspace({
       ++previewRequestRef.current;
       ++downloadRequestRef.current;
       setIsDownloading(false);
+      setDownloadingFormat(null);
       setDownloadStatus(null);
       setDownloadError(null);
     }
@@ -149,6 +156,7 @@ export default function ReportWorkspace({
       ++previewRequestRef.current;
       ++downloadRequestRef.current;
       setIsDownloading(false);
+      setDownloadingFormat(null);
       setDownloadStatus(null);
       setDownloadError(null);
     }
@@ -168,6 +176,7 @@ export default function ReportWorkspace({
       setDownloadStatus(null);
       setDownloadError(null);
       setIsDownloading(false);
+      setDownloadingFormat(null);
       ++assessmentsRequestRef.current;
       ++previewRequestRef.current;
       ++downloadRequestRef.current;
@@ -282,20 +291,22 @@ export default function ReportWorkspace({
       });
   }, [selectedOrgId, selectedAssessmentId, sessionId, retryCounter]);
 
-  async function handleDownload() {
+  async function handleDownload(format) {
     if (!selectedOrgId || !selectedAssessmentId || isDownloading) return;
 
     const orgId = selectedOrgId;
     const assessmentId = selectedAssessmentId;
     const token = tokenRef.current;
     const downloadId = ++downloadRequestRef.current;
+    const download = format === "json" ? downloadReportJson : downloadReportPdf;
 
     setIsDownloading(true);
+    setDownloadingFormat(format);
     setDownloadStatus(null);
     setDownloadError(null);
 
     try {
-      const { blob, filename } = await downloadReportPdf(
+      const { blob, filename } = await download(
         orgId,
         assessmentId,
         token
@@ -312,7 +323,9 @@ export default function ReportWorkspace({
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
 
-      setDownloadStatus("Report downloaded.");
+      setDownloadStatus(
+        format === "json" ? "JSON export downloaded." : "Report downloaded."
+      );
     } catch (err) {
       if (!isMountedRef.current || downloadId !== downloadRequestRef.current) return;
       setDownloadError(describeReportError(err));
@@ -320,6 +333,7 @@ export default function ReportWorkspace({
       // No return here: a return inside finally would swallow any error thrown above.
       if (isMountedRef.current && downloadId === downloadRequestRef.current) {
         setIsDownloading(false);
+        setDownloadingFormat(null);
       }
     }
   }
@@ -447,14 +461,24 @@ export default function ReportWorkspace({
                 }`}
               </p>
             </div>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={isDownloading}
-              onClick={handleDownload}
-            >
-              {isDownloading ? "Preparing PDF…" : "Download PDF"}
-            </button>
+            <div className="report-download-actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={isDownloading}
+                onClick={() => handleDownload("pdf")}
+              >
+                {downloadingFormat === "pdf" ? "Preparing PDF…" : "Download PDF"}
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={isDownloading}
+                onClick={() => handleDownload("json")}
+              >
+                {downloadingFormat === "json" ? "Preparing JSON…" : "Download JSON"}
+              </button>
+            </div>
           </div>
 
           {downloadStatus && (
