@@ -12,6 +12,10 @@ export function openInterview(organizationId, assessmentId, accessToken) {
   });
 }
 
+export function getKickoffStatus(organizationId, assessmentId, accessToken) {
+  return apiRequest(`${interviewPath(organizationId, assessmentId)}/status`, { accessToken });
+}
+
 export function getInterview(organizationId, assessmentId, sessionId, accessToken) {
   const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
   return apiRequest(`${interviewPath(organizationId, assessmentId)}${query}`, { accessToken });

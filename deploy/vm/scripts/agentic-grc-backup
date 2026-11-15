@@ -1,0 +1,7 @@
+#!/bin/sh
+# /usr/local/bin/agentic-grc-backup on the database VM. Runs as postgres.
+set -eu
+DIR=/var/backups/agentic-grc
+pg_dump -Fc -d agentic_grc -f "$DIR/agentic_grc-$(date -u +%Y%m%dT%H%M%SZ).dump"
+pg_dumpall --globals-only > "$DIR/globals.sql"
+find "$DIR" -name 'agentic_grc-*.dump' -mtime +14 -delete

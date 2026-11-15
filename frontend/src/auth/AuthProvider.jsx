@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../api/client.js";
+import { toBrowserPath } from "../basePath.js";
 import { getCurrentAccount } from "./api.js";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase.js";
 
@@ -8,8 +9,12 @@ const AuthContext = createContext(null);
 
 function accountFromSession(account, session) {
   const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
+  const { display_name, full_name, name } = session.user?.user_metadata ?? {};
   return {
     ...account,
+    displayName: [display_name, full_name, name].find(
+      (value) => typeof value === "string" && value.trim(),
+    )?.trim() || "",
     accessToken: session.access_token,
     expiresAt: new Date(expirySeconds * 1000).toISOString(),
   };
@@ -136,7 +141,7 @@ export function AuthProvider({ children }) {
     try {
       const { error } = await getSupabaseClient().auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: { redirectTo: `${window.location.origin}${toBrowserPath("/auth/callback")}` },
       });
       if (error) {
         throw error;
