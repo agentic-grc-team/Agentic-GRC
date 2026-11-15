@@ -1,0 +1,106 @@
+/* The scene and character are separate so facial animations stay aligned. */
+.interview-avatar-figure {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  width: 100%;
+  height: clamp(320px, 48vh, 520px);
+  margin: 0 auto 12px;
+  overflow: hidden;
+  isolation: isolate;
+}
+.interview-avatar-backdrop {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to top, var(--panel, #10161d), transparent 20%, transparent 82%, var(--panel, #10161d)),
+    linear-gradient(to right, var(--panel, #10161d), transparent 12%, transparent 88%, var(--panel, #10161d)),
+    url("/avatars/interview-office.png");
+  background-size: cover;
+  background-position: center;
+  opacity: .85;
+}
+.interview-avatar-portrait {
+  position: relative;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 1333 / 1180;
+  animation: interview-avatar-breathe 6s ease-in-out infinite;
+  -webkit-mask-image: linear-gradient(to bottom, #000 94%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 94%, transparent 100%);
+}
+.interview-avatar-base,
+.interview-avatar-face-layer {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+.interview-avatar-body {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 44%, #000 46%);
+  mask-image: linear-gradient(to bottom, transparent 44%, #000 46%);
+}
+.interview-avatar-head-motion {
+  position: absolute;
+  inset: 0;
+  transform-origin: 45.5% 44%;
+  -webkit-mask-image: linear-gradient(to bottom, #000 46%, transparent 48.5%);
+  mask-image: linear-gradient(to bottom, #000 46%, transparent 48.5%);
+  --interview-avatar-nod-strength: 0;
+  transition: --interview-avatar-nod-strength 700ms ease-in-out;
+  animation: interview-avatar-head-nod 3.4s ease-in-out infinite;
+}
+.interview-avatar-face-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.interview-avatar-mouth {
+  clip-path: ellipse(5.2% 2.6% at 45.5% 34.6%);
+  transition: opacity 450ms ease-in-out;
+}
+.interview-avatar-blink {
+  clip-path: inset(22.8% 44% 71.8% 36%);
+}
+.interview-avatar-face-layer.is-visible { opacity: 1; }
+@property --interview-avatar-nod-strength {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+.interview-avatar-typing .interview-avatar-head-motion {
+  --interview-avatar-nod-strength: 1;
+}
+@keyframes interview-avatar-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes interview-avatar-head-nod {
+  0%, 18%, 76%, 100% { transform: translateY(0) rotate(0); }
+  44% {
+    transform:
+      translateY(calc(2px * var(--interview-avatar-nod-strength)))
+      rotate(calc(.25deg * var(--interview-avatar-nod-strength)));
+  }
+}
+@media (max-width: 600px) {
+  .interview-avatar-figure {
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+  .interview-avatar-portrait {
+    width: 85%;
+    height: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .interview-avatar-figure *,
+  .interview-avatar-figure *::before,
+  .interview-avatar-figure *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

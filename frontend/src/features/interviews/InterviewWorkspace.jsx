@@ -1,23 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { listAssessments } from "../assessments/api.js";
+import { assessmentStatusLabel } from "../assessments/statusLabels.js";
 import { listOrganizations } from "../organizations/api.js";
-import { openInterview } from "./api.js";
+import { getInterview, getKickoffStatus, openInterview } from "./api.js";
 import InterviewConversation from "./InterviewConversation.jsx";
 import { describeInterviewError } from "./errors.js";
 import "./InterviewWorkspace.css";
-
-const STATUS_LABELS = {
-  draft: "Draft",
-  in_progress: "In progress",
-  in_review: "In review",
-  completed: "Completed",
-  archived: "Archived",
-};
-
-function statusLabel(status) {
-  return STATUS_LABELS[status] || status;
-}
 
 export default function InterviewWorkspace({
   accessToken,
@@ -25,6 +14,7 @@ export default function InterviewWorkspace({
   initialOrganizationId = "",
   initialAssessmentId = "",
   onOrganizationChange,
+  participantName,
 }) {
   const accessTokenRef = useRef(accessToken);
   const startSeqRef = useRef(0);
@@ -35,6 +25,8 @@ export default function InterviewWorkspace({
   const [assessmentsLoaded, setAssessmentsLoaded] = useState(false);
   const [assessmentId, setAssessmentId] = useState(initialAssessmentId);
   const [interview, setInterview] = useState(null);
+  const [kickoffStatus, setKickoffStatus] = useState(null);
+  const [showSetup, setShowSetup] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState("");
 
@@ -71,6 +63,10 @@ export default function InterviewWorkspace({
       active = false;
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (organizationsLoaded) onOrganizationChange?.(organizationId);
+  }, [organizationId, organizationsLoaded, onOrganizationChange]);
 
   useEffect(() => {
     if (!organizationId) {
@@ -113,12 +109,44 @@ export default function InterviewWorkspace({
     setIsStarting(false);
   }, [organizationId, assessmentId]);
 
+  const selectedAssessment = assessments.find((item) => item.id === assessmentId);
+  const selectionKey = JSON.stringify([sessionId, organizationId, assessmentId]);
+  const selectedSession = kickoffStatus?.key === selectionKey ? kickoffStatus : null;
+  const canOpen = !isStarting && Boolean(
+    selectedAssessment && selectedSession &&
+    (selectedSession.session?.closed || selectedAssessment.status === "in_progress")
+  );
+
+  useEffect(() => {
+    if (!organizationId || !assessmentId) return undefined;
+
+    setKickoffStatus(null);
+    let active = true;
+    getKickoffStatus(organizationId, assessmentId, accessTokenRef.current)
+      .then((session) => {
+        if (active) setKickoffStatus({ key: selectionKey, session });
+      })
+      .catch(() => {
+        if (active) setKickoffStatus({ key: selectionKey, unavailable: true });
+      });
+    return () => {
+      active = false;
+    };
+  }, [organizationId, assessmentId, selectionKey]);
+
+  function markSessionClosed(sessionId) {
+    setKickoffStatus((current) =>
+      current?.key === selectionKey && current.session?.id === sessionId
+        ? { ...current, session: { ...current.session, closed: true } }
+        : current
+    );
+  }
+
   function changeOrganization(event) {
     const value = event.target.value;
     setError("");
     setOrganizationId(value);
     setAssessmentId("");
-    onOrganizationChange?.(value);
   }
 
   function changeAssessment(event) {
@@ -127,7 +155,7 @@ export default function InterviewWorkspace({
   }
 
   async function startInterview() {
-    if (!organizationId || !assessmentId || isStarting) {
+    if (!canOpen) {
       return;
     }
     const seq = startSeqRef.current + 1;
@@ -135,7 +163,9 @@ export default function InterviewWorkspace({
     setIsStarting(true);
     setError("");
     try {
-      const data = await openInterview(organizationId, assessmentId, accessTokenRef.current);
+      const data = selectedSession.session?.closed
+        ? await getInterview(organizationId, assessmentId, selectedSession.session.id, accessTokenRef.current)
+        : await openInterview(organizationId, assessmentId, accessTokenRef.current);
       if (seq !== startSeqRef.current) {
         return;
       }
@@ -143,7 +173,9 @@ export default function InterviewWorkspace({
         setError("The interview could not be started. Try again.");
         return;
       }
+      setKickoffStatus({ key: selectionKey, session: data.session });
       setInterview({ organizationId, assessmentId, data, openedAt: seq });
+      setShowSetup(false);
     } catch (caught) {
       if (seq === startSeqRef.current) {
         setError(describeInterviewError(caught));
@@ -155,8 +187,30 @@ export default function InterviewWorkspace({
     }
   }
 
-  const selectedAssessment = assessments.find((item) => item.id === assessmentId);
-  const canStart = Boolean(selectedAssessment) && selectedAssessment.status === "in_progress" && !isStarting;
+  const session = selectedSession?.session;
+  let interviewStatus;
+  if (selectedSession && !selectedSession.unavailable) {
+    interviewStatus = session?.ended_at
+      ? "Completed"
+      : session?.closed
+        ? "Closed"
+        : session
+          ? "In progress"
+          : "Not started";
+  }
+
+  let openLabel = "Start interview";
+  if (isStarting) {
+    openLabel = "Opening…";
+  } else if (selectedAssessment && !selectedSession) {
+    openLabel = "Checking interview…";
+  } else if (selectedSession?.session?.closed) {
+    openLabel = "View interview";
+  } else if (selectedSession?.session) {
+    openLabel = "Resume interview";
+  } else if (selectedSession?.unavailable) {
+    openLabel = "Open interview";
+  }
 
   return (
     <section className="interview-workspace">
@@ -169,7 +223,17 @@ export default function InterviewWorkspace({
 
       {error && <p className="inline-error" role="alert">{error}</p>}
 
-      <div className="interview-pickers">
+      {interview && (
+        <div className="interview-context">
+          <span>{organizations.find((item) => item.id === organizationId)?.name}</span>
+          <button type="button" aria-expanded={showSetup} aria-controls="interview-pickers"
+            onClick={() => setShowSetup((current) => !current)}>
+            {showSetup ? "Hide selection" : "Change assessment"}
+          </button>
+        </div>
+      )}
+
+      <div id="interview-pickers" className="interview-pickers" hidden={Boolean(interview) && !showSetup}>
         <label>
           Organization
           <select value={organizationId} onChange={changeOrganization} disabled={!organizationsLoaded}>
@@ -188,14 +252,18 @@ export default function InterviewWorkspace({
           >
             <option value="">Select an assessment</option>
             {assessments.map((item) => (
-              <option key={item.id} value={item.id}>{item.title} · {statusLabel(item.status)}</option>
+              <option key={item.id} value={item.id}>{item.title} · {assessmentStatusLabel(item.status)}</option>
             ))}
           </select>
         </label>
-        <button className="primary-button" type="button" onClick={startInterview} disabled={!canStart}>
-          {isStarting ? "Opening…" : "Start or resume interview"}
+        <button className="primary-button" type="button" onClick={startInterview} disabled={!canOpen}>
+          {openLabel}
         </button>
       </div>
+
+      {selectedAssessment && interviewStatus && (
+        <p className="interview-hint">Interview status: {interviewStatus}</p>
+      )}
 
       {organizationsLoaded && !error && organizations.length === 0 && (
         <p className="interview-hint">You are not a member of any organization yet.</p>
@@ -213,6 +281,8 @@ export default function InterviewWorkspace({
           organizationId={interview.organizationId}
           assessmentId={interview.assessmentId}
           interview={interview.data}
+          participantName={participantName}
+          onSessionClosed={markSessionClosed}
           accessToken={accessToken}
         />
       )}

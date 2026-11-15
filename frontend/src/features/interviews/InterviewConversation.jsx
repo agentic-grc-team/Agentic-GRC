@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import InterviewAvatar from "./InterviewAvatar.jsx";
 import { getInterview, submitInterviewTurn } from "./api.js";
 import { describeInterviewError, isRetryableInterviewError } from "./errors.js";
 import EvidenceUpload from "../organizations/EvidenceUpload.jsx";
@@ -14,6 +15,13 @@ const TURN_TYPE_LABELS = {
   summary: "Summary",
 };
 
+const EVIDENCE_EXAMPLES = {
+  "PR.AA-01": "A copy of your offboarding procedure or a redacted record showing when a former employee’s access was disabled.",
+  "PR.AA-03": "A redacted screenshot or export of the policy requiring MFA for administrator accounts.",
+  "PR.AA-05": "A redacted record of the last access review showing when it took place and who approved it.",
+};
+const GENERAL_EVIDENCE_EXAMPLE = "A redacted policy, screenshot, or dated record showing how your organization handles the practice described above.";
+
 function newRequestId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -27,11 +35,15 @@ function mergeTurns(current, incoming) {
   return Array.from(byId.values()).sort((a, b) => a.sequence_no - b.sequence_no);
 }
 
-export default function InterviewConversation({ organizationId, assessmentId, interview, accessToken }) {
+export default function InterviewConversation({
+  organizationId, assessmentId, interview, accessToken, onSessionClosed, participantName,
+}) {
   const session = interview.session;
   const [turns, setTurns] = useState(() => mergeTurns([], interview.turns || []));
   const [closed, setClosed] = useState(Boolean(session?.closed));
   const [answer, setAnswer] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimerRef = useRef(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
@@ -50,6 +62,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
     activeRef.current = true;
     return () => {
       activeRef.current = false;
+      clearTimeout(typingTimerRef.current);
     };
   }, []);
 
@@ -68,6 +81,19 @@ export default function InterviewConversation({ organizationId, assessmentId, in
     }
   }, [awaitingAnswer, isSending, turns.length]);
 
+  function updateAnswer(event) {
+    const value = event.target.value;
+    setAnswer(value);
+    setIsTyping(Boolean(value.trim()));
+    clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => setIsTyping(false), 1800);
+  }
+
+  function stopTyping() {
+    clearTimeout(typingTimerRef.current);
+    setIsTyping(false);
+  }
+
   async function submit(event) {
     event.preventDefault();
     const content = answer.trim();
@@ -75,6 +101,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
       return;
     }
 
+    stopTyping();
     sendingRef.current = true;
     setIsSending(true);
     setError("");
@@ -112,6 +139,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
           }
           setTurns(mergeTurns([], refreshed.turns || []));
           setClosed(Boolean(refreshed.session?.closed));
+          if (refreshed.session?.closed) onSessionClosed?.(session.id);
         } catch {
           if (!activeRef.current) {
             return;
@@ -122,6 +150,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
       } else {
         setTurns((current) => mergeTurns(current, [receipt.turn, ...(receipt.agent_turns || [])]));
         setClosed(Boolean(receipt.session_closed));
+        if (receipt.session_closed) onSessionClosed?.(session.id);
       }
     } catch (caught) {
       if (!activeRef.current) {
@@ -145,17 +174,28 @@ export default function InterviewConversation({ organizationId, assessmentId, in
         <div>
           <p className="eyebrow">INTERVIEW</p>
           <h2>{interview.assessment_title || "Assessment interview"}</h2>
+          {interview.organization_name && <p className="interview-organization">{interview.organization_name}</p>}
         </div>
         {typeof scopeCount === "number" && (
           <span className="interview-scope">{scopeCount} {scopeCount === 1 ? "control" : "controls"} in scope</span>
         )}
       </header>
 
+      <InterviewAvatar
+        state={isSending ? "processing" : isTyping && awaitingAnswer ? "typing" : "idle"}
+      />
+
       <ol className="interview-turns" role="log" aria-label="Interview conversation" aria-live="polite">
         {turns.map((turn) => (
           <li key={turn.id} className={`interview-turn is-${turn.speaker === "agent" ? "agent" : "participant"}`}>
             <div className="interview-turn-meta">
-              <span className="interview-speaker">{turn.speaker === "agent" ? "Assistant" : "You"}</span>
+              <span className="interview-speaker">
+                {turn.speaker === "agent"
+                  ? "Agentic GRC Assistant"
+                  : turn.participant_id && turn.participant_id === interview.participant_id
+                    ? participantName || "You"
+                    : "Participant"}
+              </span>
               {turn.speaker === "agent" && TURN_TYPE_LABELS[turn.turn_type] && (
                 <span className="interview-turn-type">{TURN_TYPE_LABELS[turn.turn_type]}</span>
               )}
@@ -175,6 +215,7 @@ export default function InterviewConversation({ organizationId, assessmentId, in
             sessionId: session.id,
             requestTurnId: latestTurn.id,
           }}
+          example={EVIDENCE_EXAMPLES[latestTurn.evidence_control_code] ?? GENERAL_EVIDENCE_EXAMPLE}
           title={
             latestTurn.evidence_control_code
               ? `Upload evidence for ${latestTurn.evidence_control_code}`
@@ -198,9 +239,10 @@ export default function InterviewConversation({ organizationId, assessmentId, in
             id="interview-answer"
             ref={answerRef}
             value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
+            onChange={updateAnswer}
+            onBlur={stopTyping}
             maxLength={MAX_ANSWER_LENGTH}
-            rows={5}
+            rows={3}
             disabled={isSending || !awaitingAnswer}
             placeholder={awaitingAnswer ? "Describe how this works in your organization." : ""}
           />
