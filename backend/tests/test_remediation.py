@@ -142,6 +142,19 @@ def test_a_status_that_is_not_a_gap_is_refused():
         recommend_remediation(not_a_gap)
 
 
+def test_a_status_that_is_not_a_gap_is_refused_before_the_template_is_looked_up():
+    not_a_gap = GapClassification(
+        control_code="DE.CM-01",
+        control_status="implemented",
+        priority="Medium",
+        risks=(("Unauthorized access", "Extreme"),),
+        reason="Test rule.",
+    )
+
+    with pytest.raises(ValueError, match="is not a gap"):
+        recommend_remediation(not_a_gap)
+
+
 # --- Ordering and roadmap buckets -----------------------------------------------------------
 
 
@@ -152,9 +165,22 @@ def test_recommendations_follow_the_hu17_order_of_the_gaps():
         gap("PR.AA-01", "not_implemented"),
     ]
 
-    recommendations = recommend_for_gaps(gaps)
+    plan = recommend_for_gaps(gaps)
 
-    assert [item.control_code for item in recommendations] == ["PR.AA-01", "PR.AA-03", "PR.AA-05"]
+    assert [item.control_code for _, item in plan] == ["PR.AA-01", "PR.AA-03", "PR.AA-05"]
+    assert all(gap.control_code == item.control_code for gap, item in plan)
+
+
+def test_a_gap_without_a_template_is_kept_without_a_recommendation(monkeypatch):
+    monkeypatch.delitem(REMEDIATION_TEMPLATES, "PR.AA-03")
+    gaps = [gap("PR.AA-05", "partially_implemented"), gap("PR.AA-03", "not_implemented")]
+
+    plan = recommend_for_gaps(gaps)
+
+    assert [(item.control_code, rec is None) for item, rec in plan] == [
+        ("PR.AA-03", True),
+        ("PR.AA-05", False),
+    ]
 
 
 def test_no_gaps_give_no_recommendations():
@@ -162,9 +188,9 @@ def test_no_gaps_give_no_recommendations():
 
 
 def test_recommendations_are_grouped_by_time_horizon_keeping_their_order():
-    recommendations = recommend_for_gaps(
-        [gap("PR.AA-05"), gap("PR.AA-03"), gap("PR.AA-01")]
-    )
+    recommendations = [
+        item for _, item in recommend_for_gaps([gap("PR.AA-05"), gap("PR.AA-03"), gap("PR.AA-01")])
+    ]
 
     groups = group_by_time_horizon(recommendations)
 
@@ -200,6 +226,21 @@ def test_remediation_trace_is_a_valid_rule_decision_that_needs_review():
     ]
     assert trace.output["is_preliminary"] is True
     assert trace.output["rules_provisional"] is True
+    assert trace.output["question_code"] == "IAM-01"
+    assert trace.output["rules_id"] == RULE_ID
+    assert trace.output["classification_rules_id"] == "rule:risk-classification"
+
+
+def test_remediation_trace_needs_review_even_when_the_templates_are_confirmed(monkeypatch):
+    monkeypatch.setattr("app.services.remediation.RULES_PROVISIONAL", False)
+    recommendation = recommend_remediation(gap("PR.AA-03"))
+    source = TraceSource(type="interview_turn", ref=f"interview_turn:{uuid4()}")
+
+    trace = build_remediation_trace(uuid4(), uuid4(), recommendation, "demo-0.2", [source])
+
+    assert trace.requires_human_review is True
+    assert trace.output["is_preliminary"] is True
+    assert trace.output["rules_provisional"] is False
 
 
 def test_remediation_trace_without_a_source_is_rejected():

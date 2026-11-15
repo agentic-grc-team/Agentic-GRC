@@ -28,11 +28,18 @@ the Product Owner confirms them, and every recommendation is preliminary until a
 reviews it (HU-19).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from uuid import UUID
 
 from app.schemas.decision_trace import DecisionTrace, TraceSource
-from app.services.risk_classification import GapClassification, order_gaps
+from app.schemas.report import STATUS_LABELS
+from app.services.risk_classification import (
+    GAP_STATUS_ORDER,
+    GapClassification,
+    order_gaps,
+)
+from app.services.risk_classification import RULE_ID as CLASSIFICATION_RULE_ID
+from app.services.risk_classification import RULE_VERSION as CLASSIFICATION_RULE_VERSION
 
 RULE_ID = "rule:remediation"
 RULE_VERSION = "0.1"
@@ -41,11 +48,6 @@ RULES_PROVISIONAL = True
 # Aligo's value sets.
 DEPENDENCIES = ("People", "Process", "Technology")
 TIME_HORIZONS = ("Short term", "Mid term", "Long term")
-
-STATUS_LABELS = {
-    "not_implemented": "not implemented",
-    "partially_implemented": "partially implemented",
-}
 
 
 @dataclass(frozen=True)
@@ -217,6 +219,8 @@ REMEDIATION_TEMPLATES = {
 
 @dataclass(frozen=True)
 class RemediationRecommendation:
+    # Fields with the same name as a RemediationTemplate field are copied from the template;
+    # how_to and task_description are then chosen for the gap's status.
     control_code: str
     control_status: str
     priority: str
@@ -240,11 +244,11 @@ def recommend_remediation(gap: GapClassification) -> RemediationRecommendation:
     Raises ValueError for a control without a template, so a gap never gets an invented
     recommendation. The caller shows such a gap without a recommendation.
     """
+    if gap.control_status not in GAP_STATUS_ORDER:
+        raise ValueError(f"Control status {gap.control_status} is not a gap.")
     template = REMEDIATION_TEMPLATES.get(gap.control_code)
     if template is None:
         raise ValueError(f"No remediation template for control {gap.control_code}.")
-    if gap.control_status not in STATUS_LABELS:
-        raise ValueError(f"Control status {gap.control_status} is not a gap.")
 
     partial = gap.control_status == "partially_implemented"
     how_to = template.partial_how_to if partial else template.how_to
@@ -254,33 +258,42 @@ def recommend_remediation(gap: GapClassification) -> RemediationRecommendation:
         else template.task_description
     )
     justification = (
-        f"{gap.control_code} was assessed as {STATUS_LABELS[gap.control_status]} "
+        f"{gap.control_code} was assessed as {STATUS_LABELS[gap.control_status].lower()} "
         f"(question {template.question_code}). {template.issue} "
         f"Recommended: {template.task}. {template.basis} "
         f"Priority {gap.priority}: {gap.reason}"
     )
+    from_template = {
+        field.name: getattr(template, field.name)
+        for field in fields(RemediationRecommendation)
+        if hasattr(template, field.name)
+    }
+    from_template.update(how_to=how_to, task_description=task_description)
     return RemediationRecommendation(
+        **from_template,
         control_code=gap.control_code,
         control_status=gap.control_status,
         priority=gap.priority,
         risks=gap.risks,
-        question_code=template.question_code,
-        statement=template.statement,
-        issue=template.issue,
-        requirement=template.requirement,
-        task=template.task,
-        task_description=task_description,
-        how_to=how_to,
-        dependency=template.dependency,
-        time_horizon=template.time_horizon,
-        evidence_to_close=template.evidence_to_close,
         justification=justification,
     )
 
 
-def recommend_for_gaps(gaps: list[GapClassification]) -> list[RemediationRecommendation]:
-    """Recommendations in the HU-17 order of the gaps (most critical first)."""
-    return [recommend_remediation(gap) for gap in order_gaps(gaps)]
+def recommend_for_gaps(
+    gaps: list[GapClassification],
+) -> list[tuple[GapClassification, RemediationRecommendation | None]]:
+    """Each gap with its recommendation, in the HU-17 order of the gaps (most critical first).
+
+    A gap whose control has no template is kept with None, so one missing template does not
+    fail the whole plan and the caller can show that gap without a recommendation.
+    """
+    plan = []
+    for gap in order_gaps(gaps):
+        try:
+            plan.append((gap, recommend_remediation(gap)))
+        except ValueError:
+            plan.append((gap, None))
+    return plan
 
 
 def group_by_time_horizon(
@@ -299,6 +312,7 @@ def remediation_output(recommendation: RemediationRecommendation) -> dict:
         "kind": "remediation",
         "control_code": recommendation.control_code,
         "control_status": recommendation.control_status,
+        "question_code": recommendation.question_code,
         "priority": recommendation.priority,
         "risks": [
             {"name": name, "severity": severity} for name, severity in recommendation.risks
@@ -313,8 +327,12 @@ def remediation_output(recommendation: RemediationRecommendation) -> dict:
         "time_horizon": recommendation.time_horizon,
         "evidence_to_close": list(recommendation.evidence_to_close),
         "is_preliminary": True,
+        "rules_id": RULE_ID,
         "rules_version": RULE_VERSION,
         "rules_provisional": RULES_PROVISIONAL,
+        # Priority and risks come from the HU-17 classification; this names the rule that set them.
+        "classification_rules_id": CLASSIFICATION_RULE_ID,
+        "classification_rules_version": CLASSIFICATION_RULE_VERSION,
     }
 
 
@@ -328,8 +346,16 @@ def build_remediation_trace(
     """The decision trace of one recommendation.
 
     sources are the sources of the control result's own decision (usually the participant's
-    answers), so the recommendation is linked to what the gap is based on. While the templates
-    are provisional, every recommendation requires human review.
+    answers), so the recommendation is linked to what the gap is based on.
+
+    This is the gap's finding: its output carries the HU-17 priority and risks, with the
+    classification rule and version, next to the recommendation. A gap with a recommendation is
+    recorded with this one finding_generated trace, not also with the classification trace, so
+    each gap is counted once. The classification trace is the finding only for a gap without a
+    recommendation.
+
+    Every recommendation is preliminary and requires a consultant's review (HU-19), whether or
+    not the templates are still provisional.
     """
     return DecisionTrace(
         organization_id=organization_id,
@@ -343,5 +369,5 @@ def build_remediation_trace(
         kb_version=kb_version,
         output=remediation_output(recommendation),
         rationale=recommendation.justification,
-        requires_human_review=RULES_PROVISIONAL,
+        requires_human_review=True,
     )
