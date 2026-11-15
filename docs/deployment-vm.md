@@ -77,11 +77,15 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
 7. Frontend, from `/opt/agentic-grc/frontend`:
    ```bash
    sudo -u agrc npm ci
-   sudo -u agrc env VITE_API_BASE_URL=/api/v1 VITE_SUPABASE_URL=<...> \
+   sudo -u agrc env VITE_BASE_PATH=/agentic-grc/ VITE_SUPABASE_URL=<...> \
      VITE_SUPABASE_PUBLISHABLE_KEY=<...> VITE_SHOW_DEMO_REPORT=false npm run build
+   grep -o 'src="[^"]*"' dist/index.html   # must start with /agentic-grc/assets/
    ```
-   The build expects to be served from the root of a domain. A sub-path such as `/agentic-grc/`
-   needs base-path support in the frontend first.
+   The public URL is `https://gita.udea.edu.co/agentic-grc/`. The university proxy strips the
+   prefix, so nginx serves `dist/` at `/`, while the browser keeps using `/agentic-grc/...`.
+   Do not set `VITE_API_BASE_URL`: by default the API base follows the base path
+   (`/agentic-grc/api/v1`). Supabase Auth must allow
+   `https://gita.udea.edu.co/agentic-grc/auth/callback` in its Redirect URLs.
 8. nginx: install [`nginx/agentic-grc.conf`](../deploy/vm/nginx/agentic-grc.conf) in
    `/etc/nginx/sites-available/`, link it in `sites-enabled/`, remove the `default` site, then
    `sudo nginx -t && sudo systemctl reload nginx`.

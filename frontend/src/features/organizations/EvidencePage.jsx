@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import EvidenceUpload from "./EvidenceUpload.jsx";
 import { listOrganizations } from "./api.js";
+import { toBrowserPath } from "../../basePath.js";
 
 function readOrganizationParam() {
   return new URLSearchParams(window.location.search).get("organization_id") || "";
@@ -91,7 +92,7 @@ export default function EvidencePage({ accessToken, sessionId = "", onNavigate, 
     <div className="evidence-page">
       <a
         className="text-button"
-        href="/"
+        href={toBrowserPath("/")}
         onClick={(event) => {
           event.preventDefault();
           onNavigate("/");

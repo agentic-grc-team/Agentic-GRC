@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../api/client.js";
+import { toBrowserPath } from "../basePath.js";
 import { getCurrentAccount } from "./api.js";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase.js";
 
@@ -140,7 +141,7 @@ export function AuthProvider({ children }) {
     try {
       const { error } = await getSupabaseClient().auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: { redirectTo: `${window.location.origin}${toBrowserPath("/auth/callback")}` },
       });
       if (error) {
         throw error;

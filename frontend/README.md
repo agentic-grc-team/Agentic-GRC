@@ -22,6 +22,18 @@ In Supabase Auth, disable public sign-ups so invited accounts are provisioned by
 
 The app stores Supabase sessions in the current browser tab and sends the access token to FastAPI. FastAPI validates that token with Supabase before returning the platform profile. Google OAuth uses Supabase as the identity provider; use the same verified email that was invited. Organization membership and authorization remain in the application database.
 
+## Deploying under a sub-path
+
+By default the app is built for the root of a domain (`/`), which is what local dev and CI use. To serve it under a sub-path behind a reverse proxy, set `VITE_BASE_PATH` at build time:
+
+```bash
+VITE_BASE_PATH=/agentic-grc/ npm run build
+```
+
+- Asset URLs, client-side routes, the Google OAuth `redirectTo`, the avatar images and the default API base (`/agentic-grc/api/v1`) all follow the base path. Leave `VITE_API_BASE_URL` unset unless the API lives elsewhere.
+- If the proxy strips the prefix (as the university proxy does), serve `dist/` at `/` and fall back to `index.html` for unknown paths. See `docs/deployment-vm.md`.
+- Allow `https://<host>/<base>/auth/callback` in Supabase Auth URL Configuration.
+
 ## First setup
 
 1. Configure the PostgreSQL, Supabase Auth, and SMTP settings in `backend/.env` and the public Supabase values in `frontend/.env`.
