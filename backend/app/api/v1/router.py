@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     auth,
     evidence,
     expert_reviews,
+    gaps,
     health,
     interviews,
     organizations,
@@ -30,3 +31,4 @@ api_router.include_router(
 )
 api_router.include_router(expert_reviews.router)
 api_router.include_router(reports.router)
+api_router.include_router(gaps.router)

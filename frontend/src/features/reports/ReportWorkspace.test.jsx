@@ -158,6 +158,32 @@ const mockReportView = {
   },
 };
 
+const mockReportPreview = {
+  ...mockReportView,
+  gap_list: {
+    rules_id: "rule:risk-classification",
+    rules_version: "0.1",
+    rules_provisional: true,
+    pending_controls: 3,
+    gaps: [
+      {
+        control_code: "PR.AA-03",
+        control_title: "Authentication",
+        control_status: "partially_implemented",
+        status_label: "Partially implemented",
+        classified: true,
+        priority: "High",
+        risks: [{ name: "Unauthorized access", severity: "Extreme" }],
+        reason: "Authentication of administrator accounts governs privileged access.",
+        result_version: 2,
+        basis: "consultant_version",
+        explanation: "MFA partial across legacy systems.",
+        evidence_pending: false,
+      },
+    ],
+  },
+};
+
 const mockReportViewWithEvidencePending = {
   ...mockReportView,
   results: [
@@ -234,6 +260,27 @@ describe("ReportWorkspace", () => {
     expect(within(summary).getByText("Pending review").parentElement).toHaveTextContent("3");
     expect(within(summary).getByText("Exclusions").parentElement).toHaveTextContent("1");
     expect(within(summary).getByText("Coverage").parentElement).toHaveTextContent("50.0%");
+  });
+
+  it("shows the gap list that comes with the preview, without a separate request", async () => {
+    getReportPreview.mockReset();
+    getReportPreview.mockResolvedValue(mockReportPreview);
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const table = await screen.findByRole("table", { name: "Gaps by criticality" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByText("PR.AA-03")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Based on version 2 · consultant version")).toBeInTheDocument();
+    expect(getReportPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no gap section when the preview has no gap list", async () => {
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    await screen.findByRole("table", { name: "Reviewed results" });
+    expect(screen.queryByRole("heading", { name: "Gaps by criticality" })).not.toBeInTheDocument();
   });
 
   it("reviewed results table contains 'Partially implemented' and the reviewer with the date", async () => {

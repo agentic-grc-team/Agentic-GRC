@@ -116,13 +116,20 @@ def classify_gap(control_code: str, control_status: str) -> GapClassification | 
     """Priority and risks of one control result.
 
     Returns None when the status is not a gap (implemented, not_applicable, not_assessed).
-    Raises ValueError for a control without a rule, so a gap is never given an invented priority.
+    Raises ValueError for a control without a rule, or whose rule names a risk without a severity,
+    so a gap is never given an invented priority.
     """
     if control_status not in GAP_STATUS_ORDER:
         return None
     rule = CONTROL_RULES.get(control_code)
     if rule is None:
         raise ValueError(f"No risk classification rule for control {control_code}.")
+    unknown = [name for name in rule.risks if name not in RISK_SEVERITIES]
+    if unknown:
+        # A risk without a confirmed severity cannot be ranked, so the gap is not classified.
+        raise ValueError(
+            f"Rule for control {control_code} names risks without a severity: {', '.join(unknown)}."
+        )
 
     risks = sorted(
         ((name, RISK_SEVERITIES[name]) for name in rule.risks),

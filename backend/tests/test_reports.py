@@ -141,7 +141,7 @@ def isolate_dependency_overrides(monkeypatch):
             return True
         return None
 
-    monkeypatch.setattr("app.api.v1.endpoints.reports._active_membership", fake_membership)
+    monkeypatch.setattr("app.api.v1.report_access._active_membership", fake_membership)
 
     try:
         yield
@@ -867,6 +867,29 @@ def test_api_member_json_report_returns_200():
     assert not any(r["code"] == "PR.AA-05" for r in data["results"])
 
 
+def test_api_report_preview_carries_the_gap_list_of_the_same_view():
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    gap_list = data["gap_list"]
+    assert gap_list["generated_at"] == data["generated_at"]
+    assert gap_list["pending_controls"] == data["summary"]["pending"]
+    gap_statuses = {"partially_implemented", "not_implemented"}
+    assert {gap["control_code"] for gap in gap_list["gaps"]} == {
+        r["code"] for r in data["results"] if r["control_status"] in gap_statuses
+    }
+
+
+def test_api_report_exports_do_not_carry_the_gap_list():
+    response = client.get(
+        f"/api/v1/organizations/{MEMBER_ORG_ID}/assessments/{KNOWN_ASSESSMENT_ID}/report.json"
+    )
+    assert response.status_code == 200
+    assert "gap_list" not in response.json()["report"]
+
+
 def test_api_platform_admin_without_membership_returns_200():
     admin_user = FakeUser(id=uuid4(), is_platform_admin=True)
     app.dependency_overrides[get_current_user] = lambda: admin_user
@@ -913,6 +936,8 @@ def test_json_export_report_matches_report_view():
 
     report_data.pop("generated_at", None)
     export_report.pop("generated_at", None)
+    # The on-screen preview also carries the gap list (HU-17); the export is the report itself.
+    report_data.pop("gap_list", None)
     assert export_report == report_data
 
 
