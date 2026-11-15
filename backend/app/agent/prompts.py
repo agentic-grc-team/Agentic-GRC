@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from .schemas import Missing, Question
 
-INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.3.3"
+INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.3.4"
 FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.3.0"
 CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.3.0"
 
@@ -28,10 +28,11 @@ def interpret(question: Question, turns: list[dict]) -> tuple[str, str]:
         "- intent: 'answer' if they answer; 'clarification_request' if they ask what the question means; "
         "'off_topic' if they talk about something else.\n"
         "- category: yes | no | partial | unsure | not_applicable.\n"
-        "  'no' = the practice is not done: they say there is no (defined) process or nobody does it, and do not "
-        "describe it actually being carried out. A missing control is 'no', never 'not_applicable'.\n"
-        "  'partial' = it exists or is actually carried out, but does not cover everything: some accounts or "
-        "systems, still in progress, or done only ad hoc (on request, without a schedule).\n"
+        "  'no' = the practice is not done or does not exist, including 'we have no (defined) process' or "
+        "'nobody does it'. A missing control is 'no', never 'not_applicable'.\n"
+        "  'partial' = it exists but does not cover everything (some accounts, some systems, in progress).\n"
+        "  A practice that does happen, but only ad hoc ('only when someone asks', 'when needed', 'no schedule'), "
+        "is 'partial', not 'no'.\n"
         "  'unsure' = they do not know or are not sure.\n"
         "  'not_applicable' = only when they say the question does not apply to them (for example, they do not "
         "have or use what it asks about).\n"
