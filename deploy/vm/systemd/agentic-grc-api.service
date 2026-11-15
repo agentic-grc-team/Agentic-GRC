@@ -12,8 +12,12 @@ WorkingDirectory=/var/lib/agentic-grc
 Environment=AGRC_ENV_FILE=/etc/agentic-grc/backend.env
 Environment=PYTHONPATH=/opt/agentic-grc/backend
 ExecStart=/opt/agentic-grc/.venv/bin/uvicorn app.main:app --app-dir /opt/agentic-grc/backend --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
-# Load the model into GPU memory after a reboot (a failure does not stop the API).
-ExecStartPost=-/opt/agentic-grc/.venv/bin/python -m app.cli warm-up-model
+# After a reboot Ollama needs ~30 s to detect the GPU before it listens: wait for it (max 60 s).
+ExecStartPre=/bin/sh -c 'for i in $$(seq 1 60); do curl -sf http://127.0.0.1:11434/api/version >/dev/null && exit 0; sleep 1; done; exit 0'
+# Load the model into GPU memory (a failure does not stop the API). A cold load from disk takes
+# ~41 s on the M10, over the 40 s interview timeout, so the warm-up gets its own 300 s timeout.
+ExecStartPost=-/usr/bin/env AGRC_LLM_TIMEOUT_S=300 /opt/agentic-grc/.venv/bin/python -m app.cli warm-up-model
+TimeoutStartSec=400
 Restart=always
 RestartSec=3
 

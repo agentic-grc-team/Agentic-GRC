@@ -57,8 +57,8 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
 
 ## 2. App VM
 
-1. `sudo apt install -y nginx python3-venv nodejs npm`, and add `db-agentic-grc` with its IPv6 to
-   `/etc/hosts` (the name does not resolve from the app VM).
+1. `sudo apt install -y nginx nodejs npm`. Use `DB_HOST=db-agentic-grc.gita.lan`: the internal DNS
+   resolves it from the app VM (`getent hosts db-agentic-grc.gita.lan`), so no `/etc/hosts` entry is needed.
 2. Ollama: copy the Vulkan build to `/opt/ollama` and the models to `/var/lib/ollama/models`,
    create the `ollama` user, install [`systemd/ollama.service`](../deploy/vm/systemd/ollama.service)
    and `sudo systemctl enable --now ollama`.
@@ -67,8 +67,11 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
    sudo useradd --system --home-dir /var/lib/agentic-grc --create-home --shell /usr/sbin/nologin agrc
    sudo git clone https://github.com/agentic-grc-team/Agentic-GRC.git /opt/agentic-grc
    sudo chown -R agrc:agrc /opt/agentic-grc
-   sudo -u agrc python3 -m venv /opt/agentic-grc/.venv
-   sudo -u agrc /opt/agentic-grc/.venv/bin/pip install -r /opt/agentic-grc/backend/requirements.txt
+   # The system Python is 3.14; use 3.13 (as in CI) through uv, installed where agrc can read it.
+   sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python uv python install 3.13
+   sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python uv venv --seed --python 3.13 --python-preference only-managed /opt/agentic-grc/.venv
+   sudo uv pip install --python /opt/agentic-grc/.venv/bin/python -r /opt/agentic-grc/backend/requirements.txt
+   sudo chown -R agrc:agrc /opt/agentic-grc
    ```
 4. Write `/etc/agentic-grc/backend.env` from [`backend.env.example`](../deploy/vm/backend.env.example).
 5. Schema, from `/opt/agentic-grc/backend`:
@@ -81,12 +84,15 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
 7. Frontend, from `/opt/agentic-grc/frontend`:
    ```bash
    sudo -u agrc npm ci
-   sudo -u agrc env VITE_BASE_PATH=/agentic-grc/ VITE_SUPABASE_URL=<...> \
+   sudo -u agrc env VITE_BASE_PATH=/agentic-grc/ VITE_SUPABASE_URL=https://gita.udea.edu.co/agentic-grc/supabase \
      VITE_SUPABASE_PUBLISHABLE_KEY=<...> VITE_SHOW_DEMO_REPORT=false npm run build
    grep -o 'src="[^"]*"' dist/index.html   # must start with /agentic-grc/assets/
    ```
    The public URL is `https://gita.udea.edu.co/agentic-grc/`. The university proxy strips the
    prefix, so nginx serves `dist/` at `/`, while the browser keeps using `/agentic-grc/...`.
+   `VITE_SUPABASE_URL` points to the `/supabase/` location of our nginx, not to `*.supabase.co`:
+   the university proxy adds `Content-Security-Policy: connect-src 'self' https://gita.udea.edu.co`,
+   which blocks direct calls to Supabase ("Failed to fetch" on sign-in).
    Do not set `VITE_API_BASE_URL`: by default the API base follows the base path
    (`/agentic-grc/api/v1`). Supabase Auth must allow
    `https://gita.udea.edu.co/agentic-grc/auth/callback` in its Redirect URLs.
@@ -94,12 +100,33 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
    `/etc/nginx/sites-available/`, link it in `sites-enabled/`, remove the `default` site, then
    `sudo nginx -t && sudo systemctl reload nginx`.
 
+## Accounts and memberships (no SMTP)
+
+Outbound SMTP is blocked, so **Send invitation** fails. Users who already exist in Supabase Auth
+(and in the local `auth.users`, step 1.5) are given access with SQL on the database VM:
+
+```sql
+-- Profiles for every confirmed user (also created automatically at first sign-in).
+INSERT INTO public.users (id, email)
+SELECT id, lower(trim(email)) FROM auth.users WHERE email_confirmed_at IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+-- Platform administrators can create organizations (bootstrap-admin only works for the first one).
+UPDATE public.users SET is_platform_admin = true WHERE lower(email) = '<email>';
+-- After creating the organization in the app: add members (the id has no server default).
+INSERT INTO public.organization_memberships (id, organization_id, user_id, role, status)
+SELECT gen_random_uuid(), o.id, u.id, '<consultant|representative|administrator>', 'active'
+FROM public.organizations o, public.users u
+WHERE o.name = '<organization>' AND lower(u.email) = '<email>';
+```
+
+There is no member list in the UI yet; check memberships with SQL or by signing in as that user.
+
 ## 3. Checks
 
 ```bash
 systemctl is-active ollama agentic-grc-api nginx      # three "active"
 curl -s http://127.0.0.1/api/v1/health                 # through nginx
-curl -s http://127.0.0.1:11434/api/ps                  # llama3.1:8b loaded after the warm-up
+/opt/ollama/bin/ollama ps                              # llama3.1:8b, 100% GPU, UNTIL Forever
 sudo reboot                                            # then the first line again
 ```
 
@@ -112,3 +139,31 @@ cd backend && sudo -u agrc env AGRC_ENV_FILE=/etc/agentic-grc/backend.env ../.ve
 # rebuild the frontend as in step 7, then:
 sudo systemctl restart agentic-grc-api
 ```
+
+The installed nginx site and systemd units are copies, so a `git pull` does not change them. When a
+merge touches `deploy/vm/`, apply it on the VM (review the diff first: `git diff HEAD@{1} -- deploy/vm`):
+
+```bash
+# nginx (fill <SUPABASE_PROJECT_REF> again in the installed copy)
+sudo cp deploy/vm/nginx/agentic-grc.conf /etc/nginx/sites-available/agentic-grc
+sudo sed -i 's/<SUPABASE_PROJECT_REF>/<your-project-ref>/g' /etc/nginx/sites-available/agentic-grc
+sudo nginx -t && sudo systemctl reload nginx
+
+# systemd units (app VM)
+sudo cp deploy/vm/systemd/ollama.service deploy/vm/systemd/agentic-grc-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart ollama agentic-grc-api      # the API reloads the model (~45 s)
+
+# new variables in deploy/vm/backend.env.example: add them to /etc/agentic-grc/backend.env by hand
+diff <(grep -oE '^[A-Z_]+=' deploy/vm/backend.env.example | sort) <(sudo grep -oE '^[A-Z_]+=' /etc/agentic-grc/backend.env | sort)
+```
+
+Then run the checks in section 3 and sign in through the public URL.
+
+## Notes
+
+- **Benchmarks on the VM** (`scripts/benchmark_models.py`) load the model with a 30 min keep-alive.
+  Afterwards run `sudo systemctl restart agentic-grc-api` so the warm-up sets it back to forever;
+  otherwise the first interview turn after 30 min reloads the model and times out (keyword fallback).
+- After a reboot, the API waits for Ollama and the warm-up loads the model cold (~41 s). The API
+  answers once that finishes (`journalctl -u agentic-grc-api -b | grep model`).
