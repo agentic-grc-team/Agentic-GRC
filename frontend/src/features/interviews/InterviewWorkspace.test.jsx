@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../api/client.js";
@@ -298,6 +298,7 @@ describe("InterviewWorkspace", () => {
       turns: [turn(), receipt().turn, receipt().agent_turns[0]],
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
 
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
@@ -314,6 +315,7 @@ describe("InterviewWorkspace", () => {
       turns: [turn(), receipt().turn],
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
 
     expect(await screen.findByText(/The interview is complete/)).toBeInTheDocument();
@@ -333,6 +335,7 @@ describe("InterviewWorkspace", () => {
       turns: [turn(), receipt().turn, receipt().agent_turns[0]],
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: "Start or resume interview" }));
 
     expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
@@ -424,4 +427,62 @@ describe("InterviewWorkspace", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("session has expired");
   });
+  it("connects avatar attention to typing, blur, sending and a real response", async () => {
+    let resolveTurn;
+    submitInterviewTurn.mockReturnValue(new Promise((resolve) => { resolveTurn = resolve; }));
+    const { container } = renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    const avatar = () => container.querySelector(".interview-avatar-figure");
+    expect(avatar()).toHaveClass("interview-avatar-idle");
+    fireEvent.change(answerBox(), { target: { value: "We use MFA." } });
+    expect(avatar()).toHaveClass("interview-avatar-typing");
+    fireEvent.blur(answerBox());
+    expect(avatar()).toHaveClass("interview-avatar-idle");
+    sendAnswer("We use MFA.");
+    expect(avatar()).toHaveClass("interview-avatar-processing");
+    await act(async () => { resolveTurn(receipt()); });
+    expect(avatar()).toHaveClass("interview-avatar-idle");
+    expect(screen.getByRole("log")).toHaveTextContent("Who reviews access rights?");
+  });
+
+  it("ends the typing gesture after a pause and cleans up on unmount", async () => {
+    const { container, unmount } = renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(answerBox(), { target: { value: "MFA" } });
+      act(() => { vi.advanceTimersByTime(1200); });
+      expect(container.querySelector(".interview-avatar-typing")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(600); });
+      expect(container.querySelector(".interview-avatar-idle")).not.toBeNull();
+      fireEvent.change(answerBox(), { target: { value: "MFA enforced" } });
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the interview usable if the avatar image cannot load", async () => {
+    const { container } = renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    fireEvent.error(container.querySelector(".interview-avatar-body"));
+    expect(container.querySelector(".interview-avatar-figure")).toBeNull();
+    sendAnswer("We use Okta with MFA.");
+    expect(await screen.findByText("Who reviews access rights?")).toBeInTheDocument();
+  });
+
+  it("collapses selection on start and retains the answer when selection is toggled", async () => {
+    renderWorkspace({ initialAssessmentId: "assessment-1" });
+    await openSelectedInterview();
+    expect(screen.queryByRole("button", { name: "Start or resume interview" })).toBeNull();
+    fireEvent.change(answerBox(), { target: { value: "Draft answer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
+    expect(screen.getByRole("button", { name: "Start or resume interview" })).toBeEnabled();
+    expect(answerBox()).toHaveValue("Draft answer");
+    fireEvent.click(screen.getByRole("button", { name: "Hide selection" }));
+    expect(answerBox()).toHaveValue("Draft answer");
+    expect(screen.queryByRole("button", { name: "Start or resume interview" })).toBeNull();
+  });
+
 });

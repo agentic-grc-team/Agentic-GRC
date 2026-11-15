@@ -35,9 +35,10 @@ def settings() -> Settings:
 class SupabaseConfigurationTests(unittest.TestCase):
     def test_production_requires_supabase_keys_and_https_urls(self) -> None:
         with self.assertRaises(ValidationError):
-            Settings(app_environment="production", app_base_url="https://app.example.com")
+            Settings(_env_file=None, app_environment="production", app_base_url="https://app.example.com")
 
         configured = Settings(
+            _env_file=None,
             app_environment="production",
             app_base_url="https://app.example.com",
             supabase_url="https://project.example.supabase.co/",

@@ -327,7 +327,7 @@ def test_evidence_link_in_another_organization_is_forbidden(db, as_user_a, two_o
     )
 
     assert response.status_code == 403
-    assert db.query(EvidenceControlLink).count() == 0
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence_b.id).count() == 0
 
 
 def test_evidence_of_another_organization_is_not_found_under_own_organization(db, as_user_a, two_organizations):
@@ -342,7 +342,7 @@ def test_evidence_of_another_organization_is_not_found_under_own_organization(db
     )
 
     assert response.status_code == 404
-    assert db.query(EvidenceControlLink).count() == 0
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence_b.id).count() == 0
 
 
 def test_control_of_another_organization_is_not_found_under_own_organization(db, as_user_a, two_organizations):
@@ -357,7 +357,7 @@ def test_control_of_another_organization_is_not_found_under_own_organization(db,
     )
 
     assert response.status_code == 404
-    assert db.query(EvidenceControlLink).count() == 0
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence_a.id).count() == 0
 
 
 def test_evidence_link_of_another_organization_cannot_be_removed_or_listed(db, as_user_a, two_organizations):
@@ -385,7 +385,7 @@ def test_evidence_link_of_another_organization_cannot_be_removed_or_listed(db, a
     assert removed.status_code == 403
     assert listed.status_code == 403
     assert removed_under_own_organization.status_code == 404
-    assert db.query(EvidenceControlLink).count() == 1
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence_b.id).count() == 1
 
 
 def test_evidence_list_by_control_respects_the_assessment_filter(db, as_user_a, two_organizations):

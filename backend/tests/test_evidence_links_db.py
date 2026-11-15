@@ -70,7 +70,7 @@ def test_linking_the_same_pair_twice_returns_the_existing_link(db):
 
     assert (first_created, second_created) == (True, False)
     assert second.id == first.id
-    assert db.query(EvidenceControlLink).count() == 1
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence.id).count() == 1
 
 
 def test_evidence_without_assessment_can_be_linked_to_a_control(db):
@@ -103,7 +103,7 @@ def test_evidence_of_another_assessment_cannot_be_linked(db):
     with pytest.raises(EvidenceAssessmentMismatchError):
         link_evidence_to_control(db, organization.id, evidence.id, control.id, None)
 
-    assert db.query(EvidenceControlLink).count() == 0
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence.id).count() == 0
 
 
 def test_evidence_of_another_organization_cannot_be_linked(db):
@@ -114,7 +114,7 @@ def test_evidence_of_another_organization_cannot_be_linked(db):
     with pytest.raises(EvidenceNotFoundError):
         link_evidence_to_control(db, organization.id, foreign_evidence.id, control.id, None)
 
-    assert db.query(EvidenceControlLink).count() == 0
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=foreign_evidence.id).count() == 0
 
 
 def test_control_of_another_organization_cannot_be_linked(db):
@@ -125,7 +125,7 @@ def test_control_of_another_organization_cannot_be_linked(db):
     with pytest.raises(ControlNotFoundError):
         link_evidence_to_control(db, organization.id, evidence.id, foreign_control.id, None)
 
-    assert db.query(EvidenceControlLink).count() == 0
+    assert db.query(EvidenceControlLink).filter_by(evidence_file_id=evidence.id).count() == 0
 
 
 def test_unknown_ids_are_not_found(db):
