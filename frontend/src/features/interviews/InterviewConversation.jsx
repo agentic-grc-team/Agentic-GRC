@@ -45,6 +45,7 @@ export default function InterviewConversation({
   const [isTyping, setIsTyping] = useState(false);
   const typingTimerRef = useRef(null);
   const [isSending, setIsSending] = useState(false);
+  const [waitSeconds, setWaitSeconds] = useState(0);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const accessTokenRef = useRef(accessToken);
@@ -75,6 +76,17 @@ export default function InterviewConversation({
   const awaitingAnswer = !closed && latestTurn?.speaker === "agent";
   const showEvidenceUpload =
     awaitingAnswer && latestTurn?.turn_type === "evidence_request";
+  // Model turns take ~20–40 s on the Beta GPU: show how long the current one has been running.
+  useEffect(() => {
+    if (!isSending) {
+      setWaitSeconds(0);
+      return undefined;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => setWaitSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [isSending]);
+
   useEffect(() => {
     if (awaitingAnswer && !isSending) {
       answerRef.current?.focus();
@@ -224,7 +236,12 @@ export default function InterviewConversation({
         />
       )}
       {isSending && (
-        <p className="interview-status" role="status">The assistant is reviewing your answer…</p>
+        <p className="interview-status" role="status">
+          The assistant is reviewing your answer…
+          <span className="interview-status-hint" aria-hidden="true">
+            {" "}{waitSeconds}s · this usually takes 20–40 seconds
+          </span>
+        </p>
       )}
       {error && <p className="inline-error" role="alert">{error}</p>}
 
