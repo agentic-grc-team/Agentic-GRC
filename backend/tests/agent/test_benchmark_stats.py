@@ -1,3 +1,5 @@
+import pytest
+
 import scripts.benchmark_models as bm
 from scripts.benchmark_models import percentile, summarize_latencies
 from app.agent import prompts
@@ -100,3 +102,54 @@ def test_turn_latency_adds_an_llm_call_only_when_the_real_flow_makes_one(monkeyp
     assert calls.count(prompts.CLARIFY_ID) == 2
     assert result["invalid_or_failed"] == 1
     assert result["cold_load_ms"] == 5
+    # Fake calls carry no Ollama timings: the breakdown still counts calls per turn.
+    assert result["breakdown"]["calls_per_turn"] == {1: 2, 2: 4}
+    assert result["breakdown"]["slowest_turns"][0]["turn_latency_ms"] == max(turns)
+
+
+def test_timings_from_response_converts_ollama_nanoseconds():
+    from app.agent.llm import timings_from_response
+
+    timings = timings_from_response({
+        "load_duration": 5_000_000,
+        "prompt_eval_count": 900,
+        "prompt_eval_duration": 4_200_000_000,
+        "eval_count": 120,
+        "eval_duration": 9_800_000_000,
+    })
+
+    assert (timings.load_ms, timings.prompt_tokens, timings.prompt_ms) == (5, 900, 4200)
+    assert (timings.output_tokens, timings.generation_ms) == (120, 9800)
+
+
+def test_timings_from_response_tolerates_missing_fields():
+    from app.agent.llm import timings_from_response
+
+    timings = timings_from_response({"message": {"content": "{}"}})
+
+    assert timings.prompt_ms is None and timings.generation_ms is None
+
+
+def test_summarize_breakdown_splits_time_per_prompt_and_overall():
+    calls = [
+        {"prompt_id": "interpret", "latency_ms": 10000, "load_ms": 0, "prompt_tokens": 900,
+         "prompt_ms": 4000, "output_tokens": 100, "generation_ms": 5000},
+        {"prompt_id": "interpret", "latency_ms": 20000, "load_ms": 0, "prompt_tokens": 950,
+         "prompt_ms": 4000, "output_tokens": 300, "generation_ms": 15000},
+        {"prompt_id": "follow_up", "latency_ms": 10000, "load_ms": 1000, "prompt_tokens": 500,
+         "prompt_ms": 2000, "output_tokens": 50, "generation_ms": 6000},
+    ]
+
+    breakdown = bm.summarize_breakdown(calls, [1, 2])
+
+    assert breakdown["share"] == pytest.approx({"load": 0.025, "prompt": 0.25, "generation": 0.65, "other": 0.075})
+    assert breakdown["by_prompt"]["interpret"]["calls"] == 2
+    assert breakdown["by_prompt"]["interpret"]["generation_ms"] == {"p50": 5000, "p95": 15000}
+    assert breakdown["by_prompt"]["follow_up"]["prompt_tokens"]["p50"] == 500
+    assert breakdown["calls_per_turn"] == {1: 1, 2: 1}
+
+
+def test_summarize_breakdown_handles_no_calls():
+    breakdown = bm.summarize_breakdown([], [])
+    assert breakdown["share"]["other"] == 0.0
+    assert breakdown["by_prompt"] == {}

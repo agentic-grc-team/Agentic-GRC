@@ -21,12 +21,46 @@ class LLMError(RuntimeError):
 
 
 @dataclass
+class CallTimings:
+    """Where the time of one model call went, as reported by Ollama (last attempt only)."""
+
+    load_ms: int | None  # loading the model into memory (near 0 when it is already warm)
+    prompt_tokens: int | None
+    prompt_ms: int | None  # reading the prompt (prefill)
+    output_tokens: int | None
+    generation_ms: int | None  # generating the answer
+
+
+@dataclass
 class CallMeta:
     model_name: str
     prompt_id: str
     prompt_version: str
     latency_ms: int
     attempts: int
+    timings: CallTimings | None = None
+
+
+def _field(resp, name: str):
+    # ollama returns a pydantic model that also supports item access; plain dicts appear in tests.
+    try:
+        return resp[name]
+    except (KeyError, TypeError):
+        return getattr(resp, name, None)
+
+
+def _ns_to_ms(value) -> int | None:
+    return int(value / 1_000_000) if isinstance(value, (int, float)) else None
+
+
+def timings_from_response(resp) -> CallTimings:
+    return CallTimings(
+        load_ms=_ns_to_ms(_field(resp, "load_duration")),
+        prompt_tokens=_field(resp, "prompt_eval_count"),
+        prompt_ms=_ns_to_ms(_field(resp, "prompt_eval_duration")),
+        output_tokens=_field(resp, "eval_count"),
+        generation_ms=_ns_to_ms(_field(resp, "eval_duration")),
+    )
 
 
 class LLM(Protocol):
@@ -85,7 +119,8 @@ class OllamaLLM:
                 )
                 obj = schema.model_validate_json(resp["message"]["content"])
                 latency = int((time.perf_counter() - start) * 1000)
-                return obj, CallMeta(self.model_name, prompt_id, prompt_version, latency, attempt)
+                timings = timings_from_response(resp)
+                return obj, CallMeta(self.model_name, prompt_id, prompt_version, latency, attempt, timings)
             except ValidationError as e:  # malformed JSON: retry
                 last_error = e
             except Exception as e:  # timeout, connection refused, model not pulled...

@@ -114,3 +114,32 @@ def test_ollama_llm_warm_up_success_and_failure(monkeypatch):
 def test_fake_llm_warm_up():
     fake = FakeLLM({})
     assert fake.warm_up() == 0
+
+
+def test_ollama_llm_structured_reports_ollama_timings(monkeypatch):
+    pytest.importorskip("ollama")
+    import ollama
+
+    class FakeClient:
+        def __init__(self, host=None, timeout=None, **kwargs):
+            pass
+
+        def chat(self, **kwargs):
+            return {
+                "message": {"content": '{"answer": "ok"}'},
+                "prompt_eval_count": 800,
+                "prompt_eval_duration": 3_000_000_000,
+                "eval_count": 40,
+                "eval_duration": 2_000_000_000,
+                "load_duration": 1_000_000,
+            }
+
+    monkeypatch.setattr(ollama, "Client", FakeClient)
+    llm = OllamaLLM(model_name="m", host="http://127.0.0.1:11434", timeout_s=5.0)
+
+    _, meta = llm.structured(prompt_id="p", prompt_version="1", system="s", user="u", schema=_DummyResponse)
+
+    assert meta.timings.prompt_tokens == 800
+    assert meta.timings.prompt_ms == 3000
+    assert meta.timings.generation_ms == 2000
+    assert meta.timings.load_ms == 1
