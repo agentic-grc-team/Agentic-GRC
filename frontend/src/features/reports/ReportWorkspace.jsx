@@ -8,6 +8,7 @@ import {
   downloadReportPdf,
   getReportPreview,
 } from "./api.js";
+import GapList from "./GapList.jsx";
 import "./ReportWorkspace.css";
 
 const ASSESSMENT_STATUS_LABELS = {
@@ -529,6 +530,12 @@ export default function ReportWorkspace({
               </dd>
             </div>
           </dl>
+
+          <GapList
+            organizationId={selectedOrgId}
+            assessmentId={selectedAssessmentId}
+            accessToken={accessToken}
+          />
 
           <div className="report-section">
             <h3>Reviewed results</h3>

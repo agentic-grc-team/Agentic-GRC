@@ -5,6 +5,7 @@ import {
   DEMO_ASSESSMENT_ID,
   downloadReportJson,
   downloadReportPdf,
+  getGapList,
   getReportPreview,
 } from "./api.js";
 
@@ -32,6 +33,23 @@ describe("reports api", () => {
     const [, options] = fetch.mock.calls[0];
     expect(options.headers.get("Authorization")).toBe("Bearer test-token");
     expect(options.headers.get("Accept")).toBe("application/json");
+  });
+
+  it("calls getGapList with the encoded gaps path and bearer token", async () => {
+    fetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => ({ gaps: [] }),
+    });
+
+    const result = await getGapList("org 1", "assessment-1", "test-token");
+    expect(result).toEqual({ gaps: [] });
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/organizations/org%201/assessments/assessment-1/gaps",
+      expect.objectContaining({ credentials: "omit", headers: expect.any(Headers) })
+    );
+    const [, options] = fetch.mock.calls[0];
+    expect(options.headers.get("Authorization")).toBe("Bearer test-token");
   });
 
   it("calls downloadReportPdf with pdf url, headers, and returns blob with parsed filename", async () => {

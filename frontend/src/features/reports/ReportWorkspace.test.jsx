@@ -16,6 +16,12 @@ vi.mock("./api.js", async (importOriginal) => ({
   getReportPreview: vi.fn(),
   downloadReportPdf: vi.fn(),
   downloadReportJson: vi.fn(),
+  getGapList: vi.fn().mockResolvedValue({
+    gaps: [],
+    pending_controls: 0,
+    rules_provisional: true,
+    rules_version: "0.1",
+  }),
 }));
 
 vi.mock("../organizations/api.js", () => ({

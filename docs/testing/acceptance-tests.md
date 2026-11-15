@@ -42,9 +42,9 @@ Recorded runs:
 
 Story: as a security officer at the assessed organization, I want to see the gaps ordered by criticality, so that I know where to start when I cannot tackle them all.
 
-Implementation: risk classification (#47, `backend/app/services/risk_classification.py`) and the gap list (`GET /api/v1/organizations/{organization_id}/assessments/{assessment_id}/gaps`, `backend/app/services/gaps.py`) · Test file: `backend/tests/acceptance/test_hu17_gaps_ordered_by_criticality.py` · Unit tests: `backend/tests/test_risk_classification.py`, `backend/tests/test_gaps.py`
+Jira: AGRC-95 · Implementation: risk classification (#47, `backend/app/services/risk_classification.py`) and the gap list (`GET /api/v1/organizations/{organization_id}/assessments/{assessment_id}/gaps`, `backend/app/services/gaps.py`) and its screen on the Report page (`frontend/src/features/reports/GapList.jsx`) · Test file: `backend/tests/acceptance/test_hu17_gaps_ordered_by_criticality.py` · Unit tests: `backend/tests/test_risk_classification.py`, `backend/tests/test_gaps.py`
 
-A gap is a control whose final result is partially implemented or not implemented. The final result is decided exactly as in the report (HU-21): only results confirmed by a consultant count, so the gap list and the report never disagree, and an agent draft that has not been reviewed is not a gap yet. Access is the same as for the report: active members of the organization and platform administrators.
+A gap is a control whose final result is partially implemented or not implemented. The final result is decided exactly as in the report (HU-21): only results confirmed by a consultant count, so the gap list and the report never disagree, and an agent draft that has not been reviewed is not a gap yet. Access is the same as for the report: active members of the organization, including its representatives (the security officers of this story), and platform administrators. Anyone else gets 404 and no data, as in HU-04 AC 1.
 
 The classification follows Aligo's classification guide (handover `06_classification`). Priority (Critical, High, Medium, Low) belongs to the control, not to its status. Each gap carries one or more named risks, and each risk has a fixed severity (Extreme, High, Medium, Low). The current rules for PR.AA-01, PR.AA-03 and PR.AA-05 are provisional: the PO confirmed them for the Alpha and the Beta, and they stay marked as provisional until Aligo confirms them.
 
@@ -71,8 +71,9 @@ Each test was also checked against a deliberately broken implementation (not ass
 Not covered yet:
 
 - The gap list is built from the final control results. When the HU-16 gap findings exist, they become its input, and the classification is then recorded as a decision of each finding (`finding_generated` with `rule:risk-classification`). Until then, every gap is traceable through the rule id and version in the response and the control result version it names.
+- Not assessed controls are not gaps, but they stay in the report's reviewed results, where they remain visible for human review.
 - Only the four risks with a severity in Aligo's materials are assigned (Unauthorized access, System compromise, Privilege escalation, Improper assignment of privileged functions). The other four risk names in the guide wait for Aligo to give their severity.
-- There is no screen for the gap list yet; it is available through the API.
+- The gap list is shown on the Report page ("Gaps by criticality", `frontend/src/features/reports/GapList.jsx`). Its screen tests are in `GapList.test.jsx`; the acceptance tests above check the API it reads.
 
 Recorded runs:
 
