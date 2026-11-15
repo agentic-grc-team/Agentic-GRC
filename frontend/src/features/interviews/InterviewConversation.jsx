@@ -193,9 +193,13 @@ export default function InterviewConversation({
         )}
       </header>
 
-      <InterviewAvatar
-        state={isSending ? "processing" : isTyping && awaitingAnswer ? "typing" : "idle"}
-      />
+      <div className="interview-layout">
+        <div className="interview-avatar-panel">
+          <InterviewAvatar
+            state={isSending ? "processing" : isTyping && awaitingAnswer ? "typing" : "idle"}
+          />
+        </div>
+        <div className="interview-chat-panel">
 
       <ol className="interview-turns" role="log" aria-label="Interview conversation" aria-live="polite">
         {turns.map((turn) => (
@@ -237,7 +241,7 @@ export default function InterviewConversation({
       )}
       {isSending && (
         <p className="interview-status" role="status">
-          The assistant is reviewing your answer…
+          Thinking… The assistant is reviewing your answer.
           <span className="interview-status-hint" aria-hidden="true">
             {" "}{waitSeconds}s · this usually takes 20–40 seconds
           </span>
@@ -278,6 +282,8 @@ export default function InterviewConversation({
           )}
         </form>
       )}
+        </div>
+      </div>
     </section>
   );
 }

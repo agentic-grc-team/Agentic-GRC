@@ -8,6 +8,7 @@ export default function InterviewAvatar({ state }) {
   const [blinkReady, setBlinkReady] = useState(false);
   const [mouthReady, setMouthReady] = useState(false);
   const [smileReady, setSmileReady] = useState(false);
+  const [thinkingReady, setThinkingReady] = useState(false);
 
   useEffect(() => {
     if (!blinkReady || imageFailed) return;
@@ -43,18 +44,20 @@ export default function InterviewAvatar({ state }) {
     };
   }, [blinkReady, imageFailed]);
 
-  const attentive = state === "typing" || state === "processing";
+  const thinking = state === "processing";
+  const showThinkingPose = thinking && thinkingReady;
+  const attentive = state === "typing" || thinking;
   if (imageFailed) return null;
 
   return (
     <div className={`interview-avatar-figure interview-avatar-${state}`} aria-hidden="true">
       <div className="interview-avatar-backdrop" />
 
-      <div className="interview-avatar-portrait">
+      <div className={`interview-avatar-portrait ${showThinkingPose ? "has-thinking-pose" : ""}`}>
         <img
           className="interview-avatar-base interview-avatar-body"
           onError={() => setImageFailed(true)}
-          src={assetUrl("avatars/interview-guide.png")}
+          src={assetUrl("avatars/interview-guide.webp")}
           alt=""
           draggable="false"
         />
@@ -62,13 +65,13 @@ export default function InterviewAvatar({ state }) {
         <div className="interview-avatar-head-motion">
           <img
             className="interview-avatar-base"
-            src={assetUrl("avatars/interview-guide.png")}
+            src={assetUrl("avatars/interview-guide.webp")}
             alt=""
             draggable="false"
           />
           <img
             className={`interview-avatar-face-layer interview-avatar-mouth ${smileReady ? "is-visible" : ""}`}
-            src={assetUrl("avatars/interview-guide-smile.png")}
+            src={assetUrl("avatars/interview-guide-smile.webp")}
             alt=""
             draggable="false"
             onLoad={() => setSmileReady(true)}
@@ -78,7 +81,7 @@ export default function InterviewAvatar({ state }) {
             className={`interview-avatar-face-layer interview-avatar-mouth ${
               attentive && mouthReady ? "is-visible" : ""
             }`}
-            src={assetUrl("avatars/interview-guide-attentive.png")}
+            src={assetUrl("avatars/interview-guide-attentive.webp")}
             alt=""
             draggable="false"
             onLoad={() => setMouthReady(true)}
@@ -89,13 +92,24 @@ export default function InterviewAvatar({ state }) {
             className={`interview-avatar-face-layer interview-avatar-blink ${
               blinking && blinkReady ? "is-visible" : ""
             }`}
-            src={assetUrl("avatars/interview-guide-blink.png")}
+            src={assetUrl("avatars/interview-guide-blink.webp")}
             alt=""
             draggable="false"
             onLoad={() => setBlinkReady(true)}
             onError={() => setBlinkReady(false)}
           />
         </div>
+        {thinking && (
+          <img
+            className={`interview-avatar-thinking-pose ${thinkingReady ? "is-visible" : ""}`}
+            src={assetUrl("avatars/interview-guide-thinking.webp")}
+            alt=""
+            draggable="false"
+            decoding="async"
+            onLoad={() => setThinkingReady(true)}
+            onError={() => setThinkingReady(false)}
+          />
+        )}
       </div>
     </div>
   );

@@ -674,3 +674,57 @@ a.rail-navigation-item { text-decoration: none; }
 .review-trace-sources { margin: 8px 0 0; padding-left: 18px; font-size: 12px; }
 .review-trace-sources blockquote { margin: 6px 0; padding-left: 12px; border-left: 2px solid var(--mint); white-space: pre-wrap; }
 .report-download-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Keep the navigation compact while the interview workspace is active. */
+.app-rail,
+.app-main {
+  transition: width 180ms ease, margin-left 180ms ease;
+}
+
+.app-shell.is-interview-active .app-rail {
+  width: 76px;
+  padding-inline: 12px;
+}
+
+.app-shell.is-interview-active .app-main {
+  margin-left: 76px;
+}
+
+.app-shell.is-interview-active .brand-lockup {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.app-shell.is-interview-active .brand-name,
+.app-shell.is-interview-active .rail-label,
+.app-shell.is-interview-active .rail-bottom > div:not(.rail-help-mark) {
+  display: none;
+}
+
+.app-shell.is-interview-active .rail-navigation-item {
+  position: relative;
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.app-shell.is-interview-active .rail-navigation-item > span:not(.rail-current-icon):not(.rail-active-dot) {
+  display: none;
+}
+
+.app-shell.is-interview-active .rail-navigation-item .rail-active-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin: 0;
+}
+
+.app-shell.is-interview-active .rail-bottom {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+@media (max-width: 700px) {
+  .app-shell.is-interview-active .app-rail { width: 54px; }
+  .app-shell.is-interview-active .app-main { margin-left: 0; }
+}

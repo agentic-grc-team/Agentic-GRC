@@ -50,3 +50,19 @@ python -m app.cli init-interview-checkpointer
 Checkpoint threads use the assessment session UUID. Graph state must be JSON-compatible, use the restricted MsgPack serializer, and contain no credentials. Checkpoints are working memory, not the canonical record of answers or findings. They contain conversation state and are subject to the same production-data gate and future retention/deletion policy as interview turns.
 
 The backend defaults `INTERVIEW_DATA_MODE` to `synthetic`. `approved_anonymized` requires `INTERVIEW_ANONYMIZED_DATA_APPROVED=true`. `real` fails settings validation unless transfer, retention, deletion, redaction, storage, and topology gates are each explicitly enabled. These switches record deployment approvals; they do not replace the required written approval in [ADR 0003](../docs/decisions/0003-interview-data-governance.md).
+
+## Self-hosted PostgreSQL (Beta VM)
+
+On a plain PostgreSQL, `auth.users` is only the stub from `tests/sql/supabase_auth_stub.sql`; it keeps
+no passwords, and authentication stays in Supabase. Setup order:
+
+1. Create the role and the database.
+2. Run `tests/sql/supabase_auth_stub.sql` once (the only use of that file outside tests), then
+   `deploy/vm/postgres/auth-users-grants.sql`.
+3. `alembic upgrade head`.
+4. Set `AUTH_MIRROR_LOCAL_IDENTITIES=true`. After Supabase verifies a user's token, the API writes a
+   minimal `auth.users` row (id, email, confirmation time) in the same transaction as the profile.
+   The mirror grants nothing: memberships, roles and `is_platform_admin` stay in `public.*`. If the
+   flag is on against a database that has `auth.schema_migrations` (real Supabase), nothing is
+   written and the API answers 503.
+5. Sign in once as the future admin, then run `python -m app.cli bootstrap-admin`.
