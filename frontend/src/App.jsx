@@ -10,6 +10,7 @@ import ExpertReviewWorkspace from "./features/expertReviews/ExpertReviewWorkspac
 import InterviewWorkspace from "./features/interviews/InterviewWorkspace.jsx";
 import ReportWorkspace from "./features/reports/ReportWorkspace.jsx";
 import AssessmentWorkspace from "./features/assessments/AssessmentWorkspace.jsx";
+import { currentAppPath, toBrowserPath } from "./basePath.js";
 
 const EVIDENCE_PATH = "/evidence";
 const organizationRoleLabels = {
@@ -214,7 +215,7 @@ function App() {
   } = useAuth();
   const [apiStatus, setApiStatus] = useState("checking");
   const [currentView, setCurrentView] = useState("organizations");
-  const [pathname, setPathname] = useState(window.location.pathname);
+  const [pathname, setPathname] = useState(currentAppPath);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
   const [reviewOrganizationId, setReviewOrganizationId] = useState("");
   const [interviewAssessmentId, setInterviewAssessmentId] = useState("");
@@ -226,7 +227,7 @@ function App() {
     : EVIDENCE_PATH;
 
   useEffect(() => {
-    const syncPath = () => setPathname(window.location.pathname);
+    const syncPath = () => setPathname(currentAppPath());
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
@@ -236,8 +237,8 @@ function App() {
   }, [isExpertReview]);
 
   function navigate(path) {
-    window.history.pushState({}, "", path);
-    setPathname(window.location.pathname);
+    window.history.pushState({}, "", toBrowserPath(path));
+    setPathname(currentAppPath());
   }
 
   function navLink(path) {
@@ -272,8 +273,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (window.location.pathname === "/auth/callback" && !isLoading && user) {
-      window.history.replaceState({}, document.title, "/");
+    if (currentAppPath() === "/auth/callback" && !isLoading && user) {
+      window.history.replaceState({}, document.title, toBrowserPath("/"));
     }
   }, [isLoading, user]);
 
@@ -290,18 +291,18 @@ function App() {
     signOut();
   }
 
-  if (window.location.pathname === "/invite/accept") {
+  if (currentAppPath() === "/invite/accept") {
     return <InvitationActivation />;
   }
 
-  if (window.location.pathname === "/auth/callback" && isLoading) {
+  if (currentAppPath() === "/auth/callback" && isLoading) {
     return <div className="loading-screen" role="status"><span className="loading-orb" />Completing secure sign-in…</div>;
   }
 
   return (
     <main className="app-shell">
       <aside className="app-rail">
-        <a className="brand-lockup" href="/" aria-label="Agentic GRC home">
+        <a className="brand-lockup" href={toBrowserPath("/")} aria-label="Agentic GRC home">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span className="brand-name">AGENTIC<span>GRC</span><small>RISK INTELLIGENCE</small></span>
         </a>
