@@ -294,12 +294,14 @@ def test_expert_review_modify_creates_new_version(db):
 
 
 def test_expert_review_queue_excludes_other_organizations(db):
-    org_a, user_a, _, _, result_a, _ = make_review_context(db)
+    org_a, user_a, assessment_a, _, result_a, _ = make_review_context(db)
     org_b, user_b, _, _, result_b, _ = make_review_context(db)
 
     pending = list_pending_reviews(db, user_a)
 
     assert [item.result_id for item in pending] == [str(result_a.id)]
+    assert pending[0].organization_id == str(org_a.id)
+    assert pending[0].assessment_title == assessment_a.title
 
     with pytest.raises(HTTPException) as error:
         save_review_decision(

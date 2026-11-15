@@ -92,6 +92,7 @@ def run_model(model: str, cases: list[dict], kb, settings: Settings, repeat: int
         retries=0,  # generous timeout: we measure, not enforce
         keep_alive=settings.llm_keep_alive,
         num_predict=settings.llm_num_predict,
+        api_key=settings.ollama_api_key,
     )
     cold_load_ms = llm.warm_up()
     hits = {f: [0, 0] for f in FIELDS}
