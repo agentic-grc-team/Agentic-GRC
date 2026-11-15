@@ -2,6 +2,8 @@
 
 The Beta runs on two virtual machines reached through the bastion `pai.udea.edu.co:22666`.
 Login stays on Supabase Auth. The files referenced below are in [`deploy/vm/`](../deploy/vm/).
+Day-to-day operations (logs, restarts, troubleshooting, backups and recovery) are in
+[`runbook-vm.md`](runbook-vm.md).
 
 | VM | Runs |
 |---|---|
