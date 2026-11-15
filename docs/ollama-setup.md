@@ -111,6 +111,10 @@ The benchmark also outputs a Markdown row that can be pasted directly into the t
 
 A shorter-output interpret prompt (0.4.0: word limits on `summary`, `key_quote` and `rationale`) was tried on 2026-10-24 and reverted, because action accuracy fell to 22/24. Both misses were MFA cases (`mfa-partial-detailed`, `mfa-followup-resolves-to-detailed`), and MFA is the first question of the demo. The alpha keeps the 0.3.0 prompt.
 
+A narrower variant (0.3.1: a 12-word limit on `rationale` only, the one free-text field with no guidance) was tried on 2026-11-13 on the M4 Mac, 3 runs, and reverted. Action accuracy fell to 23/24 in every run (`offboarding-no-process` became `partial` → follow-up instead of `no` → close) and category accuracy fell from 86% to 76%. It only cut `interpret_answer` output from 115 to 99 tokens (p50), and the turn time varied more between runs of the same prompt than between prompts. Conclusion: with llama3.1:8b, changing the free-text field guidance changes how it classifies, so output length is not a safe latency lever.
+
+The benchmark prints where the time goes ("Where the time goes" section, also in the results JSON): on the M4 Mac, generation is 88–89% of call time and prompt reading 11%, so shorter prompts would barely help there. On slower hardware (e.g. the Tesla M10), run the benchmark before choosing a lever.
+
 ## 6. Troubleshooting
 
 - **Connection refused (`ConnectionError` / `Failed to connect`)**:
