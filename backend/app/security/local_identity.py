@@ -10,6 +10,7 @@ memberships, roles and platform-admin rights stay in public.* with their own che
 """
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -17,7 +18,8 @@ from app.security.supabase import SupabaseIdentity
 
 
 class LocalIdentityMirrorRefused(RuntimeError):
-    """The mirror is enabled but the database looks like a real Supabase project."""
+    """The mirror is enabled but cannot run: the database looks like a real Supabase project, or the
+    app role cannot write auth.users (for example, the INSERT/UPDATE grant was not applied)."""
 
 
 _MIRROR_SQL = text(
@@ -48,4 +50,9 @@ def mirror_verified_identity(identity: SupabaseIdentity, db: Session, settings: 
         raise LocalIdentityMirrorRefused(
             "AUTH_MIRROR_LOCAL_IDENTITIES must be false when the database is Supabase."
         )
-    db.execute(_MIRROR_SQL, {"id": identity.id, "email": identity.email})
+    try:
+        db.execute(_MIRROR_SQL, {"id": identity.id, "email": identity.email})
+    except DBAPIError as exc:
+        # Typically "permission denied for table users": the flag was enabled before
+        # deploy/vm/postgres/auth-users-grants.sql granted INSERT/UPDATE. The caller rolls back.
+        raise LocalIdentityMirrorRefused("Could not write the local auth.users row.") from exc

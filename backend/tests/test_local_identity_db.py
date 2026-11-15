@@ -91,3 +91,26 @@ def test_without_the_mirror_a_new_user_is_rejected(db):
 
     assert response.value.status_code == 401
     assert auth_rows(db, identity.id) == []
+
+
+def test_missing_grant_returns_503_and_leaves_no_rows(db):
+    """The flag enabled before the INSERT/UPDATE grant on auth.users: 503, not a generic 500."""
+    if not db.scalar(text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")):
+        pytest.skip("Needs a superuser connection to create a temporary role (as in CI).")
+    role = f"no_auth_write_{uuid.uuid4().hex[:8]}"
+    # Same privileges the Beta app role had before the grant: read and reference auth.users only.
+    db.execute(text(f'CREATE ROLE "{role}"'))
+    db.execute(text(f'GRANT USAGE ON SCHEMA auth TO "{role}"'))
+    db.execute(text(f'GRANT SELECT, REFERENCES ON auth.users TO "{role}"'))
+    db.execute(text(f'GRANT USAGE ON SCHEMA public TO "{role}"'))
+    db.execute(text(f'GRANT SELECT, INSERT, UPDATE ON public.users TO "{role}"'))
+    db.execute(text(f'SET LOCAL ROLE "{role}"'))
+    identity = new_identity()
+
+    with pytest.raises(HTTPException) as response:
+        _profile_for_identity(identity, db, mirror_settings(True))
+
+    assert response.value.status_code == 503
+    # The rollback also undid SET LOCAL ROLE, so this check runs with full privileges again.
+    assert auth_rows(db, identity.id) == []
+    assert db.get(User, identity.id) is None

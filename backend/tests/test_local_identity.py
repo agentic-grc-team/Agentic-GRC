@@ -55,6 +55,16 @@ class MirrorVerifiedIdentityTests(unittest.TestCase):
         self.assertEqual(params, {"id": self.identity.id, "email": "user@example.com"})
         self.db.commit.assert_not_called()
 
+    def test_database_error_on_write_is_refused(self) -> None:
+        from sqlalchemy.exc import ProgrammingError
+
+        self.db.scalar.return_value = False
+        self.db.execute.side_effect = ProgrammingError(
+            "INSERT INTO auth.users", {}, Exception("permission denied for table users")
+        )
+        with self.assertRaises(LocalIdentityMirrorRefused):
+            mirror_verified_identity(self.identity, self.db, settings(True))
+
     def test_refuses_to_write_on_supabase(self) -> None:
         self.db.scalar.return_value = True
         with self.assertRaises(LocalIdentityMirrorRefused):
