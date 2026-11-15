@@ -46,8 +46,10 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
    sudo -u postgres psql -d agentic_grc -f backend/tests/sql/supabase_auth_stub.sql
    sudo -u postgres psql -d agentic_grc -f deploy/vm/postgres/auth-users-grants.sql
    ```
-5. Insert every Beta user into `auth.users`, with the `id` and `email` from Supabase
-   (*Authentication → Users*). `public.users` has a foreign key to it.
+5. With `AUTH_MIRROR_LOCAL_IDENTITIES=true` (the default in `backend.env.example`) the API writes a
+   user's `auth.users` row on their first login, after Supabase has verified them, so nothing has to
+   be inserted by hand. Without it, insert every Beta user into `auth.users` with the `id` and
+   `email` from Supabase (*Authentication → Users*): `public.users` has a foreign key to it.
 6. Install the backup: [`scripts/agentic-grc-backup`](../deploy/vm/scripts/agentic-grc-backup) to
    `/usr/local/bin/`, the two `agentic-grc-backup.*` units to `/etc/systemd/system/`, then
    `sudo install -d -m 700 -o postgres -g postgres /var/backups/agentic-grc` and
