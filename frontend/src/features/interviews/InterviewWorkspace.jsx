@@ -213,7 +213,7 @@ export default function InterviewWorkspace({
   }
 
   return (
-    <section className="interview-workspace">
+    <section className={`interview-workspace ${interview ? "is-interview-active" : ""}`}>
       <p className="eyebrow">ASSESSMENT INTERVIEW</p>
       <h1>Interview</h1>
       <p className="interview-intro">

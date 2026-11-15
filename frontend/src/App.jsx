@@ -300,7 +300,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${currentView === "interview" ? "is-interview-active" : ""}`}>
       <aside className="app-rail">
         <a className="brand-lockup" href={toBrowserPath("/")} aria-label="Agentic GRC home">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
@@ -315,6 +315,7 @@ function App() {
           onClick={() => showView("organizations")}
           disabled={!user?.accessToken}
           aria-label="Client onboarding"
+          title="Client onboarding"
           aria-current={!isEvidencePage && currentView === "organizations" ? "page" : undefined}
         >
           <span className="rail-current-icon" aria-hidden="true">⌂</span>
@@ -328,6 +329,7 @@ function App() {
           onClick={() => showView("assessments")}
           disabled={!user?.accessToken}
           aria-label="Assessments"
+          title="Assessments"
           aria-current={!isEvidencePage && currentView === "assessments" ? "page" : undefined}
         >
           <span className="rail-current-icon" aria-hidden="true">◇</span>
@@ -341,6 +343,7 @@ function App() {
           onClick={() => showView("interview")}
           disabled={!user?.accessToken}
           aria-label="Interview"
+          title="Interview"
           aria-current={!isEvidencePage && currentView === "interview" ? "page" : undefined}
         >
           <span className="rail-current-icon" aria-hidden="true">✎</span>
@@ -354,6 +357,7 @@ function App() {
           onClick={() => showView("expert-reviews")}
           disabled={!user?.accessToken}
           aria-label="Expert reviews"
+          title="Expert reviews"
           aria-current={!isEvidencePage && currentView === "expert-reviews" ? "page" : undefined}
         >
           <span className="rail-current-icon" aria-hidden="true">✓</span>
@@ -367,6 +371,7 @@ function App() {
           onClick={() => showView("reports")}
           disabled={!user?.accessToken}
           aria-label="Reports"
+          title="Reports"
           aria-current={!isEvidencePage && currentView === "reports" ? "page" : undefined}
         >
           <span className="rail-current-icon" aria-hidden="true">▤</span>
@@ -380,6 +385,7 @@ function App() {
             href={evidencePath}
             onClick={navLink(evidencePath)}
             aria-label="Evidence upload"
+            title="Evidence upload"
             aria-current={isEvidencePage ? "page" : undefined}
           >
             <span className="rail-current-icon" aria-hidden="true">⇪</span>

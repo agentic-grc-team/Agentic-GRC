@@ -181,9 +181,13 @@ export default function InterviewConversation({
         )}
       </header>
 
-      <InterviewAvatar
-        state={isSending ? "processing" : isTyping && awaitingAnswer ? "typing" : "idle"}
-      />
+      <div className="interview-layout">
+        <div className="interview-avatar-panel">
+          <InterviewAvatar
+            state={isSending ? "processing" : isTyping && awaitingAnswer ? "typing" : "idle"}
+          />
+        </div>
+        <div className="interview-chat-panel">
 
       <ol className="interview-turns" role="log" aria-label="Interview conversation" aria-live="polite">
         {turns.map((turn) => (
@@ -224,7 +228,7 @@ export default function InterviewConversation({
         />
       )}
       {isSending && (
-        <p className="interview-status" role="status">The assistant is reviewing your answer…</p>
+        <p className="interview-status" role="status">Thinking… The assistant is reviewing your answer.</p>
       )}
       {error && <p className="inline-error" role="alert">{error}</p>}
 
@@ -261,6 +265,8 @@ export default function InterviewConversation({
           )}
         </form>
       )}
+        </div>
+      </div>
     </section>
   );
 }
