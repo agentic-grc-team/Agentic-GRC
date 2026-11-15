@@ -1,4 +1,6 @@
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "");
+import { DEFAULT_API_BASE_URL } from "../basePath.js";
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/$/, "");
 
 export class ApiError extends Error {
   constructor(status, body) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.js";
+import { toBrowserPath } from "../basePath.js";
 import { acceptInvitationProfile } from "./api.js";
 import { useAuth } from "./AuthProvider.jsx";
 
@@ -69,12 +70,12 @@ export default function InvitationActivation() {
         {!token ? (
           <>
             <p className="login-description">This link is missing its invitation token. Open the full link from your email or ask an administrator to send a new invitation.</p>
-            <a className="secondary-button" href="/">Return to sign in</a>
+            <a className="secondary-button" href={toBrowserPath("/")}>Return to sign in</a>
           </>
         ) : isAccepted ? (
           <>
             <p className="alert alert-success" role="status">Your account is ready for {acceptedEmail}.</p>
-            <a className="primary-button activation-continue" href="/">Continue to your workspace</a>
+            <a className="primary-button activation-continue" href={toBrowserPath("/")}>Continue to your workspace</a>
           </>
         ) : (
           <>
@@ -111,7 +112,7 @@ export default function InvitationActivation() {
                 {!isSubmitting && <span aria-hidden="true">→</span>}
               </button>
             </form>
-            {(error.includes("already exists") || error.includes("Please sign in")) && <a className="text-button activation-signin-link" href="/">Go to sign in</a>}
+            {(error.includes("already exists") || error.includes("Please sign in")) && <a className="text-button activation-signin-link" href={toBrowserPath("/")}>Go to sign in</a>}
           </>
         )}
       </div>

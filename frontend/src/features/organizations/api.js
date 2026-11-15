@@ -5,6 +5,10 @@ export function listOrganizations(accessToken, { activeMembershipsOnly = false }
   return apiRequest(path, { accessToken });
 }
 
+export function getOrganization(organizationId, accessToken) {
+  return apiRequest(`/organizations/${encodeURIComponent(organizationId)}`, { accessToken });
+}
+
 export function uploadEvidence(organizationId, file, accessToken, signal, assessmentId = "", interviewContext,) {
   const body = new FormData();
   body.append("organization_id", organizationId);

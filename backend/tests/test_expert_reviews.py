@@ -16,6 +16,7 @@ from app.security.auth import get_current_user
 
 
 RESULT_ID = UUID("00000000-0000-4000-8000-000000000011")
+ORGANIZATION_ID = UUID("00000000-0000-4000-8000-000000000014")
 ASSESSMENT_ID = UUID("00000000-0000-4000-8000-000000000012")
 USER_ID = UUID("00000000-0000-4000-8000-000000000013")
 
@@ -43,6 +44,7 @@ def api_context(monkeypatch):
         return_value=[
             ReviewItem(
                 result_id=str(RESULT_ID),
+                organization_id=str(ORGANIZATION_ID),
                 assessment_id=str(ASSESSMENT_ID),
                 control_code="PR.AA-03",
                 control_title="Users, services, and hardware are authenticated",
@@ -94,6 +96,7 @@ def test_lists_pending_reviews(api_context):
     reviews = response.json()
     assert len(reviews) == 1
     assert reviews[0]["result_id"] == str(RESULT_ID)
+    assert reviews[0]["organization_id"] == str(ORGANIZATION_ID)
     assert reviews[0]["control_code"] == "PR.AA-03"
 
     context.list_reviews.assert_called_once_with(

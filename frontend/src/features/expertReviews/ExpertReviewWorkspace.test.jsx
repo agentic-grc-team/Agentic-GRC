@@ -30,6 +30,7 @@ vi.mock("./api.js", () => ({
 
 const pendingReview = {
   result_id: "result-demo-001",
+  organization_id: "org-demo",
   assessment_id: "assessment-demo-001",
   control_code: "PR.AA-03",
   control_title: "Users, services, and hardware are authenticated",
@@ -84,6 +85,45 @@ describe("ExpertReviewWorkspace", () => {
 
     expect(listPendingReviews).toHaveBeenCalledWith(
       "test-token",
+    );
+  });
+
+  it("selects a result in another assessment and submits only that result", async () => {
+    const onOrganizationChange = vi.fn();
+    const otherResult = {
+      ...pendingReview,
+      result_id: "result-other",
+      organization_id: "org-other",
+      assessment_id: "assessment-other",
+      assessment_title: "Control Label Test",
+      control_code: "PR.AA-05",
+      control_title: "Access permissions",
+    };
+    listPendingReviews.mockResolvedValue([
+      { ...pendingReview, assessment_title: "Alpha Demo" },
+      otherResult,
+    ]);
+    render(<ExpertReviewWorkspace accessToken="test-token" onOrganizationChange={onOrganizationChange} />);
+
+    await screen.findByRole("heading", { name: "PR.AA-03" });
+    fireEvent.change(screen.getByLabelText("Review comment"), {
+      target: { value: "Comment for the first result" },
+    });
+    expect(screen.getByRole("group", { name: "Control Label Test" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Pending result"), {
+      target: { value: otherResult.result_id },
+    });
+
+    expect(screen.getByRole("heading", { name: "PR.AA-05" })).toBeInTheDocument();
+    expect(onOrganizationChange).toHaveBeenLastCalledWith(otherResult.organization_id);
+    expect(screen.getByLabelText("Review comment")).toHaveValue("");
+    expect(getReviewEvidence).toHaveBeenLastCalledWith(otherResult.result_id, "test-token");
+    expect(submitReviewDecision).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(await screen.findByRole("heading", { name: "PR.AA-03" })).toBeInTheDocument();
+    expect(submitReviewDecision).toHaveBeenCalledWith(
+      otherResult.result_id, "accepted", "", "test-token",
     );
   });
 

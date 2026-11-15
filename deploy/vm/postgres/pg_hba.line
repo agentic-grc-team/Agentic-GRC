@@ -1,0 +1,3 @@
+# Append to /etc/postgresql/<version>/main/pg_hba.conf on the database VM.
+# Only the app VM, only over SSL, only this database and role.
+hostssl agentic_grc agentic_grc <APP_VM_IPV6>/128 scram-sha-256

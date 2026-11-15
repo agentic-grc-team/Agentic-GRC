@@ -16,7 +16,9 @@ ControlStatus = Literal[
 
 class ReviewItem(BaseModel):
     result_id: str
+    organization_id: str
     assessment_id: str
+    assessment_title: str | None = None
     control_code: str
     control_title: str
     control_status: str

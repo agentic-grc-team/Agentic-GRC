@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "./InterviewAvatar.css";
+import { assetUrl } from "../../basePath.js";
 
 export default function InterviewAvatar({ state }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -53,7 +54,7 @@ export default function InterviewAvatar({ state }) {
         <img
           className="interview-avatar-base interview-avatar-body"
           onError={() => setImageFailed(true)}
-          src="/avatars/interview-guide.png"
+          src={assetUrl("avatars/interview-guide.png")}
           alt=""
           draggable="false"
         />
@@ -61,13 +62,13 @@ export default function InterviewAvatar({ state }) {
         <div className="interview-avatar-head-motion">
           <img
             className="interview-avatar-base"
-            src="/avatars/interview-guide.png"
+            src={assetUrl("avatars/interview-guide.png")}
             alt=""
             draggable="false"
           />
           <img
             className={`interview-avatar-face-layer interview-avatar-mouth ${smileReady ? "is-visible" : ""}`}
-            src="/avatars/interview-guide-smile.png"
+            src={assetUrl("avatars/interview-guide-smile.png")}
             alt=""
             draggable="false"
             onLoad={() => setSmileReady(true)}
@@ -77,7 +78,7 @@ export default function InterviewAvatar({ state }) {
             className={`interview-avatar-face-layer interview-avatar-mouth ${
               attentive && mouthReady ? "is-visible" : ""
             }`}
-            src="/avatars/interview-guide-attentive.png"
+            src={assetUrl("avatars/interview-guide-attentive.png")}
             alt=""
             draggable="false"
             onLoad={() => setMouthReady(true)}
@@ -88,7 +89,7 @@ export default function InterviewAvatar({ state }) {
             className={`interview-avatar-face-layer interview-avatar-blink ${
               blinking && blinkReady ? "is-visible" : ""
             }`}
-            src="/avatars/interview-guide-blink.png"
+            src={assetUrl("avatars/interview-guide-blink.png")}
             alt=""
             draggable="false"
             onLoad={() => setBlinkReady(true)}

@@ -38,6 +38,50 @@ Recorded runs:
 | 2026-11-01 | Local, PostgreSQL 16, all migrations | 4 passed |
 | 2026-11-09 | CI (Backend tests job), PostgreSQL 16, all migrations (Sprint 5 main) | 4 passed |
 
+## HU-17 — See the gaps ordered by criticality
+
+Story: as a security officer at the assessed organization, I want to see the gaps ordered by criticality, so that I know where to start when I cannot tackle them all.
+
+Jira: AGRC-95 · Implementation: risk classification (#47, `backend/app/services/risk_classification.py`) and the gap list (`GET /api/v1/organizations/{organization_id}/assessments/{assessment_id}/gaps`, `backend/app/services/gaps.py`) and its screen on the Report page (`frontend/src/features/reports/GapList.jsx`) · Test file: `backend/tests/acceptance/test_hu17_gaps_ordered_by_criticality.py` · Unit tests: `backend/tests/test_risk_classification.py`, `backend/tests/test_gaps.py`
+
+A gap is a control whose final result is partially implemented or not implemented. The final result is decided exactly as in the report (HU-21): only results confirmed by a consultant count, so the gap list and the report never disagree, and an agent draft that has not been reviewed is not a gap yet. Access is the same as for the report: active members of the organization, including its representatives (the security officers of this story), and platform administrators. Anyone else gets 404 and no data, as in HU-04 AC 1.
+
+The classification follows Aligo's classification guide (handover `06_classification`). Priority (Critical, High, Medium, Low) belongs to the control, not to its status. Each gap carries one or more named risks, and each risk has a fixed severity (Extreme, High, Medium, Low). The current rules for PR.AA-01, PR.AA-03 and PR.AA-05 are provisional: the PO confirmed them for the Alpha and the Beta, and they stay marked as provisional until Aligo confirms them.
+
+In the tests the assessment is created through the API. AC 3 follows the whole flow: the representative answers in the interview, the agent saves a draft and the consultant accepts it. The other criteria give the controls their final results directly, as a consultant version would. The language model is replaced by a deterministic fake.
+
+| AC | Given / When / Then | Test | Result |
+| --- | --- | --- | --- |
+| 1 | **Given** an assessment with control results, **when** the security officer views the gaps, **then** only controls whose result is partially implemented or not implemented are listed as gaps, and implemented, not applicable and not assessed controls are not. | `test_hu17_ac1_only_partially_or_not_implemented_controls_are_gaps` | Pass |
+| 2 | **Given** several gaps, **when** the security officer views them, **then** they are ordered by priority (Critical first), then by their most severe risk (Extreme first), then not implemented before partially implemented, then by control code, and the order is the same every time. | `test_hu17_ac2_gaps_are_ordered_by_criticality_the_same_way_every_time` | Pass |
+| 3 | **Given** a gap, **when** the security officer views it, **then** it shows its priority, its risks with their severity and the reason for the priority, it is marked as provisional while the rules are provisional, and it identifies the control result it is based on. | `test_hu17_ac3_each_gap_shows_its_classification_and_what_it_is_based_on` | Pass |
+| 4 | **Given** a gap whose control has no classification rule, **when** the gaps are listed, **then** that gap is shown as not classified, without an invented priority, and the other gaps are still listed in order. | `test_hu17_ac4_a_control_without_a_rule_is_shown_as_not_classified` | Pass |
+| 5 | **Given** a user without access to the organization or assessment, **when** they request the gaps, **then** access is denied and no gap data is disclosed. | `test_hu17_ac5_users_without_access_get_no_gap_data` | Pass |
+
+What each test checks:
+
+1. With implemented, not assessed and partially implemented results, only the partially implemented control is a gap. In a second assessment, not applicable is not a gap and not implemented is.
+2. With the current rules (all three High, each with an Extreme risk), the not implemented gap comes first, then the others by control code, and a second request gives the same order. Raising one control to Critical puts it first. With equal priority, the gap whose worst risk is only High comes after the ones with an Extreme risk.
+3. Before the consultant reviews the agent's draft, the list is empty and the control counts as pending. After the consultant accepts it, the gap shows the rule's priority, its risks sorted from the most severe, the reason, `rules_provisional: true` and `rule:risk-classification`, and it names the result it rests on: version 1, an accepted agent result.
+4. With the rule for PR.AA-01 removed, its gap is listed last with no priority, risks or reason, and the other two gaps keep their order.
+5. A consultant of another organization and a suspended consultant get 404 with no gap data. Asking with the outsider's own organization and this assessment's id also returns 404.
+
+Each test was also checked against a deliberately broken implementation (not assessed counted as a gap, no ordering, a missing rule failing the list, no membership check, always citing version 1, unreviewed drafts counted as gaps); the matching test failed every time.
+
+Not covered yet:
+
+- The gap list is built from the final control results. When the HU-16 gap findings exist, they become its input, and the classification is then recorded as a decision of each finding (`finding_generated` with `rule:risk-classification`). Until then, every gap is traceable through the rule id and version in the response and the control result version it names.
+- Not assessed controls are not gaps, but they stay in the report's reviewed results, where they remain visible for human review.
+- Only the four risks with a severity in Aligo's materials are assigned (Unauthorized access, System compromise, Privilege escalation, Improper assignment of privileged functions). The other four risk names in the guide wait for Aligo to give their severity.
+- The gap list is shown on the Report page ("Gaps by criticality", `frontend/src/features/reports/GapList.jsx`). The page does not call `/gaps`: the report preview (`GET .../report`) carries the same list as `gap_list`, built from the same report view in the same request, so the list and the report on screen always agree. The PDF and JSON exports do not include it. Its screen tests are in `GapList.test.jsx`; the acceptance tests above check the `/gaps` API, which applies the same rules.
+- A rule that names a risk without a confirmed severity is treated like a missing rule: the gap is listed as not classified instead of failing the list.
+
+Recorded runs:
+
+| Date | Where | Result |
+| --- | --- | --- |
+| 2026-11-15 | CI (Backend tests job), PostgreSQL 16, all migrations | 5 passed |
+
 ## HU-25 — Inspect reasoning traces and source references
 
 Jira: AGRC-82 · Task: AGRC-65 · Implementation: AGRC-60 (trace view), AGRC-72 (persisted trace references) · Test file: `backend/tests/acceptance/test_hu25_inspect_reasoning_trace.py`
