@@ -1,0 +1,21 @@
+# /etc/systemd/system/agentic-grc-api.service on the app VM.
+[Unit]
+Description=Agentic GRC API (FastAPI)
+After=network-online.target ollama.service
+Wants=network-online.target ollama.service
+
+[Service]
+User=agrc
+Group=agrc
+# Uploaded evidence is written to ./uploaded_evidence, so it lands here (back it up).
+WorkingDirectory=/var/lib/agentic-grc
+Environment=AGRC_ENV_FILE=/etc/agentic-grc/backend.env
+Environment=PYTHONPATH=/opt/agentic-grc/backend
+ExecStart=/opt/agentic-grc/.venv/bin/uvicorn app.main:app --app-dir /opt/agentic-grc/backend --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+# Load the model into GPU memory after a reboot (a failure does not stop the API).
+ExecStartPost=-/opt/agentic-grc/.venv/bin/python -m app.cli warm-up-model
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

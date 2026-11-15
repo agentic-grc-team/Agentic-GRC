@@ -1,9 +1,10 @@
 import { ApiError, apiRequest } from "../../api/client.js";
+import { DEFAULT_API_BASE_URL } from "../../basePath.js";
 
 export const DEMO_ASSESSMENT_ID = "00000000-0000-4000-8000-000000000014";
 
 // Duplicated from client.js so client.js is not modified
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "");
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/$/, "");
 
 function reportPath(organizationId, assessmentId) {
   return `/organizations/${encodeURIComponent(organizationId)}/assessments/${encodeURIComponent(assessmentId)}/report`;
