@@ -13,6 +13,7 @@ from app.schemas.auth import AuthenticatedUser, CurrentUserResponse
 from app.schemas.organizations import InvitationAccept, InvitationAccepted
 from app.security.auth import get_current_user
 from app.security.invitations import hash_invitation_token
+from app.security.local_identity import LocalIdentityMirrorRefused, mirror_verified_identity
 from app.security.supabase import (
     SupabaseUnavailable,
     SupabaseUserAlreadyExists,
@@ -82,6 +83,7 @@ def accept_invitation_and_create_profile(
                 detail="Supabase did not confirm the invited account as expected.",
             )
 
+        mirror_verified_identity(identity, db, settings)
         user = User(id=identity.id, email=identity.email)
         db.add(user)
         db.flush()
@@ -134,6 +136,14 @@ def accept_invitation_and_create_profile(
         if created_auth_user_id is not None:
             _remove_orphan_auth_user(created_auth_user_id, settings)
         raise
+    except LocalIdentityMirrorRefused as exc:
+        db.rollback()
+        if created_auth_user_id is not None:
+            _remove_orphan_auth_user(created_auth_user_id, settings)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is misconfigured.",
+        ) from exc
     except IntegrityError as exc:
         db.rollback()
         if created_auth_user_id is not None:

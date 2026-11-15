@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_db_session
 from app.core.config import Settings, get_settings
 from app.db.models import User
+from app.security.local_identity import LocalIdentityMirrorRefused, mirror_verified_identity
 from app.security.supabase import (
     SupabaseIdentity,
     SupabaseInvalidToken,
@@ -26,7 +27,22 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def _profile_for_identity(identity: SupabaseIdentity, db: Session) -> User:
+def _misconfigured() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Authentication is misconfigured.",
+    )
+
+
+def _mirror_or_fail(identity: SupabaseIdentity, db: Session, settings: Settings) -> None:
+    try:
+        mirror_verified_identity(identity, db, settings)
+    except LocalIdentityMirrorRefused as exc:
+        db.rollback()
+        raise _misconfigured() from exc
+
+
+def _profile_for_identity(identity: SupabaseIdentity, db: Session, settings: Settings) -> User:
     if not identity.email_verified:
         raise _unauthorized()
 
@@ -37,6 +53,7 @@ def _profile_for_identity(identity: SupabaseIdentity, db: Session) -> User:
         )
         if conflicting_user is not None:
             raise _unauthorized()
+        _mirror_or_fail(identity, db, settings)
         user = User(id=identity.id, email=identity.email)
         db.add(user)
         try:
@@ -50,6 +67,7 @@ def _profile_for_identity(identity: SupabaseIdentity, db: Session) -> User:
     elif user.deactivated_at is not None:
         raise _unauthorized()
     elif user.email != identity.email:
+        _mirror_or_fail(identity, db, settings)
         user.email = identity.email
         try:
             db.commit()
@@ -77,7 +95,7 @@ def _load_user_from_token(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Supabase Auth is temporarily unavailable.",
         ) from exc
-    return _profile_for_identity(identity, db)
+    return _profile_for_identity(identity, db, settings)
 
 
 def get_current_user(
