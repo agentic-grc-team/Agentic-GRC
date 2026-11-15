@@ -61,7 +61,9 @@ def test_turn_latency_adds_an_llm_call_only_when_the_real_flow_makes_one(monkeyp
     calls = []
 
     class FakeOllama:
-        def __init__(self, model, host, timeout_s, retries=1, keep_alive="30m", num_predict=320):
+        def __init__(
+            self, model, host, timeout_s, retries=1, keep_alive="30m", num_predict=320, api_key=None
+        ):
             self.model_name = model
             self._interpretations = iter(interpretations)
             self._follow_ups = 0
