@@ -136,6 +136,26 @@ cd backend && sudo -u agrc env AGRC_ENV_FILE=/etc/agentic-grc/backend.env ../.ve
 sudo systemctl restart agentic-grc-api
 ```
 
+The installed nginx site and systemd units are copies, so a `git pull` does not change them. When a
+merge touches `deploy/vm/`, apply it on the VM (review the diff first: `git diff HEAD@{1} -- deploy/vm`):
+
+```bash
+# nginx (fill <SUPABASE_PROJECT_REF> again in the installed copy)
+sudo cp deploy/vm/nginx/agentic-grc.conf /etc/nginx/sites-available/agentic-grc
+sudo sed -i 's/<SUPABASE_PROJECT_REF>/<your-project-ref>/g' /etc/nginx/sites-available/agentic-grc
+sudo nginx -t && sudo systemctl reload nginx
+
+# systemd units (app VM)
+sudo cp deploy/vm/systemd/ollama.service deploy/vm/systemd/agentic-grc-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart ollama agentic-grc-api      # the API reloads the model (~45 s)
+
+# new variables in deploy/vm/backend.env.example: add them to /etc/agentic-grc/backend.env by hand
+diff <(grep -oE '^[A-Z_]+=' deploy/vm/backend.env.example | sort) <(sudo grep -oE '^[A-Z_]+=' /etc/agentic-grc/backend.env | sort)
+```
+
+Then run the checks in section 3 and sign in through the public URL.
+
 ## Notes
 
 - **Benchmarks on the VM** (`scripts/benchmark_models.py`) load the model with a 30 min keep-alive.
