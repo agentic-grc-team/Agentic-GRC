@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     smtp_timeout_seconds: int = 10
     allow_demo_report: bool = False
+    # Self-hosted PostgreSQL only: mirror Supabase-verified users into the local auth.users stub.
+    auth_mirror_local_identities: bool = False
 
     @field_validator("supabase_url")
     @classmethod
