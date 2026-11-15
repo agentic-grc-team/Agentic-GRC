@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas.report import ControlStatus, FinalBasis
+from app.schemas.report import ControlStatus, FinalBasis, ReportView
 
 
 class GapRisk(BaseModel):
@@ -38,5 +38,15 @@ class GapList(BaseModel):
     rules_version: str
     rules_provisional: bool
     gaps: list[Gap]
-    # Controls without a reviewed result yet. They are not gaps until a consultant has confirmed them.
+    # Controls without a final result yet (no result, awaiting review, or rejected or modified and
+    # waiting for a new version). They are not gaps until a consultant has confirmed them.
     pending_controls: int
+
+
+class ReportPreview(ReportView):
+    """The report page's data: the report view plus the gap list built from that same view.
+
+    Only the on-screen preview carries the gap list. The PDF and JSON exports keep ReportView.
+    """
+
+    gap_list: GapList

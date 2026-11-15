@@ -13,11 +13,6 @@ export function getReportPreview(organizationId, assessmentId, accessToken) {
   return apiRequest(reportPath(organizationId, assessmentId), { accessToken });
 }
 
-export function getGapList(organizationId, assessmentId, accessToken) {
-  const path = `/organizations/${encodeURIComponent(organizationId)}/assessments/${encodeURIComponent(assessmentId)}/gaps`;
-  return apiRequest(path, { accessToken });
-}
-
 async function downloadReportFile(organizationId, assessmentId, accessToken, { extension, accept }) {
   const headers = new Headers();
   headers.set("Accept", accept);

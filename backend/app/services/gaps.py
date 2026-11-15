@@ -13,7 +13,7 @@ priority. When the HU-16 gap findings exist, they can replace the control result
 from datetime import datetime
 
 from app.schemas.gaps import Gap, GapList, GapRisk
-from app.schemas.report import ReportInput
+from app.schemas.report import ReportInput, ReportView
 from app.services.reports.builder import build_report_view
 from app.services.risk_classification import (
     GAP_STATUS_ORDER,
@@ -25,8 +25,16 @@ from app.services.risk_classification import (
 )
 
 
-def build_gap_list(data: ReportInput, generated_at: datetime) -> GapList:
-    view = build_report_view(data, generated_at)
+def build_gap_list(
+    data: ReportInput, generated_at: datetime, view: ReportView | None = None
+) -> GapList:
+    """The gap list of an assessment.
+
+    Pass the view when the report view of the same data is already built, so it is not built
+    twice and the gap list is guaranteed to match it.
+    """
+    if view is None:
+        view = build_report_view(data, generated_at)
     latest_version = {
         control.code: max(version.version_no for version in control.versions)
         for control in data.controls

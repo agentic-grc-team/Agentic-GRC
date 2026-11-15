@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_db_session
-from app.api.v1.endpoints.reports import _load_report_input
+from app.api.v1.report_access import load_report_input
 from app.db.models import User
 from app.schemas.gaps import GapList
 from app.security.auth import get_current_user
@@ -27,5 +27,5 @@ def get_gap_list_endpoint(
     source: ReportDataSource = Depends(get_report_source),
 ) -> GapList:
     # Same access rule and data as the report: active members of the organization and platform admins.
-    data = _load_report_input(organization_id, assessment_id, user, db, source)
+    data = load_report_input(organization_id, assessment_id, user, db, source)
     return build_gap_list(data, datetime.now(timezone.utc))

@@ -73,7 +73,8 @@ Not covered yet:
 - The gap list is built from the final control results. When the HU-16 gap findings exist, they become its input, and the classification is then recorded as a decision of each finding (`finding_generated` with `rule:risk-classification`). Until then, every gap is traceable through the rule id and version in the response and the control result version it names.
 - Not assessed controls are not gaps, but they stay in the report's reviewed results, where they remain visible for human review.
 - Only the four risks with a severity in Aligo's materials are assigned (Unauthorized access, System compromise, Privilege escalation, Improper assignment of privileged functions). The other four risk names in the guide wait for Aligo to give their severity.
-- The gap list is shown on the Report page ("Gaps by criticality", `frontend/src/features/reports/GapList.jsx`). Its screen tests are in `GapList.test.jsx`; the acceptance tests above check the API it reads.
+- The gap list is shown on the Report page ("Gaps by criticality", `frontend/src/features/reports/GapList.jsx`). The page does not call `/gaps`: the report preview (`GET .../report`) carries the same list as `gap_list`, built from the same report view in the same request, so the list and the report on screen always agree. The PDF and JSON exports do not include it. Its screen tests are in `GapList.test.jsx`; the acceptance tests above check the `/gaps` API, which applies the same rules.
+- A rule that names a risk without a confirmed severity is treated like a missing rule: the gap is listed as not classified instead of failing the list.
 
 Recorded runs:
 

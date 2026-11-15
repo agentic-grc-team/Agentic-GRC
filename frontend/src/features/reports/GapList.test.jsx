@@ -1,13 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
-import { getGapList } from "./api.js";
 import GapList from "./GapList.jsx";
-
-vi.mock("./api.js", async (importOriginal) => ({
-  ...(await importOriginal()),
-  getGapList: vi.fn(),
-}));
 
 const gapList = {
   organization_id: "org-1",
@@ -52,14 +46,12 @@ const gapList = {
   ],
 };
 
-function renderGapList() {
-  return render(<GapList organizationId="org-1" assessmentId="assessment-1" accessToken="token-1" />);
+function renderGapList(list = gapList) {
+  return render(<GapList gapList={list} />);
 }
 
 describe("GapList", () => {
   it("lists the gaps in the order the API returns them, with their classification", async () => {
-    getGapList.mockResolvedValueOnce(gapList);
-
     renderGapList();
 
     const table = await screen.findByRole("table", { name: "Gaps by criticality" });
@@ -75,12 +67,9 @@ describe("GapList", () => {
     ).toBeInTheDocument();
     expect(within(rows[0]).getByText("Based on version 1 · accepted agent result")).toBeInTheDocument();
     expect(within(rows[1]).getByText("PR.AA-01")).toBeInTheDocument();
-    expect(getGapList).toHaveBeenCalledWith("org-1", "assessment-1", "token-1");
   });
 
   it("shows a gap without a rule as not classified, without inventing a priority", async () => {
-    getGapList.mockResolvedValueOnce(gapList);
-
     renderGapList();
 
     const table = await screen.findByRole("table", { name: "Gaps by criticality" });
@@ -91,9 +80,7 @@ describe("GapList", () => {
     expect(within(unclassified).queryByText(/High|Critical|Medium|Low/)).not.toBeInTheDocument();
   });
 
-  it("says that the rules are provisional and how many controls are still pending review", async () => {
-    getGapList.mockResolvedValueOnce(gapList);
-
+  it("says that the rules are provisional and how many controls have no final result yet", async () => {
     renderGapList();
 
     expect(
@@ -101,56 +88,21 @@ describe("GapList", () => {
         "Priorities and risks follow Aligo's classification guide and are provisional until Aligo confirms them (rules 0.1)."
       )
     ).toBeInTheDocument();
-    expect(screen.getByText("1 control(s) still pending expert review are not included.")).toBeInTheDocument();
+    expect(screen.getByText("1 control(s) without a final reviewed result yet are not included.")).toBeInTheDocument();
   });
 
   it("says so when there are no gaps and hides the provisional note when the rules are confirmed", async () => {
-    getGapList.mockResolvedValueOnce({ ...gapList, gaps: [], pending_controls: 0, rules_provisional: false });
-
-    renderGapList();
+    renderGapList({ ...gapList, gaps: [], pending_controls: 0, rules_provisional: false });
 
     expect(await screen.findByText("No gaps among the reviewed results.")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByText(/provisional/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/pending expert review/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/without a final reviewed result/)).not.toBeInTheDocument();
   });
 
-  it("shows an error with a retry, and loads the list again on retry", async () => {
-    getGapList.mockRejectedValueOnce(Object.assign(new Error("Server error"), { status: 500 }));
-    getGapList.mockResolvedValueOnce(gapList);
+  it("renders nothing without a gap list", () => {
+    const { container } = render(<GapList gapList={undefined} />);
 
-    renderGapList();
-
-    const alert = await screen.findByRole("alert");
-    expect(within(alert).getByText("Server error")).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-
-    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
-
-    expect(await screen.findByRole("table", { name: "Gaps by criticality" })).toBeInTheDocument();
-    expect(getGapList).toHaveBeenCalledTimes(2);
-  });
-
-  it("asks the user to sign in again when the session has expired", async () => {
-    getGapList.mockRejectedValueOnce(Object.assign(new Error("Unauthorized"), { status: 401 }));
-
-    renderGapList();
-
-    expect(await screen.findByText("Your session has expired. Sign in again to continue.")).toBeInTheDocument();
-  });
-
-  it("does not reload the list when only the access token is refreshed", async () => {
-    getGapList.mockResolvedValue(gapList);
-
-    const { rerender } = renderGapList();
-    await screen.findByRole("table", { name: "Gaps by criticality" });
-
-    rerender(<GapList organizationId="org-1" assessmentId="assessment-1" accessToken="token-2" />);
-    await waitFor(() => expect(getGapList).toHaveBeenCalledTimes(1));
-
-    // A different assessment loads its own list with the latest token.
-    rerender(<GapList organizationId="org-1" assessmentId="assessment-2" accessToken="token-2" />);
-    await waitFor(() => expect(getGapList).toHaveBeenCalledTimes(2));
-    expect(getGapList).toHaveBeenLastCalledWith("org-1", "assessment-2", "token-2");
+    expect(container).toBeEmptyDOMElement();
   });
 });

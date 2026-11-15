@@ -12,6 +12,7 @@ from app.schemas.report import (
     ResultVersion,
 )
 from app.services.gaps import build_gap_list
+from app.services.reports.builder import build_report_view
 from app.services.risk_classification import (
     CONTROL_RULES,
     RULE_ID,
@@ -206,3 +207,36 @@ def test_no_results_give_no_gaps():
 
     assert gap_list.gaps == []
     assert gap_list.pending_controls == 2
+
+
+def test_a_rule_naming_a_risk_without_severity_is_not_classified_instead_of_failing(
+    monkeypatch,
+):
+    monkeypatch.setitem(
+        CONTROL_RULES,
+        "PR.AA-01",
+        ControlRule(
+            priority="High", risks=("Unaddressed vulnerabilities",), reason="Test rule."
+        ),
+    )
+    data = report_input(
+        **{
+            "PR.AA-01": [consultant_version("not_implemented")],
+            "PR.AA-03": [consultant_version("not_implemented")],
+        }
+    )
+
+    gap_list = build_gap_list(data, NOW)
+
+    assert codes(gap_list) == ["PR.AA-03", "PR.AA-01"]
+    assert gap_list.gaps[1].classified is False
+    assert gap_list.gaps[1].priority is None
+
+
+def test_the_gap_list_reuses_a_given_report_view():
+    data = report_input(**{"PR.AA-03": [consultant_version("not_implemented")]})
+    view = build_report_view(data, NOW)
+    # Remove the result from the view: the gap list must follow the view it is given.
+    view = view.model_copy(update={"results": []})
+
+    assert build_gap_list(data, NOW, view=view).gaps == []

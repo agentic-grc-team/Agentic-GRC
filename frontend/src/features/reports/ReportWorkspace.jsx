@@ -531,11 +531,7 @@ export default function ReportWorkspace({
             </div>
           </dl>
 
-          <GapList
-            organizationId={selectedOrgId}
-            assessmentId={selectedAssessmentId}
-            accessToken={accessToken}
-          />
+          <GapList gapList={preview.gap_list} />
 
           <div className="report-section">
             <h3>Reviewed results</h3>
