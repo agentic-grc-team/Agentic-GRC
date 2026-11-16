@@ -282,3 +282,29 @@
     flex: 1 1 auto;
   }
 }
+
+.report-linked-evidence {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-linked-evidence li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+
+.report-linked-evidence-name {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.report-linked-evidence-meta {
+  color: var(--muted);
+  font: 10px var(--mono);
+}

@@ -827,6 +827,58 @@ describe("ReportWorkspace", () => {
     expect(within(row2).queryByText("Evidence pending")).not.toBeInTheDocument();
   });
 
+  it("lists the evidence files linked to a final result as not yet verified", async () => {
+    getReportPreview.mockResolvedValueOnce({
+      ...mockReportView,
+      results: [
+        {
+          ...mockReportView.results[0],
+          linked_evidence: [
+            {
+              id: "file-1",
+              file_name: "conditional-access-mfa.pdf",
+              file_type: "PDF",
+              size_bytes: 120400,
+              sha256: "a".repeat(64),
+              uploaded_at: "2026-11-16T01:45:00Z",
+              verification: "not_verified",
+              verification_label: "Not yet verified by Aligo",
+              linked_at: "2026-11-16T01:45:00Z",
+              added_after_review: false,
+            },
+            {
+              id: "file-2",
+              file_name: "conditional-access-mfa.pdf",
+              file_type: "PDF",
+              size_bytes: 120400,
+              sha256: "a".repeat(64),
+              uploaded_at: "2026-11-17T09:00:00Z",
+              verification: "not_verified",
+              verification_label: "Not yet verified by Aligo",
+              linked_at: "2026-11-17T09:00:00Z",
+              added_after_review: true,
+            },
+          ],
+        },
+        mockReportView.results[1],
+      ],
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const table = await screen.findByRole("table", { name: "Reviewed results" });
+    const files = within(table).getByRole("list", {
+      name: `Evidence files for ${mockReportView.results[0].code}`,
+    });
+    // The same file uploaded twice is listed twice, and the later upload says it came after the review.
+    expect(within(files).getAllByText("conditional-access-mfa.pdf")).toHaveLength(2);
+    expect(within(files).getByText("PDF · Not yet verified by Aligo")).toBeInTheDocument();
+    expect(within(files).getByText("PDF · Not yet verified by Aligo · Added after the review")).toBeInTheDocument();
+
+    const otherRow = within(table).getByText(mockReportView.results[1].code).closest("tr");
+    expect(within(otherRow).queryByRole("list")).not.toBeInTheDocument();
+  });
+
   it("renders the 'Final results with evidence pending' summary tile", async () => {
     const { unmount } = render(<ReportWorkspace accessToken="test-token" />);
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
