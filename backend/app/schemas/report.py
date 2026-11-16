@@ -87,11 +87,15 @@ class LinkedEvidenceFile(BaseModel):
     so they support a result without changing its evidence_pending flag.
     """
 
+    id: UUID  # the evidence file's id: stable even when the same file is uploaded twice
     file_name: str
     file_type: str  # extension in upper case, e.g. "PDF"
     size_bytes: int = Field(ge=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     uploaded_at: datetime
+    linked_at: datetime  # when the file was linked to the control
+    # True when the file was linked after the result was reviewed, so the reviewer did not see it.
+    added_after_review: bool = False
     verification: LinkedEvidenceVerification = "not_verified"
     verification_label: str = LINKED_EVIDENCE_VERIFICATION_LABELS["not_verified"]
 

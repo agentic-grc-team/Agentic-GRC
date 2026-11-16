@@ -835,6 +835,7 @@ describe("ReportWorkspace", () => {
           ...mockReportView.results[0],
           linked_evidence: [
             {
+              id: "file-1",
               file_name: "conditional-access-mfa.pdf",
               file_type: "PDF",
               size_bytes: 120400,
@@ -842,6 +843,20 @@ describe("ReportWorkspace", () => {
               uploaded_at: "2026-11-16T01:45:00Z",
               verification: "not_verified",
               verification_label: "Not yet verified by Aligo",
+              linked_at: "2026-11-16T01:45:00Z",
+              added_after_review: false,
+            },
+            {
+              id: "file-2",
+              file_name: "conditional-access-mfa.pdf",
+              file_type: "PDF",
+              size_bytes: 120400,
+              sha256: "a".repeat(64),
+              uploaded_at: "2026-11-17T09:00:00Z",
+              verification: "not_verified",
+              verification_label: "Not yet verified by Aligo",
+              linked_at: "2026-11-17T09:00:00Z",
+              added_after_review: true,
             },
           ],
         },
@@ -855,8 +870,10 @@ describe("ReportWorkspace", () => {
     const files = within(table).getByRole("list", {
       name: `Evidence files for ${mockReportView.results[0].code}`,
     });
-    expect(within(files).getByText("conditional-access-mfa.pdf")).toBeInTheDocument();
+    // The same file uploaded twice is listed twice, and the later upload says it came after the review.
+    expect(within(files).getAllByText("conditional-access-mfa.pdf")).toHaveLength(2);
     expect(within(files).getByText("PDF · Not yet verified by Aligo")).toBeInTheDocument();
+    expect(within(files).getByText("PDF · Not yet verified by Aligo · Added after the review")).toBeInTheDocument();
 
     const otherRow = within(table).getByText(mockReportView.results[1].code).closest("tr");
     expect(within(otherRow).queryByRole("list")).not.toBeInTheDocument();

@@ -677,13 +677,17 @@ def test_pdf_special_characters_render_valid_pdf():
     assert "<script> & </b>" in text
 
 
-def _linked_file(name: str = "conditional-access-mfa.pdf") -> LinkedEvidenceFile:
+def _linked_file(
+    name: str = "conditional-access-mfa.pdf", linked_at: datetime = FIXED_DT
+) -> LinkedEvidenceFile:
     return LinkedEvidenceFile(
+        id=uuid4(),
         file_name=name,
         file_type="PDF",
         size_bytes=120_400,
         sha256="b" * 64,
-        uploaded_at=FIXED_DT,
+        uploaded_at=linked_at,
+        linked_at=linked_at,
     )
 
 
@@ -719,6 +723,33 @@ def test_builder_final_result_carries_linked_evidence_and_keeps_evidence_pending
     # An uploaded file is not verified yet, so the statement-based flag stays.
     assert result.evidence_pending is True
     assert view.summary.final_with_evidence_pending == 1
+
+
+def test_builder_marks_files_linked_after_the_review():
+    before = _linked_file("before.pdf", linked_at=datetime(2026, 1, 15, 11, 0, tzinfo=timezone.utc))
+    at_review = _linked_file("at-review.pdf", linked_at=FIXED_DT)
+    after = _linked_file("after.pdf", linked_at=datetime(2026, 1, 16, 9, 0, tzinfo=timezone.utc))
+    view = build_report_view(
+        make_test_report_input(controls=[_accepted_control("PR.AA-03", [before, at_review, after])]),
+        FIXED_DT,
+    )
+
+    (result,) = view.results
+    assert [(f.file_name, f.added_after_review) for f in result.linked_evidence] == [
+        ("before.pdf", False),
+        ("at-review.pdf", False),
+        ("after.pdf", True),
+    ]
+
+
+def test_pdf_says_when_a_file_was_added_after_the_review():
+    after = _linked_file("after.pdf", linked_at=datetime(2026, 1, 16, 9, 0, tzinfo=timezone.utc))
+    view = build_report_view(make_test_report_input(controls=[_accepted_control("PR.AA-03", [after])]), FIXED_DT)
+    text = extract_pdf_text(render_report_pdf(view))
+
+    assert "added after the review" in text
+    # The upload time is shown with its time zone, like every other timestamp in the PDF.
+    assert "uploaded 2026-01-16 09:00 UTC" in text
 
 
 def test_builder_pending_control_does_not_expose_linked_evidence():

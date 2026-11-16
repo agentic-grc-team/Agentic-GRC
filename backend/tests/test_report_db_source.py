@@ -600,7 +600,14 @@ def test_accepted_agent_result_with_evidence_pending(db):
 
 
 def make_linked_file(
-    db: Session, organization: Organization, control: AssessmentControl, name: str, created_at: datetime
+    db: Session,
+    organization: Organization,
+    control: AssessmentControl,
+    name: str,
+    created_at: datetime,
+    *,
+    sha256: str | None = None,
+    linked_at: datetime | None = None,
 ) -> EvidenceFile:
     evidence = EvidenceFile(
         organization_id=organization.id,
@@ -610,7 +617,7 @@ def make_linked_file(
         content_type="application/pdf",
         file_extension=".pdf",
         size_bytes=2048,
-        sha256=uuid.uuid4().hex * 2,
+        sha256=sha256 or uuid.uuid4().hex * 2,
         extracted_text="SECRET EXTRACTED TEXT that must never reach the report.",
         created_at=created_at,
     )
@@ -622,6 +629,7 @@ def make_linked_file(
             assessment_id=control.assessment_id,
             assessment_control_id=control.id,
             evidence_file_id=evidence.id,
+            **({"created_at": linked_at} if linked_at is not None else {}),
         )
     )
     db.commit()
@@ -658,6 +666,32 @@ def test_linked_evidence_reaches_the_final_result_without_extracted_text(db):
     )
     assert "mfa-policy-v1.pdf" in pdf_text and "Not yet verified by Aligo" in pdf_text
     assert "SECRET EXTRACTED TEXT" not in pdf_text
+
+
+def test_linked_evidence_marks_files_linked_after_the_review_and_keeps_duplicates_apart(db):
+    org = make_organization(db)
+    reviewer = make_user(db)
+    assess = make_assessment(db, org)
+    control = make_control(db, org, assess, control_code="PR.AA-03")
+    result = make_result(db, org, control, control_status="implemented")
+    reviewed_at = datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc)
+    make_review(db, org, result, reviewer, outcome="accepted", reviewed_at=reviewed_at)
+    same_content = "c" * 64
+    first = make_linked_file(
+        db, org, control, "mfa.pdf", datetime(2026, 11, 9, tzinfo=timezone.utc),
+        sha256=same_content, linked_at=datetime(2026, 11, 9, tzinfo=timezone.utc),
+    )
+    second = make_linked_file(
+        db, org, control, "mfa.pdf", datetime(2026, 11, 16, tzinfo=timezone.utc),
+        sha256=same_content, linked_at=datetime(2026, 11, 16, tzinfo=timezone.utc),
+    )
+
+    view = build_report_view(DbReportSource().load(db, org.id, assess.id), datetime.now(timezone.utc))
+
+    files = view.results[0].linked_evidence
+    # The same file uploaded twice stays two entries, told apart by id.
+    assert [f.id for f in files] == [first.id, second.id]
+    assert [f.added_after_review for f in files] == [False, True]
 
 
 def test_linked_evidence_of_another_assessment_is_not_shown(db):

@@ -572,12 +572,13 @@ export default function ReportWorkspace({
                                 aria-label={`Evidence files for ${result.code}`}
                               >
                                 {result.linked_evidence.map((file) => (
-                                  <li key={file.sha256 + file.file_name}>
+                                  <li key={file.id}>
                                     <span className="report-linked-evidence-name">
                                       {file.file_name}
                                     </span>
                                     <span className="report-linked-evidence-meta">
                                       {file.file_type} · {file.verification_label}
+                                      {file.added_after_review && " · Added after the review"}
                                     </span>
                                   </li>
                                 ))}

@@ -377,9 +377,11 @@ def render_report_pdf(view: ReportView) -> bytes:
                     linked_text = (
                         f"[Uploaded file] {_escape(linked.file_name)} "
                         f"({_escape(linked.file_type)}, {_escape(_format_size(linked.size_bytes))}, "
-                        f"uploaded {linked.uploaded_at.strftime('%Y-%m-%d')})"
+                        f"uploaded {_fmt_timestamp(linked.uploaded_at)})"
                         f" — <i>{_escape(linked.verification_label)}</i>"
                     )
+                    if linked.added_after_review:
+                        linked_text += " — <i>added after the review</i>"
                     story.append(Paragraph(linked_text, body_style))
 
             story.append(Spacer(1, 6))

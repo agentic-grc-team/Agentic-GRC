@@ -414,6 +414,7 @@ def _linked_evidence_by_control(
             EvidenceFile.size_bytes,
             EvidenceFile.sha256,
             EvidenceFile.created_at,
+            EvidenceControlLink.created_at,
         )
         .join(
             EvidenceFile,
@@ -430,14 +431,16 @@ def _linked_evidence_by_control(
     ).all()
 
     linked: dict[UUID, list[LinkedEvidenceFile]] = {}
-    for control_id, _file_id, file_name, extension, size_bytes, sha256, uploaded_at in rows:
+    for control_id, file_id, file_name, extension, size_bytes, sha256, uploaded_at, linked_at in rows:
         linked.setdefault(control_id, []).append(
             LinkedEvidenceFile(
+                id=file_id,
                 file_name=file_name,
                 file_type=(extension or "").lstrip(".").upper() or "FILE",
                 size_bytes=size_bytes,
                 sha256=sha256,
                 uploaded_at=uploaded_at,
+                linked_at=linked_at,
             )
         )
     return linked
