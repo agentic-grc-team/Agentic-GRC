@@ -68,8 +68,10 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
    sudo git clone https://github.com/agentic-grc-team/Agentic-GRC.git /opt/agentic-grc
    sudo chown -R agrc:agrc /opt/agentic-grc
    # The system Python is 3.14; use 3.13 (as in CI) through uv, installed where agrc can read it.
-   # uv is installed for your user, and sudo resets PATH: call it by its full path.
-   UV=$(command -v uv)
+   # uv runs from your own user's install. If `command -v uv` prints nothing, install it first:
+   #   curl -LsSf https://astral.sh/uv/install.sh | sh    (then open a new shell)
+   # sudo resets PATH, so call uv by its full path.
+   UV=$(command -v uv) || echo "uv not found: install it first (see above)" >&2
    sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python "$UV" python install 3.13
    sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python "$UV" venv --seed --python 3.13 --python-preference only-managed /opt/agentic-grc/.venv
    sudo "$UV" pip install --python /opt/agentic-grc/.venv/bin/python -r /opt/agentic-grc/backend/requirements.txt
@@ -136,9 +138,11 @@ sudo reboot                                            # then the first line aga
 
 ```bash
 cd /opt/agentic-grc && sudo -u agrc git pull --ff-only   # run git as agrc: the repo belongs to it
-# the venv was created with uv as root (step 2), so install the same way, not with agrc's pip
-# sudo resets PATH, so pass uv's full path ("sudo: uv: command not found" otherwise)
-sudo "$(command -v uv)" pip install --python /opt/agentic-grc/.venv/bin/python -r backend/requirements.txt
+# the venv was created with uv as root (section 2, step 3), so install the same way, not with agrc's pip
+# sudo resets PATH, so pass uv's full path ("sudo: uv: command not found" otherwise);
+# uv must be installed for your user, as in section 2, step 3
+UV=$(command -v uv) || echo "uv not found: install it first (section 2, step 3)" >&2
+sudo "$UV" pip install --python /opt/agentic-grc/.venv/bin/python -r backend/requirements.txt
 sudo chown -R agrc:agrc /opt/agentic-grc/.venv
 cd backend && sudo -u agrc env AGRC_ENV_FILE=/etc/agentic-grc/backend.env ../.venv/bin/alembic upgrade head && cd ..
 # rebuild the frontend as in step 7, then:
@@ -146,7 +150,7 @@ sudo systemctl restart agentic-grc-api
 ```
 
 The installed nginx site and systemd units are copies, so a `git pull` does not change them. When a
-merge touches `deploy/vm/`, apply it on the VM (review the diff first: `git diff HEAD@{1} -- deploy/vm`):
+merge touches `deploy/vm/`, apply it on the VM (review the diff first, as `agrc` like the pull: `sudo -u agrc git diff HEAD@{1} -- deploy/vm`):
 
 ```bash
 # nginx (fill <SUPABASE_PROJECT_REF> again in the installed copy)
