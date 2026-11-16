@@ -29,6 +29,7 @@ from app.schemas.agent_results import AgentControlResult
 from app.schemas.decision_trace import DecisionTrace, TraceSource
 from app.schemas.interviews import InterviewTurnRead
 from app.services.agent_results import save_agent_result
+from app.services.assessment_status import accepts_interviews
 from app.services.decision_traces import record_interview_trace
 from app.services.langgraph_checkpointer import (
     interview_thread_config,
@@ -109,7 +110,7 @@ def _run_interview_graph(
             )
 
         context = _load_agent_context(db, interview_session)
-        if context.assessment.status != "in_progress":
+        if not accepts_interviews(context.assessment.status):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This assessment is no longer accepting interview answers.",

@@ -47,6 +47,7 @@ function assessment(id, title, organizationId = "org-1") {
     framework_version: "2.0",
     kb_version: "demo-0.2",
     status: "in_progress",
+    accepts_interviews: true,
     started_at: "2026-10-23T09:00:00Z",
   };
 }
@@ -312,8 +313,16 @@ describe("AssessmentWorkspace", () => {
     expect(onStartInterview).toHaveBeenCalledWith("org-1", "assess-1");
   });
 
-  it("offers no interview for an assessment that is not in progress", async () => {
-    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "completed" }]);
+  it("still offers the interview while results await review", async () => {
+    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "awaiting_review", accepts_interviews: true }]);
+    renderWorkspace({ onStartInterview: vi.fn() });
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    expect(screen.getByRole("button", { name: /Go to interview/ })).toBeInTheDocument();
+  });
+
+  it("offers no interview for a completed assessment", async () => {
+    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "completed", accepts_interviews: false }]);
     renderWorkspace({ onStartInterview: vi.fn() });
     await screen.findByRole("heading", { name: "Q3 baseline" });
 

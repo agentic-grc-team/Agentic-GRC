@@ -4,9 +4,10 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from app.services.assessment_scope import KB_SCOPES
+from app.services.assessment_status import accepts_interviews
 
 DEFAULT_KB_VERSION = "demo-0.2"   # the agent's provisional KB (app/agent/data/kb_demo.yaml) until E0-03
 
@@ -54,6 +55,12 @@ class AssessmentRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     created_at: datetime
+
+    @computed_field
+    @property
+    def accepts_interviews(self) -> bool:
+        """Whether participants may still open interviews and answer, so clients never re-derive it."""
+        return accepts_interviews(self.status)
 
 
 class AssessmentControlRead(BaseModel):

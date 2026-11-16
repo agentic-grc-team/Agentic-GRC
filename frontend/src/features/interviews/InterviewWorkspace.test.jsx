@@ -18,8 +18,8 @@ vi.mock("../organizations/api.js", () => ({ listOrganizations: vi.fn() }));
 
 const organizations = [{ id: "org-1", name: "Acme Corp" }];
 const assessments = [
-  { id: "assessment-1", title: "NIST CSF baseline", status: "in_progress" },
-  { id: "assessment-2", title: "Old assessment", status: "completed" },
+  { id: "assessment-1", title: "NIST CSF baseline", status: "in_progress", accepts_interviews: true },
+  { id: "assessment-2", title: "Old assessment", status: "completed", accepts_interviews: false },
 ];
 
 function turn(overrides) {
@@ -143,7 +143,7 @@ describe("InterviewWorkspace", () => {
     expect(upload).toHaveAccessibleDescription(/policy requiring MFA for administrator accounts/);
   });
 
-  it("only allows starting an interview for an assessment in progress", async () => {
+  it("does not allow starting an interview for a completed assessment", async () => {
     renderWorkspace();
 
     const assessmentSelect = await screen.findByLabelText("Assessment");
@@ -151,7 +151,7 @@ describe("InterviewWorkspace", () => {
     fireEvent.change(assessmentSelect, { target: { value: "assessment-2" } });
 
     expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
-    expect(screen.getByText(/Only assessments that are in progress/)).toBeInTheDocument();
+    expect(screen.getByText(/completed and no longer accepts interview answers/)).toBeInTheDocument();
   });
 
   it("saves an answer with the question it replies to and shows the follow-up", async () => {
@@ -196,14 +196,15 @@ describe("InterviewWorkspace", () => {
 
   it("uses the shared assessment status label for assessments awaiting review", async () => {
     listAssessments.mockResolvedValue([
-      { id: "review-1", title: "Review assessment", status: "awaiting_review" },
+      { id: "review-1", title: "Review assessment", status: "awaiting_review", accepts_interviews: true },
     ]);
     renderWorkspace();
 
     expect(await screen.findByRole("option", {
       name: "Review assessment · Awaiting review",
     })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
+    // A second participant can still answer while results await review.
+    expect(screen.queryByText(/no longer accepts interview answers/)).not.toBeInTheDocument();
   });
 
   it("does not send a blank answer", async () => {
@@ -447,7 +448,7 @@ describe("InterviewWorkspace", () => {
     openInterview.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
     listAssessments.mockResolvedValue([
       assessments[0],
-      { id: "assessment-3", title: "Second assessment", status: "in_progress" },
+      { id: "assessment-3", title: "Second assessment", status: "in_progress", accepts_interviews: true },
     ]);
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });

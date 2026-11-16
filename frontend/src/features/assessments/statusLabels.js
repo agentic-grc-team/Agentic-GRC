@@ -9,3 +9,9 @@ export const ASSESSMENT_STATUS_LABELS = {
 export function assessmentStatusLabel(status) {
   return ASSESSMENT_STATUS_LABELS[status] || status;
 }
+
+// The backend decides whether an assessment accepts interviews (accepts_interviews in the
+// assessment response), so the rule lives in one place: app/services/assessment_status.py.
+export function acceptsInterviews(assessment) {
+  return Boolean(assessment?.accepts_interviews);
+}

@@ -4,7 +4,7 @@ import { listOrganizations } from "../organizations/api.js";
 import { createAssessment, getAssessmentScope, listAssessments } from "./api.js";
 import AssessmentEvidence from "./AssessmentEvidence.jsx";
 import AssessmentScope from "./AssessmentScope.jsx";
-import { assessmentStatusLabel } from "./statusLabels.js";
+import { acceptsInterviews, assessmentStatusLabel } from "./statusLabels.js";
 import "./AssessmentWorkspace.css";
 
 // The backend lets administrators and consultants start an assessment (HU-04); every member can see its scope.
@@ -282,7 +282,7 @@ export default function AssessmentWorkspace({
         </label>
       )}
 
-      {onStartInterview && selectedAssessment?.status === "in_progress" && (
+      {onStartInterview && acceptsInterviews(selectedAssessment) && (
         <button
           className="primary-button assessment-interview-button"
           type="button"

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { listAssessments } from "../assessments/api.js";
-import { assessmentStatusLabel } from "../assessments/statusLabels.js";
+import { acceptsInterviews, assessmentStatusLabel } from "../assessments/statusLabels.js";
 import { listOrganizations } from "../organizations/api.js";
 import { getInterview, getKickoffStatus, openInterview } from "./api.js";
 import InterviewConversation from "./InterviewConversation.jsx";
@@ -114,7 +114,7 @@ export default function InterviewWorkspace({
   const selectedSession = kickoffStatus?.key === selectionKey ? kickoffStatus : null;
   const canOpen = !isStarting && Boolean(
     selectedAssessment && selectedSession &&
-    (selectedSession.session?.closed || selectedAssessment.status === "in_progress")
+    (selectedSession.session?.closed || acceptsInterviews(selectedAssessment))
   );
 
   useEffect(() => {
@@ -271,8 +271,12 @@ export default function InterviewWorkspace({
       {organizationId && assessmentsLoaded && !error && assessments.length === 0 && (
         <p className="interview-hint">This organization has no assessments yet.</p>
       )}
-      {selectedAssessment && selectedAssessment.status !== "in_progress" && (
-        <p className="interview-hint">Only assessments that are in progress accept interview answers.</p>
+      {selectedAssessment && !acceptsInterviews(selectedAssessment) && (
+        <p className="interview-hint">
+          {selectedAssessment.status === "completed"
+            ? "This assessment is completed and no longer accepts interview answers."
+            : "Only assessments that are in progress or awaiting review accept interview answers."}
+        </p>
       )}
 
       {interview && (
