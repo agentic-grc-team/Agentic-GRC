@@ -10,11 +10,12 @@ Evidence-pending rule:
     flag; until then the report must never present such a result as evidence-backed.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.schemas.report import (
     Exclusion,
     FinalResult,
+    LinkedEvidenceFile,
     PendingItem,
     ReportInput,
     ReportSummary,
@@ -23,6 +24,19 @@ from app.schemas.report import (
     STATUS_LABELS,
     PENDING_REASON_LABELS,
 )
+
+
+def _utc(ts: datetime) -> datetime:
+    # Naive datetimes are treated as already being in UTC, as in the PDF.
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+
+
+def _linked_for_review(files: list[LinkedEvidenceFile], reviewed_at: datetime) -> list[LinkedEvidenceFile]:
+    """The control's linked files, each marked when it was linked after the result was reviewed."""
+    return [
+        file.model_copy(update={"added_after_review": _utc(file.linked_at) > _utc(reviewed_at)})
+        for file in files
+    ]
 
 
 def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
@@ -75,6 +89,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
                         explanation=highest.explanation,
                         not_assessed_reason=highest.not_assessed_reason,
                         evidence=highest.evidence,
+                        linked_evidence=_linked_for_review(ctrl.linked_evidence, reviewed_at),
                         evidence_pending=highest.evidence_pending,
                     )
                 )
@@ -115,6 +130,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
                             explanation=highest.explanation,
                             not_assessed_reason=highest.not_assessed_reason,
                             evidence=highest.evidence,
+                            linked_evidence=_linked_for_review(ctrl.linked_evidence, reviewed_at),
                             evidence_pending=highest.evidence_pending,
                         )
                     )

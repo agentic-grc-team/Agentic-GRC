@@ -13,12 +13,15 @@ from app.db.models import (
     AssessmentControl,
     ControlResult,
     ControlResultReview,
+    EvidenceControlLink,
+    EvidenceFile,
     Organization,
 )
 from app.schemas.report import (
     AssessmentInfo,
     ControlInScope,
     EvidenceReference,
+    LinkedEvidenceFile,
     OrganizationInfo,
     ReportInput,
     ResultReview,
@@ -369,11 +372,16 @@ class DbReportSource:
             if result.assessment_control_id in versions_by_control_id:
                 versions_by_control_id[result.assessment_control_id].append(version)
 
+        linked_by_control_id = _linked_evidence_by_control(
+            db, organization_id, assessment_id, control_ids
+        )
+
         controls_in_scope = [
             ControlInScope(
                 code=control.control_code,
                 title=control.control_title,
                 versions=versions_by_control_id[control.id],
+                linked_evidence=linked_by_control_id.get(control.id, []),
             )
             for control in controls
         ]
@@ -385,6 +393,57 @@ class DbReportSource:
             controls=controls_in_scope,
             is_demo_data=False,
         )
+
+
+def _linked_evidence_by_control(
+    db: Session, organization_id: UUID, assessment_id: UUID, control_ids: list[UUID]
+) -> dict[UUID, list[LinkedEvidenceFile]]:
+    """Files linked to each control in scope, oldest first, in one query.
+
+    Both the link and the file are filtered by organization, so a file of another tenant can never
+    appear. Only metadata is read: the extracted text stays out of the report.
+    """
+    if not control_ids:
+        return {}
+    rows = db.execute(
+        select(
+            EvidenceControlLink.assessment_control_id,
+            EvidenceFile.id,
+            EvidenceFile.original_filename,
+            EvidenceFile.file_extension,
+            EvidenceFile.size_bytes,
+            EvidenceFile.sha256,
+            EvidenceFile.created_at,
+            EvidenceControlLink.created_at,
+        )
+        .join(
+            EvidenceFile,
+            (EvidenceFile.id == EvidenceControlLink.evidence_file_id)
+            & (EvidenceFile.organization_id == EvidenceControlLink.organization_id),
+        )
+        .where(
+            EvidenceControlLink.organization_id == organization_id,
+            EvidenceControlLink.assessment_id == assessment_id,
+            EvidenceControlLink.assessment_control_id.in_(control_ids),
+            EvidenceFile.organization_id == organization_id,
+        )
+        .order_by(EvidenceFile.created_at, EvidenceFile.original_filename, EvidenceFile.id)
+    ).all()
+
+    linked: dict[UUID, list[LinkedEvidenceFile]] = {}
+    for control_id, file_id, file_name, extension, size_bytes, sha256, uploaded_at, linked_at in rows:
+        linked.setdefault(control_id, []).append(
+            LinkedEvidenceFile(
+                id=file_id,
+                file_name=file_name,
+                file_type=(extension or "").lstrip(".").upper() or "FILE",
+                size_bytes=size_bytes,
+                sha256=sha256,
+                uploaded_at=uploaded_at,
+                linked_at=linked_at,
+            )
+        )
+    return linked
 
 
 class CompositeReportSource:
