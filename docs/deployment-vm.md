@@ -68,9 +68,11 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
    sudo git clone https://github.com/agentic-grc-team/Agentic-GRC.git /opt/agentic-grc
    sudo chown -R agrc:agrc /opt/agentic-grc
    # The system Python is 3.14; use 3.13 (as in CI) through uv, installed where agrc can read it.
-   sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python uv python install 3.13
-   sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python uv venv --seed --python 3.13 --python-preference only-managed /opt/agentic-grc/.venv
-   sudo uv pip install --python /opt/agentic-grc/.venv/bin/python -r /opt/agentic-grc/backend/requirements.txt
+   # uv is installed for your user, and sudo resets PATH: call it by its full path.
+   UV=$(command -v uv)
+   sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python "$UV" python install 3.13
+   sudo env UV_PYTHON_INSTALL_DIR=/opt/uv-python "$UV" venv --seed --python 3.13 --python-preference only-managed /opt/agentic-grc/.venv
+   sudo "$UV" pip install --python /opt/agentic-grc/.venv/bin/python -r /opt/agentic-grc/backend/requirements.txt
    sudo chown -R agrc:agrc /opt/agentic-grc
    ```
 4. Write `/etc/agentic-grc/backend.env` from [`backend.env.example`](../deploy/vm/backend.env.example).
@@ -133,9 +135,11 @@ sudo reboot                                            # then the first line aga
 ## Redeploying after a merge to main
 
 ```bash
-cd /opt/agentic-grc && sudo -u agrc git pull
+cd /opt/agentic-grc && sudo -u agrc git pull --ff-only   # run git as agrc: the repo belongs to it
 # the venv was created with uv as root (step 2), so install the same way, not with agrc's pip
-sudo uv pip install --python /opt/agentic-grc/.venv/bin/python -r backend/requirements.txt
+# sudo resets PATH, so pass uv's full path ("sudo: uv: command not found" otherwise)
+sudo "$(command -v uv)" pip install --python /opt/agentic-grc/.venv/bin/python -r backend/requirements.txt
+sudo chown -R agrc:agrc /opt/agentic-grc/.venv
 cd backend && sudo -u agrc env AGRC_ENV_FILE=/etc/agentic-grc/backend.env ../.venv/bin/alembic upgrade head && cd ..
 # rebuild the frontend as in step 7, then:
 sudo systemctl restart agentic-grc-api
