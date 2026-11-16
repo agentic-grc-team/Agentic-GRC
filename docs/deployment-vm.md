@@ -134,7 +134,8 @@ sudo reboot                                            # then the first line aga
 
 ```bash
 cd /opt/agentic-grc && sudo -u agrc git pull
-sudo -u agrc .venv/bin/pip install -r backend/requirements.txt
+# the venv was created with uv as root (step 2), so install the same way, not with agrc's pip
+sudo uv pip install --python /opt/agentic-grc/.venv/bin/python -r backend/requirements.txt
 cd backend && sudo -u agrc env AGRC_ENV_FILE=/etc/agentic-grc/backend.env ../.venv/bin/alembic upgrade head && cd ..
 # rebuild the frontend as in step 7, then:
 sudo systemctl restart agentic-grc-api
@@ -151,6 +152,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 # systemd units (app VM)
 sudo cp deploy/vm/systemd/ollama.service deploy/vm/systemd/agentic-grc-api.service /etc/systemd/system/
+ls /etc/systemd/system/agentic-grc-api.service.d/ 2>/dev/null  # a drop-in made by hand before #61 duplicates the unit's wait and warm-up: remove it
 sudo systemctl daemon-reload
 sudo systemctl restart ollama agentic-grc-api      # the API reloads the model (~45 s)
 
@@ -158,7 +160,18 @@ sudo systemctl restart ollama agentic-grc-api      # the API reloads the model (
 diff <(grep -oE '^[A-Z_]+=' deploy/vm/backend.env.example | sort) <(sudo grep -oE '^[A-Z_]+=' /etc/agentic-grc/backend.env | sort)
 ```
 
-Then run the checks in section 3 and sign in through the public URL.
+When a merge changes `deploy/vm/postgres/`, apply it on the DB VM. The grants are idempotent, so
+running the file again is safe. Option B (`AUTH_MIRROR_LOCAL_IDENTITIES=true`, #62) needs the
+`INSERT, UPDATE` grant on `auth.users`; without it the first login of a new user returns 503:
+
+```bash
+# DB VM, from a checkout of the same commit
+sudo -u postgres psql -d agentic_grc -f deploy/vm/postgres/auth-users-grants.sql
+```
+
+Then run the checks in section 3 and sign in through the public URL. After enabling option B, sign
+in once with a Supabase user that has never used the VM, and check that the API created their
+`auth.users` row.
 
 ## Notes
 
