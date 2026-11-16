@@ -191,11 +191,40 @@ def test_refuses_a_control_outside_the_scope(db):
     assert "outside the assessment scope" in error.value.detail
 
 
-def test_refuses_a_second_agent_result_after_expert_review(db):
+def test_second_agent_result_becomes_a_new_version_while_unreviewed(db):
+    """A second interview on the same assessment supersedes an unreviewed agent result."""
     organization, user, assessment, (control,) = setup_assessment(db)
     (first_result,) = save(db, organization, assessment, agent_output())
     db.commit()
 
+    (second_result,) = save(
+        db,
+        organization,
+        assessment,
+        agent_output(summary="The Representative confirmed MFA with FIDO2 keys for all administrators."),
+    )
+    db.commit()
+
+    assert (second_result.version_no, second_result.based_on_result_id) == (2, first_result.id)
+    assert second_result.author_actor == "agent" and second_result.trace_id != first_result.trace_id
+    assert [item.result_id for item in list_pending_reviews(db, user)] == [str(second_result.id)]
+
+
+def _versions(db, control):
+    return [
+        (row.id, row.version_no)
+        for row in db.scalars(
+            select(ControlResult)
+            .where(ControlResult.assessment_control_id == control.id)
+            .order_by(ControlResult.version_no)
+        )
+    ]
+
+
+def test_agent_does_not_supersede_an_expert_reviewed_result(db):
+    organization, user, assessment, (control,) = setup_assessment(db)
+    (first_result,) = save(db, organization, assessment, agent_output())
+    db.commit()
     save_review_decision(
         db,
         first_result.id,
@@ -204,22 +233,65 @@ def test_refuses_a_second_agent_result_after_expert_review(db):
     )
     db.commit()
 
-    with pytest.raises(HTTPException) as error:
-        save(
-            db,
-            organization,
-            assessment,
-            agent_output(summary="MFA now covers privileged accounts across the organization."),
-        )
+    rows = save(
+        db,
+        organization,
+        assessment,
+        agent_output(summary="MFA now covers privileged accounts across the organization."),
+    )
+    db.commit()
 
-    assert error.value.status_code == 409
-    assert control.control_code in error.value.detail
-    stored_results = db.scalars(
-        select(ControlResult).where(
-            ControlResult.assessment_control_id == control.id,
+    assert rows == []
+    assert _versions(db, control) == [(first_result.id, 1)]
+    traces = db.scalars(
+        select(DecisionTraceRecord).where(
+            DecisionTraceRecord.assessment_id == assessment.id,
+            DecisionTraceRecord.decision_type == "status_assessed",
         )
     ).all()
-    assert [(row.id, row.version_no) for row in stored_results] == [(first_result.id, 1)]
+    assert len(traces) == 2  # the second decision stays auditable
+
+
+def test_agent_does_not_supersede_an_expert_authored_version(db):
+    organization, user, assessment, (control,) = setup_assessment(db)
+    (first_result,) = save(db, organization, assessment, agent_output())
+    db.commit()
+    review = save_review_decision(
+        db,
+        first_result.id,
+        ReviewDecision(
+            outcome="modified",
+            comment="Corrected after checking the configuration.",
+            modified_result={
+                "control_status": "partially_implemented",
+                "explanation": "MFA covers only some administrator accounts.",
+            },
+        ),
+        user,
+    )
+    corrected_id = review.resulting_result_id
+    db.commit()
+
+    assert save(db, organization, assessment, agent_output()) == []
+    db.commit()
+
+    assert [version for _, version in _versions(db, control)] == [1, 2]
+    assert str(_versions(db, control)[-1][0]) == str(corrected_id)
+
+
+def test_mixed_controls_only_add_versions_where_not_expert_settled(db):
+    organization, user, assessment, (settled, open_control) = setup_assessment(db, codes=("PR.AA-01", "PR.AA-05"))
+    first_rows = save(db, organization, assessment, agent_output(control_ids=["PR.AA-01", "PR.AA-05"]))
+    db.commit()
+    settled_row = next(row for row in first_rows if row.assessment_control_id == settled.id)
+    save_review_decision(db, settled_row.id, ReviewDecision(outcome="accepted", comment="Checked."), user)
+    db.commit()
+
+    rows = save(db, organization, assessment, agent_output(control_ids=["PR.AA-01", "PR.AA-05"]))
+    db.commit()
+
+    assert [(row.assessment_control_id, row.version_no) for row in rows] == [(open_control.id, 2)]
+    assert [version for _, version in _versions(db, settled)] == [1]
 
 
 def test_refuses_an_assessment_of_another_organization(db):

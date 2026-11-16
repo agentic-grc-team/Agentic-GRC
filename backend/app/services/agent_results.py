@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Assessment, AssessmentControl, ControlResult
+from app.db.models import Assessment, AssessmentControl, ControlResult, ControlResultReview
 from app.schemas.agent_results import AgentControlResult
 from app.schemas.decision_trace import DecisionTrace
 from app.services.decision_traces import record_interview_trace, record_trace
@@ -28,6 +28,13 @@ def save_agent_result(
     Records the status_assessed trace, then adds one versioned control_results row
     per control id (author "agent") linked to that trace. Each new row chains to
     the previous version and enters the expert review queue.
+
+    A control that already has a result gets a new agent version only while its
+    latest version is an unreviewed agent result (for example a second interview
+    on the same assessment). Once an expert has reviewed or authored the latest
+    version, the agent never supersedes it: only the trace is recorded and no row
+    is added for that control, so the interview can continue. Choosing between
+    competing versions in the UI is Sprint 6 work.
 
     Current limitation: evidence_refs stays empty and maturity null, because the
     agent does not attach documents or assess maturity yet.
@@ -68,6 +75,8 @@ def save_agent_result(
             .order_by(ControlResult.version_no.desc())
             .limit(1)
         )
+        if previous is not None and _is_expert_settled(db, previous):
+            continue
         rows.append(
             ControlResult(
                 organization_id=organization_id,
@@ -137,29 +146,18 @@ def _load_controls(
             detail=f"Controls outside the assessment scope: {', '.join(out_of_scope)}.",
         )
 
-    # Re-assessment behavior is not decided yet. Refuse a new agent result when
-    # any version already exists, so a rerun cannot supersede an expert-reviewed result.
-    already_assessed = db.scalars(
-        select(AssessmentControl.control_code)
-        .join(
-            ControlResult,
-            (ControlResult.assessment_control_id == AssessmentControl.id)
-            & (ControlResult.organization_id == AssessmentControl.organization_id)
-            & (ControlResult.assessment_id == AssessmentControl.assessment_id),
-        )
-        .where(
-            AssessmentControl.organization_id == organization_id,
-            AssessmentControl.assessment_id == assessment_id,
-            AssessmentControl.id.in_([control.id for control in controls]),
-        )
-    ).all()
-    if already_assessed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Controls that already have a result: "
-                f"{', '.join(sorted(set(already_assessed)))}."
-            ),
-        )
-
     return [by_code[code] for code in control_ids]
+
+
+def _is_expert_settled(db: Session, latest: ControlResult) -> bool:
+    """True when an expert authored or reviewed the control's latest version."""
+    if latest.author_actor != "agent":
+        return True
+    return (
+        db.scalar(
+            select(ControlResultReview.id)
+            .where(ControlResultReview.control_result_id == latest.id)
+            .limit(1)
+        )
+        is not None
+    )
