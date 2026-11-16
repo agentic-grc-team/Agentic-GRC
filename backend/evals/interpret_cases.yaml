@@ -131,6 +131,14 @@ cases:
       - participant: "No, accounts stay active until someone remembers to close them."
     expected: {intent: answer, category: "no", action: close}
 
+  # Beta smoke test (Nov 15, M10): classified as not_applicable instead of "no", so the agent asked
+  # twice for an N/A justification and the control ended N/A instead of a gap.
+  - id: offboarding-no-defined-process
+    question: IAM-03
+    dialogue:
+      - participant: "We don't have a defined process. Sometimes accounts stay active for a few weeks after someone leaves."
+    expected: {intent: answer, category: "no", action: close}
+
   # Replies to an evidence request: the reply must not change what the participant already stated.
   - id: mfa-evidence-refused
     question: IAM-01
