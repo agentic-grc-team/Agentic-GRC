@@ -312,7 +312,15 @@ describe("AssessmentWorkspace", () => {
     expect(onStartInterview).toHaveBeenCalledWith("org-1", "assess-1");
   });
 
-  it("offers no interview for an assessment that is not in progress", async () => {
+  it("still offers the interview while results await review", async () => {
+    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "awaiting_review" }]);
+    renderWorkspace({ onStartInterview: vi.fn() });
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    expect(screen.getByRole("button", { name: /Go to interview/ })).toBeInTheDocument();
+  });
+
+  it("offers no interview for a completed assessment", async () => {
     listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "completed" }]);
     renderWorkspace({ onStartInterview: vi.fn() });
     await screen.findByRole("heading", { name: "Q3 baseline" });

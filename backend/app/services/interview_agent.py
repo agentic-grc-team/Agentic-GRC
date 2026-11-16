@@ -29,6 +29,7 @@ from app.schemas.agent_results import AgentControlResult
 from app.schemas.decision_trace import DecisionTrace, TraceSource
 from app.schemas.interviews import InterviewTurnRead
 from app.services.agent_results import save_agent_result
+from app.services.assessment_status import accepts_interviews, refresh_assessment_status
 from app.services.decision_traces import record_interview_trace
 from app.services.langgraph_checkpointer import (
     interview_thread_config,
@@ -109,7 +110,7 @@ def _run_interview_graph(
             )
 
         context = _load_agent_context(db, interview_session)
-        if context.assessment.status != "in_progress":
+        if not accepts_interviews(context.assessment.status):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This assessment is no longer accepting interview answers.",
@@ -189,6 +190,7 @@ def _run_interview_graph(
             graph_state = snapshot.values
             sequence_to_turn = _persist_graph_turns(db, context, graph_state.get("turns", []))
             _persist_graph_traces(db, context, graph_state.get("traces", []), sequence_to_turn)
+            refresh_assessment_status(db, context.session.organization_id, context.session.assessment_id)
 
             # An empty `next` tuple means LangGraph reached END rather than
             # pausing at its answer interrupt. Persist that state on the domain

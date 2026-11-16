@@ -17,6 +17,7 @@ from app.db.models import (
 from app.schemas.decision_trace import DecisionTrace
 from app.schemas.expert_review import ReviewDecision, ReviewItem
 from app.security.expert_reviews import require_expert_review_access
+from app.services.assessment_status import refresh_assessment_status
 from app.services.decision_traces import record_trace
 
 def load_reviewable_result(
@@ -235,6 +236,7 @@ def save_review_decision(
 
     db.add(review)
     db.flush()
+    refresh_assessment_status(db, result.organization_id, result.assessment_id)
 
     return review
 

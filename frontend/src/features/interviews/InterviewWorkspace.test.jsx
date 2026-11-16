@@ -143,7 +143,7 @@ describe("InterviewWorkspace", () => {
     expect(upload).toHaveAccessibleDescription(/policy requiring MFA for administrator accounts/);
   });
 
-  it("only allows starting an interview for an assessment in progress", async () => {
+  it("does not allow starting an interview for a completed assessment", async () => {
     renderWorkspace();
 
     const assessmentSelect = await screen.findByLabelText("Assessment");
@@ -151,7 +151,7 @@ describe("InterviewWorkspace", () => {
     fireEvent.change(assessmentSelect, { target: { value: "assessment-2" } });
 
     expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
-    expect(screen.getByText(/Only assessments that are in progress/)).toBeInTheDocument();
+    expect(screen.getByText(/completed and no longer accepts interview answers/)).toBeInTheDocument();
   });
 
   it("saves an answer with the question it replies to and shows the follow-up", async () => {
@@ -203,7 +203,8 @@ describe("InterviewWorkspace", () => {
     expect(await screen.findByRole("option", {
       name: "Review assessment · Awaiting review",
     })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
+    // A second participant can still answer while results await review.
+    expect(screen.queryByText(/no longer accepts interview answers/)).not.toBeInTheDocument();
   });
 
   it("does not send a blank answer", async () => {

@@ -36,6 +36,7 @@ from app.schemas.interviews import (
     InterviewTurnReceipt,
 )
 from app.services.evidence_links import resolve_requested_evidence_control
+from app.services.assessment_status import accepts_interviews
 
 _NOT_FOUND = "Interview assessment not found."
 _SESSION_NOT_FOUND = "Interview session not found."
@@ -66,7 +67,7 @@ def create_or_resume_interview(
     if locked_assessment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     assessment = locked_assessment
-    if locked_assessment.status != "in_progress":
+    if not accepts_interviews(locked_assessment.status):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This assessment is not accepting interview sessions.",
@@ -334,11 +335,11 @@ def save_interview_turn(
             turn=_turn_read(existing),
             idempotent_replay=True,
             session_closed=(
-                session.ended_at is not None or assessment.status != "in_progress"
+                session.ended_at is not None or not accepts_interviews(assessment.status)
             ),
         )
 
-    if assessment.status != "in_progress":
+    if not accepts_interviews(assessment.status):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This assessment is not accepting interview answers.",
@@ -487,7 +488,7 @@ def require_active_evidence_request(
     if session_participant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_SESSION_NOT_FOUND)
 
-    if session.ended_at is not None or assessment.status != "in_progress":
+    if session.ended_at is not None or not accepts_interviews(assessment.status):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This interview is no longer active.",
@@ -748,7 +749,7 @@ def _session_read(
         id=session.id,
         session_type=session.session_type,
         block_id=session.block_id,
-        closed=session.ended_at is not None or assessment_status != "in_progress",
+        closed=session.ended_at is not None or not accepts_interviews(assessment_status),
         facilitator_user_id=session.facilitator_user_id,
         scheduled_at=session.scheduled_at,
         started_at=session.started_at,
