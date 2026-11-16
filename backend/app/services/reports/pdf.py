@@ -19,6 +19,14 @@ from reportlab.platypus import (
 from app.schemas.report import ASSESSMENT_STATUS_LABELS, ReportView
 
 
+def _format_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.0f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
 def _escape(text: str | None) -> str:
     if text is None:
         return ""
@@ -357,7 +365,7 @@ def render_report_pdf(view: ReportView) -> bytes:
                 )
 
             story.append(Paragraph("<b>Evidence</b>", body_style))
-            if not res.evidence:
+            if not res.evidence and not res.linked_evidence:
                 story.append(Paragraph("No evidence on file.", italic_style))
             else:
                 for ev in res.evidence:
@@ -365,6 +373,14 @@ def render_report_pdf(view: ReportView) -> bytes:
                     if ev.excerpt:
                         ev_text += f' — <i>"{_escape(ev.excerpt)}"</i>'
                     story.append(Paragraph(ev_text, body_style))
+                for linked in res.linked_evidence:
+                    linked_text = (
+                        f"[Uploaded file] {_escape(linked.file_name)} "
+                        f"({_escape(linked.file_type)}, {_escape(_format_size(linked.size_bytes))}, "
+                        f"uploaded {linked.uploaded_at.strftime('%Y-%m-%d')})"
+                        f" — <i>{_escape(linked.verification_label)}</i>"
+                    )
+                    story.append(Paragraph(linked_text, body_style))
 
             story.append(Spacer(1, 6))
 

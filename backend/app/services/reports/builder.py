@@ -75,6 +75,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
                         explanation=highest.explanation,
                         not_assessed_reason=highest.not_assessed_reason,
                         evidence=highest.evidence,
+                        linked_evidence=ctrl.linked_evidence,
                         evidence_pending=highest.evidence_pending,
                     )
                 )
@@ -115,6 +116,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
                             explanation=highest.explanation,
                             not_assessed_reason=highest.not_assessed_reason,
                             evidence=highest.evidence,
+                            linked_evidence=ctrl.linked_evidence,
                             evidence_pending=highest.evidence_pending,
                         )
                     )

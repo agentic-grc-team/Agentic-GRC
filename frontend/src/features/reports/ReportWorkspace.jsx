@@ -564,7 +564,26 @@ export default function ReportWorkspace({
                       return (
                         <tr key={result.code}>
                           <td>{result.code}</td>
-                          <td>{result.title}</td>
+                          <td>
+                            {result.title}
+                            {result.linked_evidence?.length > 0 && (
+                              <ul
+                                className="report-linked-evidence"
+                                aria-label={`Evidence files for ${result.code}`}
+                              >
+                                {result.linked_evidence.map((file) => (
+                                  <li key={file.sha256 + file.file_name}>
+                                    <span className="report-linked-evidence-name">
+                                      {file.file_name}
+                                    </span>
+                                    <span className="report-linked-evidence-meta">
+                                      {file.file_type} · {file.verification_label}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
                           <td>
                             <span
                               className={`report-status report-status--${result.control_status}`}

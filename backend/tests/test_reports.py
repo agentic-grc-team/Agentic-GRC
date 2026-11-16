@@ -12,6 +12,7 @@ from app.api.v1.dependencies import get_db_session
 from app.core.config import Settings
 from app.main import app
 from app.schemas.report import (
+    LinkedEvidenceFile,
     AssessmentInfo,
     ControlInScope,
     EvidenceReference,
@@ -676,6 +677,70 @@ def test_pdf_special_characters_render_valid_pdf():
     assert "<script> & </b>" in text
 
 
+def _linked_file(name: str = "conditional-access-mfa.pdf") -> LinkedEvidenceFile:
+    return LinkedEvidenceFile(
+        file_name=name,
+        file_type="PDF",
+        size_bytes=120_400,
+        sha256="b" * 64,
+        uploaded_at=FIXED_DT,
+    )
+
+
+def _accepted_control(code: str, linked: list[LinkedEvidenceFile], *, accepted: bool = True) -> ControlInScope:
+    return ControlInScope(
+        code=code,
+        title="Users, services, and hardware are authenticated",
+        linked_evidence=linked,
+        versions=[
+            ResultVersion(
+                version_no=1,
+                author_actor="agent",
+                control_status="implemented",
+                explanation="Administrators use FIDO2 keys.",
+                created_at=FIXED_DT,
+                evidence_pending=True,
+                review=(
+                    ResultReview(outcome="accepted", reviewer_name="Aligo consultant", reviewed_at=FIXED_DT)
+                    if accepted
+                    else None
+                ),
+            )
+        ],
+    )
+
+
+def test_builder_final_result_carries_linked_evidence_and_keeps_evidence_pending():
+    view = build_report_view(make_test_report_input(controls=[_accepted_control("PR.AA-03", [_linked_file()])]), FIXED_DT)
+
+    (result,) = view.results
+    assert [file.file_name for file in result.linked_evidence] == ["conditional-access-mfa.pdf"]
+    assert result.linked_evidence[0].verification == "not_verified"
+    # An uploaded file is not verified yet, so the statement-based flag stays.
+    assert result.evidence_pending is True
+    assert view.summary.final_with_evidence_pending == 1
+
+
+def test_builder_pending_control_does_not_expose_linked_evidence():
+    view = build_report_view(
+        make_test_report_input(controls=[_accepted_control("PR.AA-03", [_linked_file()], accepted=False)]),
+        FIXED_DT,
+    )
+
+    assert view.results == []
+    assert "conditional-access-mfa.pdf" not in view.model_dump_json()
+
+
+def test_pdf_lists_linked_evidence_as_not_verified():
+    view = build_report_view(make_test_report_input(controls=[_accepted_control("PR.AA-03", [_linked_file()])]), FIXED_DT)
+    text = extract_pdf_text(render_report_pdf(view))
+
+    assert "conditional-access-mfa.pdf" in text
+    assert "Not yet verified by Aligo" in text
+    assert "118 KB" in text
+    assert "No evidence on file." not in text
+
+
 def test_pdf_result_with_no_evidence_shows_notice():
     ctrl = ControlInScope(
         code="PR.AA-01",
@@ -918,7 +983,7 @@ def test_api_member_known_assessment_json_export_returns_200():
     assert f"agentic-grc-report-{KNOWN_ASSESSMENT_ID}.json" in content_disp
     data = json.loads(response.text)
     assert data["export_format"] == "agentic-grc.assessment-report"
-    assert data["export_version"] == "1.0"
+    assert data["export_version"] == "1.1"
 
 
 def test_json_export_report_matches_report_view():

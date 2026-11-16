@@ -827,6 +827,41 @@ describe("ReportWorkspace", () => {
     expect(within(row2).queryByText("Evidence pending")).not.toBeInTheDocument();
   });
 
+  it("lists the evidence files linked to a final result as not yet verified", async () => {
+    getReportPreview.mockResolvedValueOnce({
+      ...mockReportView,
+      results: [
+        {
+          ...mockReportView.results[0],
+          linked_evidence: [
+            {
+              file_name: "conditional-access-mfa.pdf",
+              file_type: "PDF",
+              size_bytes: 120400,
+              sha256: "a".repeat(64),
+              uploaded_at: "2026-11-16T01:45:00Z",
+              verification: "not_verified",
+              verification_label: "Not yet verified by Aligo",
+            },
+          ],
+        },
+        mockReportView.results[1],
+      ],
+    });
+
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const table = await screen.findByRole("table", { name: "Reviewed results" });
+    const files = within(table).getByRole("list", {
+      name: `Evidence files for ${mockReportView.results[0].code}`,
+    });
+    expect(within(files).getByText("conditional-access-mfa.pdf")).toBeInTheDocument();
+    expect(within(files).getByText("PDF · Not yet verified by Aligo")).toBeInTheDocument();
+
+    const otherRow = within(table).getByText(mockReportView.results[1].code).closest("tr");
+    expect(within(otherRow).queryByRole("list")).not.toBeInTheDocument();
+  });
+
   it("renders the 'Final results with evidence pending' summary tile", async () => {
     const { unmount } = render(<ReportWorkspace accessToken="test-token" />);
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });

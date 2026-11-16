@@ -73,6 +73,29 @@ class EvidenceReference(BaseModel):
         return v
 
 
+LinkedEvidenceVerification = Literal["not_verified"]
+
+LINKED_EVIDENCE_VERIFICATION_LABELS: dict[str, str] = {
+    "not_verified": "Not yet verified by Aligo",
+}
+
+
+class LinkedEvidenceFile(BaseModel):
+    """A file the organization uploaded and linked to a control (evidence_control_links).
+
+    Only metadata goes to the report: never the extracted text. Linked files are not verified yet,
+    so they support a result without changing its evidence_pending flag.
+    """
+
+    file_name: str
+    file_type: str  # extension in upper case, e.g. "PDF"
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    uploaded_at: datetime
+    verification: LinkedEvidenceVerification = "not_verified"
+    verification_label: str = LINKED_EVIDENCE_VERIFICATION_LABELS["not_verified"]
+
+
 class ResultReview(BaseModel):
     outcome: ReviewOutcome
     reviewer_name: str
@@ -120,6 +143,7 @@ class ControlInScope(BaseModel):
     code: str = Field(pattern=r"^(GV|ID|PR|DE|RS|RC)\.[A-Z]{2}-\d{2}$")
     title: str
     versions: list[ResultVersion] = []  # any order; builder sorts by version_no
+    linked_evidence: list[LinkedEvidenceFile] = []  # files linked to the control, oldest first
 
     @model_validator(mode="after")
     def validate_unique_versions(self) -> "ControlInScope":
@@ -156,6 +180,7 @@ class FinalResult(BaseModel):
     explanation: str
     not_assessed_reason: str | None = None
     evidence: list[EvidenceReference] = []
+    linked_evidence: list[LinkedEvidenceFile] = []
     evidence_pending: bool = False
 
 
@@ -201,12 +226,12 @@ class ReportView(BaseModel):
 
 
 REPORT_EXPORT_FORMAT = "agentic-grc.assessment-report"
-REPORT_EXPORT_VERSION = "1.0"
+REPORT_EXPORT_VERSION = "1.1"  # 1.1 adds results[].linked_evidence
 
 
 class ReportExport(BaseModel):
     """Structured export of a report view (HU-21). Same content as the preview and the PDF."""
 
     export_format: Literal["agentic-grc.assessment-report"] = REPORT_EXPORT_FORMAT
-    export_version: Literal["1.0"] = REPORT_EXPORT_VERSION
+    export_version: Literal["1.1"] = REPORT_EXPORT_VERSION
     report: ReportView
