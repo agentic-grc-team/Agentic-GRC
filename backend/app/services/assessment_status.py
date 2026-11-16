@@ -40,8 +40,9 @@ def derive_status(controls_in_scope: int, with_result: int, final: int) -> str:
 def refresh_assessment_status(db: Session, organization_id: UUID, assessment_id: UUID) -> Assessment | None:
     """Recompute and set the assessment's status in the current transaction (flush only).
 
-    Call it after anything that adds a result version or a review. It locks the assessment row so
-    two concurrent writers end with the status of the later one.
+    The writers call it: save_agent_result after adding agent versions, and save_review_decision
+    after a review. It locks the assessment row so two concurrent writers end with the status of
+    the later one. Existing data was brought in line by migration 20261116_0011.
     """
     assessment = db.scalar(
         select(Assessment)

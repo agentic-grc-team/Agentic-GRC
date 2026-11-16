@@ -18,8 +18,8 @@ vi.mock("../organizations/api.js", () => ({ listOrganizations: vi.fn() }));
 
 const organizations = [{ id: "org-1", name: "Acme Corp" }];
 const assessments = [
-  { id: "assessment-1", title: "NIST CSF baseline", status: "in_progress" },
-  { id: "assessment-2", title: "Old assessment", status: "completed" },
+  { id: "assessment-1", title: "NIST CSF baseline", status: "in_progress", accepts_interviews: true },
+  { id: "assessment-2", title: "Old assessment", status: "completed", accepts_interviews: false },
 ];
 
 function turn(overrides) {
@@ -196,7 +196,7 @@ describe("InterviewWorkspace", () => {
 
   it("uses the shared assessment status label for assessments awaiting review", async () => {
     listAssessments.mockResolvedValue([
-      { id: "review-1", title: "Review assessment", status: "awaiting_review" },
+      { id: "review-1", title: "Review assessment", status: "awaiting_review", accepts_interviews: true },
     ]);
     renderWorkspace();
 
@@ -448,7 +448,7 @@ describe("InterviewWorkspace", () => {
     openInterview.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
     listAssessments.mockResolvedValue([
       assessments[0],
-      { id: "assessment-3", title: "Second assessment", status: "in_progress" },
+      { id: "assessment-3", title: "Second assessment", status: "in_progress", accepts_interviews: true },
     ]);
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });

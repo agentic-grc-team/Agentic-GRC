@@ -10,10 +10,8 @@ export function assessmentStatusLabel(status) {
   return ASSESSMENT_STATUS_LABELS[status] || status;
 }
 
-// Mirrors accepts_interviews() in app/services/assessment_status.py: interviews stay open while the
-// assessment is in progress or awaiting review, and close once it is completed.
-const INTERVIEW_OPEN_STATUSES = new Set(["in_progress", "awaiting_review"]);
-
-export function acceptsInterviews(status) {
-  return INTERVIEW_OPEN_STATUSES.has(status);
+// The backend decides whether an assessment accepts interviews (accepts_interviews in the
+// assessment response), so the rule lives in one place: app/services/assessment_status.py.
+export function acceptsInterviews(assessment) {
+  return Boolean(assessment?.accepts_interviews);
 }

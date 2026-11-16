@@ -114,7 +114,7 @@ export default function InterviewWorkspace({
   const selectedSession = kickoffStatus?.key === selectionKey ? kickoffStatus : null;
   const canOpen = !isStarting && Boolean(
     selectedAssessment && selectedSession &&
-    (selectedSession.session?.closed || acceptsInterviews(selectedAssessment.status))
+    (selectedSession.session?.closed || acceptsInterviews(selectedAssessment))
   );
 
   useEffect(() => {
@@ -271,7 +271,7 @@ export default function InterviewWorkspace({
       {organizationId && assessmentsLoaded && !error && assessments.length === 0 && (
         <p className="interview-hint">This organization has no assessments yet.</p>
       )}
-      {selectedAssessment && !acceptsInterviews(selectedAssessment.status) && (
+      {selectedAssessment && !acceptsInterviews(selectedAssessment) && (
         <p className="interview-hint">
           {selectedAssessment.status === "completed"
             ? "This assessment is completed and no longer accepts interview answers."

@@ -16,12 +16,10 @@ describe("assessmentStatusLabel", () => {
     expect(assessmentStatusLabel("archived")).toBe("archived");
   });
 
-  it("keeps interviews open until the assessment is completed", () => {
-    expect(["draft", "in_progress", "awaiting_review", "completed"].map(acceptsInterviews)).toEqual([
-      false,
-      true,
-      true,
-      false,
-    ]);
+  it("follows the backend's accepts_interviews flag", () => {
+    expect(acceptsInterviews({ status: "awaiting_review", accepts_interviews: true })).toBe(true);
+    expect(acceptsInterviews({ status: "completed", accepts_interviews: false })).toBe(false);
+    expect(acceptsInterviews({ status: "in_progress" })).toBe(false);
+    expect(acceptsInterviews(undefined)).toBe(false);
   });
 });

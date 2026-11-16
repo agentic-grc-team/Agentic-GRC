@@ -282,7 +282,7 @@ export default function AssessmentWorkspace({
         </label>
       )}
 
-      {onStartInterview && acceptsInterviews(selectedAssessment?.status) && (
+      {onStartInterview && acceptsInterviews(selectedAssessment) && (
         <button
           className="primary-button assessment-interview-button"
           type="button"

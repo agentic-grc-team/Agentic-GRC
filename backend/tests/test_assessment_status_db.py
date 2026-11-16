@@ -17,8 +17,8 @@ def _status(db, assessment):
 
 
 def _agent_result(db, organization, assessment, code):
+    # save_agent_result refreshes the status itself.
     (row,) = save(db, organization, assessment, agent_output(control_ids=[code]))
-    refresh_assessment_status(db, organization.id, assessment.id)  # as the interview agent does
     db.commit()
     return row
 

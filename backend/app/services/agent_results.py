@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Assessment, AssessmentControl, ControlResult, ControlResultReview
 from app.schemas.agent_results import AgentControlResult
 from app.schemas.decision_trace import DecisionTrace
+from app.services.assessment_status import refresh_assessment_status
 from app.services.decision_traces import record_interview_trace, record_trace
 
 
@@ -40,7 +41,8 @@ def save_agent_result(
     agent does not attach documents or assess maturity yet.
 
     Every check runs before anything is written. It only flushes: the caller commits, so the trace and the rows are saved together
-    or not at all.
+    or not at all. The assessment's status is refreshed in the same transaction, so every writer of
+    agent results keeps it current.
     """
     _check_trace(organization_id, assessment_id, result, trace)
 
@@ -98,6 +100,8 @@ def save_agent_result(
         )
     db.add_all(rows)
     db.flush()
+    if rows:
+        refresh_assessment_status(db, organization_id, assessment_id)
     return rows
 
 

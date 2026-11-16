@@ -29,7 +29,7 @@ from app.schemas.agent_results import AgentControlResult
 from app.schemas.decision_trace import DecisionTrace, TraceSource
 from app.schemas.interviews import InterviewTurnRead
 from app.services.agent_results import save_agent_result
-from app.services.assessment_status import accepts_interviews, refresh_assessment_status
+from app.services.assessment_status import accepts_interviews
 from app.services.decision_traces import record_interview_trace
 from app.services.langgraph_checkpointer import (
     interview_thread_config,
@@ -190,7 +190,6 @@ def _run_interview_graph(
             graph_state = snapshot.values
             sequence_to_turn = _persist_graph_turns(db, context, graph_state.get("turns", []))
             _persist_graph_traces(db, context, graph_state.get("traces", []), sequence_to_turn)
-            refresh_assessment_status(db, context.session.organization_id, context.session.assessment_id)
 
             # An empty `next` tuple means LangGraph reached END rather than
             # pausing at its answer interrupt. Persist that state on the domain
