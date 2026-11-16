@@ -277,6 +277,12 @@ def persistence_context(monkeypatch):
         "app.services.expert_reviews.record_trace",
         save_trace,
     )
+    # The status refresh queries the database; its rule is covered in test_assessment_status*.
+    refresh_status = Mock()
+    monkeypatch.setattr(
+        "app.services.expert_reviews.refresh_assessment_status",
+        refresh_status,
+    )
 
     return SimpleNamespace(
         db=db,
@@ -288,6 +294,7 @@ def persistence_context(monkeypatch):
         saved_trace=saved_trace,
         save_trace=save_trace,
         load_result=load_result,
+        refresh_status=refresh_status,
     )
 
 
@@ -317,6 +324,9 @@ def test_saves_review_and_matching_human_trace(
     assert review.reviewed_by_user_id == context.user.id
     assert review.review_trace_id == context.saved_trace.id
     assert review.resulting_result_id is None
+    context.refresh_status.assert_called_once_with(
+        context.db, context.result.organization_id, context.result.assessment_id
+    )
 
     context.load_result.assert_called_once_with(
         context.db,
