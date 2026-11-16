@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from app.db.models import Assessment, AssessmentControl, ControlResult, ControlResultReview
 
@@ -52,20 +52,26 @@ def refresh_assessment_status(db: Session, organization_id: UUID, assessment_id:
     if assessment is None or assessment.status == "draft":
         return assessment
 
-    newest = aliased(ControlResult)
-    latest_version = (
-        select(func.max(newest.version_no))
-        .where(newest.assessment_control_id == ControlResult.assessment_control_id)
-        .correlate(ControlResult)
-        .scalar_subquery()
+    latest = (
+        select(
+            ControlResult.assessment_control_id.label("control_id"),
+            func.max(ControlResult.version_no).label("version_no"),
+        )
+        .where(
+            ControlResult.organization_id == organization_id,
+            ControlResult.assessment_id == assessment_id,
+        )
+        .group_by(ControlResult.assessment_control_id)
+        .subquery()
     )
     rows = db.execute(
         select(AssessmentControl.id, ControlResult.author_actor, ControlResultReview.outcome)
+        .select_from(AssessmentControl)
+        .outerjoin(latest, latest.c.control_id == AssessmentControl.id)
         .outerjoin(
             ControlResult,
             (ControlResult.assessment_control_id == AssessmentControl.id)
-            & (ControlResult.organization_id == AssessmentControl.organization_id)
-            & (ControlResult.version_no == latest_version),
+            & (ControlResult.version_no == latest.c.version_no),
         )
         .outerjoin(ControlResultReview, ControlResultReview.control_result_id == ControlResult.id)
         .where(
