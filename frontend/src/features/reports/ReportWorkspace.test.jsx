@@ -1016,6 +1016,20 @@ describe("ReportWorkspace", () => {
     expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "test-token");
   });
 
+  it("loads an earlier report for comparison only after it is selected", async () => {
+    listAssessments.mockResolvedValueOnce([
+      { id: "assess-1", title: "Current", status: "completed", created_at: "2026-11-01T12:00:00Z" },
+      { id: "assess-2", title: "Earlier", status: "completed", created_at: "2026-10-01T12:00:00Z" },
+    ]);
+    render(<ReportWorkspace accessToken="test-token" />);
+    await screen.findByRole("heading", { name: "Compare with a previous assessment" });
+    expect(getReportPreview).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Previous assessment" }), { target: { value: "assess-2" } });
+    await screen.findByRole("table", { name: "Control status comparison" });
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-2", "test-token");
+  });
+
   it("with 2 assessments: the picker shows both labels (title · status · date); choosing the second requests its preview", async () => {
     listAssessments.mockResolvedValueOnce([
       {

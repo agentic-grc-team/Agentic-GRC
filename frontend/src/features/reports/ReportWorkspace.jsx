@@ -10,6 +10,7 @@ import {
 } from "./api.js";
 import GapList from "./GapList.jsx";
 import ComplianceSummary from "./ComplianceSummary.jsx";
+import AssessmentComparison from "./AssessmentComparison.jsx";
 import "./ReportWorkspace.css";
 
 const ASSESSMENT_STATUS_LABELS = {
@@ -533,6 +534,15 @@ export default function ReportWorkspace({
           </dl>
 
           <ComplianceSummary summary={preview.summary} exclusionCount={preview.exclusions?.length ?? 0} />
+
+          <AssessmentComparison
+            key={`${sessionId}:${selectedOrgId}:${selectedAssessmentId}`}
+            organizationId={selectedOrgId}
+            currentAssessmentId={selectedAssessmentId}
+            assessments={assessments}
+            current={preview}
+            accessToken={accessToken}
+          />
 
           <GapList gapList={preview.gap_list} />
 
