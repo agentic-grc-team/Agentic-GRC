@@ -206,4 +206,15 @@ describe("App navigation", () => {
     expect(screen.getByRole("button", { name: "Expert reviews" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Client onboarding" })).toBeInTheDocument();
   });
+
+  it("restores default navigation if the organization role request fails", async () => {
+    getOrganization.mockRejectedValueOnce(new Error("Network unavailable"));
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Select organization" }));
+    expect(screen.queryByRole("button", { name: "Expert reviews" })).not.toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Expert reviews" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Client onboarding" })).toBeInTheDocument();
+  });
 });

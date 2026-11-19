@@ -703,7 +703,6 @@ a.rail-navigation-item { text-decoration: none; }
   .rail-navigation-item { width: 38px; min-height: 40px; justify-content: center; padding: 0; }
   .rail-navigation-item > span:not(:first-child) { display: none; }
   .evidence-page { max-width: 100%; padding: 18px 15px; }
-  .evidence-home-link { margin-inline: 15px; }
 }
 
 .review-evidence h4 {

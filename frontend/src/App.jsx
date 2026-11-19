@@ -206,7 +206,7 @@ function App() {
   const headerOrganizationId = isExpertReview ? reviewOrganizationId : selectedOrganizationId;
   const organization = organizationContext?.id === headerOrganizationId ? organizationContext.data : null;
   const isRepresentative = !user?.is_platform_admin && organization?.role === "representative";
-  const isRoleLoading = Boolean(headerOrganizationId && !organization && !user?.is_platform_admin);
+  const isRoleLoading = Boolean(headerOrganizationId && organizationContext?.id !== headerOrganizationId && !user?.is_platform_admin);
 
   useEffect(() => {
     if (!user?.accessToken || !headerOrganizationId) return undefined;
