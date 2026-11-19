@@ -10,6 +10,63 @@ python -m pytest tests/acceptance -v
 
 CI runs them in the "Backend tests" job on every pull request.
 
+## HU-02 / HU-03 — Organization isolation and role permissions
+
+Stories: HU-02, as a security officer at the assessed organization, I want my answers, documents and findings to be inaccessible from any other organization. HU-03, as a platform administrator, I want each user to have a role with distinct permissions, so that the representative can answer the interview without being able to alter findings or see the agent's reasoning.
+
+Jira: AGRC-138 · Test file: `backend/tests/acceptance/test_hu02_hu03_role_and_organization_access.py` · Existing cross-organization API tests (AGRC-67): `backend/tests/test_cross_organization_api.py`
+
+The rules as implemented:
+
+| Action | Consultant / administrator | Representative | Member of another organization, suspended member, no membership |
+| --- | --- | --- | --- |
+| Create an assessment | Yes | No (403) | No (404) |
+| Open, read and answer the interview | Yes | Yes | No (404) |
+| Upload evidence, list evidence and links | Yes | Yes | No (403) |
+| Expert review queue, decision, review evidence | Yes | No (not in the queue, 403) | No (not in the queue, 404) |
+| Reasoning traces (result trace, assessment traces, export) | Yes | No (403) | No (404) |
+| Report (preview and PDF) and gap list | Yes | Yes | No (404) |
+
+The representative reads the report and the gap list because they are written for the security officer of the assessed organization (HU-17, HU-18, HU-23).
+
+In every test the consultant creates the assessment through the API, the representative opens the interview, answers, uploads the evidence the agent asks for through the interview and answers again, and the agent saves a draft result. The language model is replaced by a deterministic fake.
+
+| AC | Given / When / Then | Test | Result |
+| --- | --- | --- | --- |
+| 1 | **Given** a consultant with an active membership in the organization, **when** a draft result of that organization waits for review, **then** the consultant sees it in the queue, opens its trace and evidence, and records a decision. | `test_access_ac1_consultant_reviews_in_own_organization` | Pass |
+| 2 | **Given** a representative with an active membership in the organization, **when** they answer the interview and upload the evidence the agent asks for, **then** the answers and the evidence are saved for that organization, and the representative cannot see the review queue, record a decision, or inspect reasoning traces. | `test_access_ac2_representative_answers_and_provides_evidence_but_cannot_review` | Pass |
+| 3 | **Given** two organizations, each with an assessment, interview, evidence and draft result, **when** a consultant or a representative of organization A uses organization B's identifiers, **then** every interview, evidence, finding, gap list and report request fails with no data, and nothing is written to organization B. | `test_access_ac3_no_role_reaches_another_organization[consultant]`, `[representative]` | Pass |
+| 4 | **Given** an assessment whose draft the consultant has accepted, **when** the report and the gap list are requested, **then** the organization's consultant and representative get them, and a member of another organization, a suspended member and a user with no membership get no data. | `test_access_ac4_report_and_gap_list_only_for_members_of_the_organization` | Pass |
+
+What each test checks:
+
+1. The consultant finds the draft in the review queue, opens its trace (with the organization's id), its review evidence and the assessment traces, and accepts it.
+2. The representative's two answers and the uploaded file are stored for the organization, the file is linked to the requested control, and the representative can read the interview and list the file. The draft is not in the representative's review queue; the decision, the result trace, the review evidence, the assessment traces and the trace export all return 403. The draft stays version 1 by the agent with no review.
+3. For both roles of organization A: B's interview (read, status, open, answer) returns 404, through B's path and through A's path with B's assessment id. Listing B's evidence and links and uploading into B's interview return 403. B's draft is not in the queue; its decision, trace and review evidence return 404. B's gap list, report and PDF return 404 through both paths. Afterwards B has the same number of interview turns, one evidence file and no review.
+4. The consultant and the representative get the report, the PDF and the gap list of their assessment. The consultant and the representative of another organization, a suspended consultant of the same organization and a user with no membership get 404 for all three.
+
+Each test was also checked against a deliberately broken implementation (representatives allowed to read traces, report and gap list without the membership check, interview without the membership check, representatives allowed to review, evidence list without the membership check); the matching tests failed every time.
+
+Not covered by these tests:
+
+- Managing memberships (inviting members and choosing their role, `backend/app/api/v1/endpoints/organizations.py`) is not part of AGRC-138; that module stays at 51% coverage.
+- Platform administrators are covered by the HU-04 and HU-25 tests, not here.
+
+Recorded runs:
+
+| Date | Where | Result |
+| --- | --- | --- |
+| 2026-11-19 | Local, PostgreSQL 16, all migrations | 5 passed |
+
+Checks on the deployed Beta (https://gita.udea.edu.co/agentic-grc/), done in the browser with a consultant and a representative of one organization and a user of a second organization:
+
+| AC | Check | Result |
+| --- | --- | --- |
+| 1 | As the consultant, open Expert Review, open the draft's trace and evidence, and accept it. | Not run yet |
+| 2 | As the representative, answer the interview and upload the requested file. The representative cannot review the draft or open its trace. | Not run yet |
+| 3 | As the user of the second organization, open the first organization's assessment, interview, report and gap list by URL. Nothing is shown. | Not run yet |
+| 4 | As the consultant and as the representative, open the report and the gaps by criticality section. Both are shown. | Not run yet |
+
 ## HU-04 — Create and scope a security assessment
 
 Jira: AGRC-80 · Task: AGRC-65 · Implementation: AGRC-73, AGRC-62, AGRC-63 · Test file: `backend/tests/acceptance/test_hu04_create_and_scope_assessment.py`
