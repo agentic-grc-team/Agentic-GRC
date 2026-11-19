@@ -121,7 +121,8 @@ describe("ExpertReviewWorkspace", () => {
     expect(submitReviewDecision).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
-    expect(await screen.findByRole("heading", { name: "PR.AA-03" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Assessment review complete" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Control Label Test" })).toBeInTheDocument();
     expect(submitReviewDecision).toHaveBeenCalledWith(
       otherResult.result_id, "accepted", "", "test-token",
     );
@@ -190,7 +191,7 @@ describe("ExpertReviewWorkspace", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Review queue complete",
+        name: "Assessment review complete",
       }),
     ).toBeInTheDocument();
 
@@ -274,7 +275,7 @@ describe("ExpertReviewWorkspace", () => {
     });
 
     expect(
-      screen.getByRole("heading", { name: "Review queue complete" }),
+      screen.getByRole("heading", { name: "Assessment review complete" }),
     ).toBeInTheDocument();
   });
 
@@ -456,7 +457,7 @@ describe("ExpertReviewWorkspace", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Review queue complete",
+        name: "Assessment review complete",
       }),
     ).toBeInTheDocument();
   });
@@ -564,7 +565,7 @@ describe("ExpertReviewWorkspace", () => {
       });
 
       await screen.findByRole("heading", {
-        name: "Review queue complete",
+        name: "Assessment review complete",
       });
     },
   );
@@ -754,7 +755,7 @@ describe("ExpertReviewWorkspace", () => {
       });
 
       await screen.findByRole("heading", {
-        name: "Review queue complete",
+        name: "Assessment review complete",
       });
     });
 
