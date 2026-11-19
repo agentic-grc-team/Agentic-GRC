@@ -347,6 +347,9 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
         <div className="review-section">
           <h3>Assessment review complete</h3>
           <p>There are no more pending results in this assessment.</p>
+          {reviews.length === 0 && (
+            <p>No other assessments have pending results.</p>
+          )}
         </div>
         {reviews.length > 0 && (
           <button
