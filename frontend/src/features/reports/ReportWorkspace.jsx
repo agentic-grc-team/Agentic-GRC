@@ -9,6 +9,7 @@ import {
   getReportPreview,
 } from "./api.js";
 import GapList from "./GapList.jsx";
+import ComplianceSummary from "./ComplianceSummary.jsx";
 import "./ReportWorkspace.css";
 
 const ASSESSMENT_STATUS_LABELS = {
@@ -530,6 +531,8 @@ export default function ReportWorkspace({
               </dd>
             </div>
           </dl>
+
+          <ComplianceSummary summary={preview.summary} exclusionCount={preview.exclusions?.length ?? 0} />
 
           <GapList gapList={preview.gap_list} />
 

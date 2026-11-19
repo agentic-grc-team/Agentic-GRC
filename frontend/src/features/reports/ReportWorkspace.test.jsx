@@ -260,6 +260,10 @@ describe("ReportWorkspace", () => {
     expect(within(summary).getByText("Pending review").parentElement).toHaveTextContent("3");
     expect(within(summary).getByText("Exclusions").parentElement).toHaveTextContent("1");
     expect(within(summary).getByText("Coverage").parentElement).toHaveTextContent("50.0%");
+    const compliance = screen.getByRole("heading", { name: "Compliance summary" }).closest("section");
+    expect(compliance).toHaveTextContent("Implemented1");
+    expect(compliance).toHaveTextContent("Partially implemented1");
+    expect(compliance).toHaveTextContent("3 awaiting a final result · 1 approved exclusions");
   });
 
   it("shows the gap list that comes with the preview, without a separate request", async () => {

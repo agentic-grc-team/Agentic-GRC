@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { listOrganizations } from "../organizations/api.js";
+import { getReportPreview } from "../reports/api.js";
+import ComplianceSummary from "../reports/ComplianceSummary.jsx";
 import { createAssessment, getAssessmentScope, listAssessments } from "./api.js";
 import AssessmentEvidence from "./AssessmentEvidence.jsx";
 import AssessmentScope from "./AssessmentScope.jsx";
@@ -47,6 +49,8 @@ export default function AssessmentWorkspace({
   const [scope, setScope] = useState(null);
   const [isLoadingScope, setIsLoadingScope] = useState(false);
   const [scopeError, setScopeError] = useState("");
+  const [compliancePreview, setCompliancePreview] = useState(null);
+  const [complianceError, setComplianceError] = useState("");
 
   const [title, setTitle] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -162,6 +166,23 @@ export default function AssessmentWorkspace({
     return () => {
       active = false;
     };
+  }, [selectedOrganizationId, selectedAssessmentId, sessionKey]);
+
+  useEffect(() => {
+    let active = true;
+    setCompliancePreview(null);
+    setComplianceError("");
+    if (!selectedOrganizationId || !selectedAssessmentId) return undefined;
+
+    getReportPreview(selectedOrganizationId, selectedAssessmentId, accessTokenRef.current)
+      .then((data) => {
+        if (active) setCompliancePreview(data);
+      })
+      .catch((error) => {
+        if (active) setComplianceError(describeError(error));
+      });
+
+    return () => { active = false; };
   }, [selectedOrganizationId, selectedAssessmentId, sessionKey]);
 
   const selectedOrganization = organizations.find((item) => item.id === selectedOrganizationId) || null;
@@ -294,6 +315,8 @@ export default function AssessmentWorkspace({
 
       {isLoadingScope && <p role="status">Loading assessment scope…</p>}
       {scopeError && <p role="alert">{scopeError}</p>}
+      {complianceError && <p role="alert">Could not load compliance summary: {complianceError}</p>}
+      {scope && compliancePreview && <ComplianceSummary summary={compliancePreview.summary} exclusionCount={compliancePreview.exclusions?.length ?? 0} />}
       {scope && <AssessmentScope scope={scope} />}
       {scope && selectedOrganizationId && selectedAssessmentId && (
         <AssessmentEvidence
