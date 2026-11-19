@@ -19,27 +19,8 @@ const organizationRoleLabels = {
   representative: "Representative",
 };
 
-function AccountChip({ user, organizationId, onOpenOrganizations }) {
-  const [organization, setOrganization] = useState(null);
-  const { accessToken, is_platform_admin: isPlatformAdmin } = user;
-
-  useEffect(() => {
-    if (!accessToken || !organizationId) return undefined;
-
-    let active = true;
-    getOrganization(organizationId, accessToken)
-      .then((result) => {
-        if (active) setOrganization(result);
-      })
-      .catch(() => {
-        if (active) setOrganization(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [accessToken, organizationId]);
-
-  const role = isPlatformAdmin
+function AccountChip({ user, organizationId, organization, onOpenOrganizations }) {
+  const role = user.is_platform_admin
     ? "Platform administrator"
     : organizationRoleLabels[organization?.role];
 
@@ -219,12 +200,30 @@ function App() {
   const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
   const [reviewOrganizationId, setReviewOrganizationId] = useState("");
   const [interviewAssessmentId, setInterviewAssessmentId] = useState("");
+  const [organizationContext, setOrganizationContext] = useState(null);
   const isEvidencePage = pathname === EVIDENCE_PATH;
   const isExpertReview = !isEvidencePage && currentView === "expert-reviews";
   const headerOrganizationId = isExpertReview ? reviewOrganizationId : selectedOrganizationId;
-  const evidencePath = selectedOrganizationId
-    ? `${EVIDENCE_PATH}?organization_id=${encodeURIComponent(selectedOrganizationId)}`
-    : EVIDENCE_PATH;
+  const organization = organizationContext?.id === headerOrganizationId ? organizationContext.data : null;
+  const isRepresentative = !user?.is_platform_admin && organization?.role === "representative";
+  const isRoleLoading = Boolean(headerOrganizationId && !organization && !user?.is_platform_admin);
+
+  useEffect(() => {
+    if (!user?.accessToken || !headerOrganizationId) return undefined;
+    let active = true;
+    getOrganization(headerOrganizationId, user.accessToken)
+      .then((data) => {
+        if (active) setOrganizationContext({ id: headerOrganizationId, data });
+      })
+      .catch(() => {
+        if (active) setOrganizationContext({ id: headerOrganizationId, data: null });
+      });
+    return () => { active = false; };
+  }, [user?.accessToken, headerOrganizationId]);
+
+  useEffect(() => {
+    if (isRepresentative && currentView === "expert-reviews") setCurrentView("assessments");
+  }, [isRepresentative, currentView]);
 
   useEffect(() => {
     const syncPath = () => setPathname(currentAppPath());
@@ -239,16 +238,6 @@ function App() {
   function navigate(path) {
     window.history.pushState({}, "", toBrowserPath(path));
     setPathname(currentAppPath());
-  }
-
-  function navLink(path) {
-    return (event) => {
-      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
-        return;
-      }
-      event.preventDefault();
-      navigate(path);
-    };
   }
 
   function showView(view) {
@@ -300,7 +289,7 @@ function App() {
   }
 
   return (
-    <main className={`app-shell ${currentView === "interview" ? "is-interview-active" : ""}`}>
+    <main className={`app-shell ${currentView === "interview" ? "is-interview-active" : ""} ${isRepresentative ? "role-representative" : ""}`}>
       <aside className="app-rail">
         <a className="brand-lockup" href={toBrowserPath("/")} aria-label="Agentic GRC home">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
@@ -309,7 +298,7 @@ function App() {
 
         <div className="rail-divider" />
         <p className="rail-label">WORKSPACE</p>
-        <button
+        {!isRepresentative && !isRoleLoading && <button
           className={`rail-navigation-item ${!isEvidencePage && currentView === "organizations" ? "is-active" : ""}`}
           type="button"
           onClick={() => showView("organizations")}
@@ -321,7 +310,7 @@ function App() {
           <span className="rail-current-icon" aria-hidden="true">⌂</span>
           <span>Client onboarding</span>
           {!isEvidencePage && currentView === "organizations" && <span className="rail-active-dot" />}
-        </button>
+        </button>}
 
         <button
           className={`rail-navigation-item ${!isEvidencePage && currentView === "assessments" ? "is-active" : ""}`}
@@ -351,7 +340,7 @@ function App() {
           {!isEvidencePage && currentView === "interview" && <span className="rail-active-dot" />}
         </button>
 
-        <button
+        {!isRepresentative && !isRoleLoading && <button
           className={`rail-navigation-item ${!isEvidencePage && currentView === "expert-reviews" ? "is-active" : ""}`}
           type="button"
           onClick={() => showView("expert-reviews")}
@@ -363,7 +352,7 @@ function App() {
           <span className="rail-current-icon" aria-hidden="true">✓</span>
           <span>Expert reviews</span>
           {!isEvidencePage && currentView === "expert-reviews" && <span className="rail-active-dot" />}
-        </button>
+        </button>}
 
         <button
           className={`rail-navigation-item ${!isEvidencePage && currentView === "reports" ? "is-active" : ""}`}
@@ -378,21 +367,6 @@ function App() {
           <span>Reports</span>
           {!isEvidencePage && currentView === "reports" && <span className="rail-active-dot" />}
         </button>
-
-        {user?.accessToken && (
-          <a
-            className={`rail-navigation-item ${isEvidencePage ? "is-active" : ""}`}
-            href={evidencePath}
-            onClick={navLink(evidencePath)}
-            aria-label="Evidence upload"
-            title="Evidence upload"
-            aria-current={isEvidencePage ? "page" : undefined}
-          >
-            <span className="rail-current-icon" aria-hidden="true">⇪</span>
-            <span>Evidence upload</span>
-            {isEvidencePage && <span className="rail-active-dot" />}
-          </a>
-        )}
 
         <div className="rail-bottom">
           <div className="rail-help-mark" aria-hidden="true">?</div>
@@ -416,7 +390,7 @@ function App() {
                       ? "Reports"
                       : currentView === "expert-reviews"
                         ? "Expert reviews"
-                        : "Organization setup"}
+                        : isRepresentative ? "Organizations" : "Organization setup"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -427,6 +401,7 @@ function App() {
                   key={JSON.stringify([user.id, headerOrganizationId])}
                   user={user}
                   organizationId={headerOrganizationId}
+                  organization={organization}
                   onOpenOrganizations={isEvidencePage || currentView !== "organizations"
                     ? () => showView("organizations")
                     : undefined}
@@ -483,9 +458,6 @@ function App() {
             />
           ) : (
             <>
-              <a className="primary-button evidence-home-link" href={evidencePath} onClick={navLink(evidencePath)}>
-                Upload evidence <span aria-hidden="true">→</span>
-              </a>
               <OrganizationWorkspace
                 accessToken={user.accessToken}
                 isPlatformAdmin={user.is_platform_admin}

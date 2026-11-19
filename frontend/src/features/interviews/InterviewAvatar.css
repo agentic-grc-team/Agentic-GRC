@@ -16,10 +16,23 @@
   background-image:
     linear-gradient(to top, var(--panel, #10161d), transparent 20%, transparent 82%, var(--panel, #10161d)),
     linear-gradient(to right, var(--panel, #10161d), transparent 12%, transparent 88%, var(--panel, #10161d)),
-    url("/avatars/interview-office.png");
-  background-size: cover;
-  background-position: center;
+    linear-gradient(#171f25, #10161d);
   opacity: .85;
+}
+.interview-avatar-backdrop img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.interview-avatar-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, var(--panel, #10161d), transparent 20%, transparent 82%, var(--panel, #10161d)),
+    linear-gradient(to right, var(--panel, #10161d), transparent 12%, transparent 88%, var(--panel, #10161d));
 }
 .interview-avatar-portrait {
   position: relative;

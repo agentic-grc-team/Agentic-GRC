@@ -5,6 +5,7 @@ import { acceptsInterviews, assessmentStatusLabel } from "../assessments/statusL
 import { listOrganizations } from "../organizations/api.js";
 import { getInterview, getKickoffStatus, openInterview } from "./api.js";
 import InterviewConversation from "./InterviewConversation.jsx";
+import { preloadInterviewAvatar } from "./InterviewAvatar.jsx";
 import { describeInterviewError } from "./errors.js";
 import "./InterviewWorkspace.css";
 
@@ -33,6 +34,10 @@ export default function InterviewWorkspace({
   useEffect(() => {
     accessTokenRef.current = accessToken;
   }, [accessToken]);
+
+  useEffect(() => {
+    preloadInterviewAvatar();
+  }, []);
 
   useEffect(() => {
     let active = true;

@@ -232,6 +232,7 @@ export default function OrganizationWorkspace({
     [organizations, selectedOrganizationId],
   );
   const canCreateOrganization = isPlatformAdmin || organizations.some((organization) => organization.role === "administrator");
+  const isRepresentativeWorkspace = !isPlatformAdmin && selectedOrganization?.role === "representative";
 
   useEffect(() => {
     onOrganizationChange?.(selectedOrganizationId);
@@ -365,12 +366,12 @@ export default function OrganizationWorkspace({
         </div>
       </aside>
 
-      <section className="conversation-panel" aria-label="Organization setup conversation">
+      <section className="conversation-panel" aria-label={isRepresentativeWorkspace ? "Organization overview" : "Organization setup conversation"}>
         <div className="conversation-heading">
           <div className="conversation-title-wrap">
             <span className="conversation-orb" aria-hidden="true"><span /></span>
             <div>
-              <p className="eyebrow">WORKSPACE SETUP</p>
+              <p className="eyebrow">{isRepresentativeWorkspace ? "YOUR ORGANIZATION" : "WORKSPACE SETUP"}</p>
               <h1>{selectedOrganization ? selectedOrganization.name : "Start with a client"}</h1>
             </div>
           </div>
@@ -378,9 +379,11 @@ export default function OrganizationWorkspace({
         </div>
 
         <div className="conversation-scroll">
-          <div className="date-divider"><span>ORGANIZATION ONBOARDING</span></div>
+          <div className="date-divider"><span>{isRepresentativeWorkspace ? "ORGANIZATION OVERVIEW" : "ORGANIZATION ONBOARDING"}</span></div>
           <AssistantMessage>
-            <p>Let’s create a dedicated workspace for your client. I’ll need a few basic details to get started.</p>
+            <p>{isRepresentativeWorkspace
+              ? "You can answer interview questions, provide requested evidence, and read reports for this organization."
+              : "Let’s create a dedicated workspace for your client. I’ll need a few basic details to get started."}</p>
             <div className="assistant-context-note">
               <span className="context-icon" aria-hidden="true">↳</span>
               <span>Sector and size are saved as organization context for future assessment interviews.</span>
@@ -426,7 +429,9 @@ export default function OrganizationWorkspace({
                 <div className="empty-state-mark" aria-hidden="true">✳</div>
                 <div>
                   <h3>This workspace is ready</h3>
-                  <p>Create an assessment in Assessments, then run its interview and review the results.</p>
+                  <p>{isRepresentativeWorkspace
+                    ? "Open an assessment to continue its interview or view an available report."
+                    : "Create an assessment in Assessments, then run its interview and review the results."}</p>
                 </div>
                 <span className="empty-state-status">READY</span>
               </div>
@@ -480,7 +485,9 @@ export default function OrganizationWorkspace({
         </div>
         <div className="conversation-footer">
           <span className="footer-lock" aria-hidden="true">▣</span>
-          <span>Organization setup only · Assessment chat is not part of this flow</span>
+          <span>{isRepresentativeWorkspace
+            ? "Organization overview · Open Interview to answer questions"
+            : "Organization setup only · Assessment chat is not part of this flow"}</span>
         </div>
       </section>
     </div>
