@@ -19,6 +19,10 @@ const outcomeLabels = {
   rejected: "rejected",
 };
 
+const DECISION_COOLDOWN_MS = 1000;
+const NOTICE_DURATION_MS = 3000;
+const NOTICE_EXIT_MS = 250;
+
 
 export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrganizationChange }) {
   const [reviews, setReviews] = useState([]);
@@ -28,6 +32,9 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [noticeExiting, setNoticeExiting] = useState(false);
+  const [isCoolingDown, setIsCoolingDown] = useState(false);
+  const [completedAssessment, setCompletedAssessment] = useState(null);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editedStatus, setEditedStatus] = useState("");
@@ -37,7 +44,25 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
   const sessionRef = useRef(null);
   const accessTokenRef = useRef(accessToken);
+  const headingRef = useRef(null);
+  const noticeTimerRef = useRef(null);
+  const noticeExitTimerRef = useRef(null);
+  const cooldownTimerRef = useRef(null);
+  const submissionRef = useRef(false);
   const sessionKey = sessionId ?? accessToken;
+
+  function clearTransitionTimers() {
+    clearTimeout(noticeTimerRef.current);
+    clearTimeout(noticeExitTimerRef.current);
+    clearTimeout(cooldownTimerRef.current);
+  }
+
+  function clearNotice() {
+    clearTimeout(noticeTimerRef.current);
+    clearTimeout(noticeExitTimerRef.current);
+    setNotice("");
+    setNoticeExiting(false);
+  }
 
   useEffect(() => {
     accessTokenRef.current = accessToken;
@@ -62,8 +87,12 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
     setComment("");
     setError("");
     setNotice("");
+    setNoticeExiting(false);
+    setIsCoolingDown(false);
+    setCompletedAssessment(null);
     setIsLoading(true);
     setIsSubmitting(false);
+    submissionRef.current = false;
 
     setIsEditing(false);
     setEditedStatus("");
@@ -97,6 +126,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
     return () => {
       isActive = false;
+      clearTransitionTimers();
 
       if (sessionRef.current === session) {
         sessionRef.current = null;
@@ -104,23 +134,32 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
     };
   }, [sessionKey]);
 
-  const review = reviews.find((item) => item.result_id === selectedResultId) ?? reviews[0];
-  const reviewOrganizationId = review?.organization_id || "";
+  const review = completedAssessment
+    ? null
+    : reviews.find((item) => item.result_id === selectedResultId) ?? reviews[0];
+  const reviewOrganizationId = (review ?? completedAssessment)?.organization_id || "";
 
   useEffect(() => {
     onOrganizationChange?.(reviewOrganizationId);
   }, [onOrganizationChange, reviewOrganizationId]);
 
+  useEffect(() => {
+    if (notice) {
+      headingRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }
+  }, [notice, review?.result_id, completedAssessment]);
+
   function selectResult(event) {
+    setCompletedAssessment(null);
     setSelectedResultId(event.target.value);
     setComment("");
     resetEditor();
     setError("");
-    setNotice("");
+    clearNotice();
   }
 
   function startEditing() {
-    if (!review || isSubmitting) {
+    if (!review || isSubmitting || isCoolingDown) {
       return;
     }
 
@@ -130,7 +169,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
     setNotAssessedReason(review.not_assessed_reason || "");
     setIsEditing(true);
     setError("");
-    setNotice("");
+    clearNotice();
   }
 
   function cancelEditing() {
@@ -139,7 +178,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
   }
 
   async function handleDecision(outcome) {
-    if (!review || isSubmitting) {
+    if (!review || isSubmitting || isCoolingDown || submissionRef.current) {
       return;
     }
 
@@ -148,7 +187,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
     const trimmedComment = comment.trim();
 
     setError("");
-    setNotice("");
+    clearNotice();
 
     if (
       (outcome === "modified" || outcome === "rejected") &&
@@ -204,6 +243,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
       }
     }
 
+    submissionRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -233,6 +273,13 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
       setNotice(
         `The result was successfully ${outcomeLabels[response.outcome]}.`,
       );
+      setNoticeExiting(false);
+      setIsCoolingDown(true);
+      cooldownTimerRef.current = setTimeout(() => setIsCoolingDown(false), DECISION_COOLDOWN_MS);
+      noticeTimerRef.current = setTimeout(() => {
+        setNoticeExiting(true);
+        noticeExitTimerRef.current = setTimeout(() => setNotice(""), NOTICE_EXIT_MS);
+      }, NOTICE_DURATION_MS);
 
       setReviews((currentReviews) =>
         currentReviews.filter((item) => item.result_id !== resultId),
@@ -241,6 +288,11 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
       const nextInAssessment = reviews.find(
         (item) => item.assessment_id === review.assessment_id && item.result_id !== resultId,
       );
+      setCompletedAssessment(nextInAssessment ? null : {
+        assessment_id: review.assessment_id,
+        assessment_title: review.assessment_title,
+        organization_id: review.organization_id,
+      });
       setSelectedResultId(nextInAssessment?.result_id ?? "");
       setComment("");
       resetEditor();
@@ -252,6 +304,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
       }
     } finally {
       if (sessionRef.current === session) {
+        submissionRef.current = false;
         setIsSubmitting(false);
       }
     }
@@ -265,13 +318,13 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
     return <p role="alert">{error}</p>;
   }
 
-  if (reviews.length === 0) {
+  if (reviews.length === 0 && !completedAssessment) {
     return (
-      <section className="expert-review-workspace">
+      <section className="expert-review-workspace" ref={headingRef}>
         <p className="eyebrow">EXPERT REVIEW</p>
         <h1>Review queue complete</h1>
 
-        {notice && <p role="status">{notice}</p>}
+        {notice && <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>{notice}</p>}
 
         <div className="review-section">
           <h3>No pending results</h3>
@@ -280,6 +333,38 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
             expert review.
           </p>
         </div>
+      </section>
+    );
+  }
+
+  if (completedAssessment) {
+    return (
+      <section className="expert-review-workspace" ref={headingRef}>
+        <p className="eyebrow">EXPERT REVIEW</p>
+        <p className="review-context-label">Assessment</p>
+        <h1>{completedAssessment.assessment_title || completedAssessment.assessment_id}</h1>
+        {notice && <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>{notice}</p>}
+        <div className="review-section">
+          <h3>Assessment review complete</h3>
+          <p>There are no more pending results in this assessment.</p>
+          {reviews.length === 0 && (
+            <p>No other assessments have pending results.</p>
+          )}
+        </div>
+        {reviews.length > 0 && (
+          <button
+            type="button"
+            className="review-continue-button"
+            disabled={isCoolingDown}
+            onClick={() => {
+              setCompletedAssessment(null);
+              setSelectedResultId(reviews[0].result_id);
+              clearNotice();
+            }}
+          >
+            Review next assessment
+          </button>
+        )}
       </section>
     );
   }
@@ -293,11 +378,18 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
   }
 
   return (
-    <section className="expert-review-workspace">
+    <section className="expert-review-workspace" ref={headingRef}>
       <p className="eyebrow">EXPERT REVIEW</p>
+      {notice && <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>{notice}</p>}
+      <div className="review-context">
+        <span className="review-context-label">Assessment</span>
+        <strong>{review.assessment_title || review.assessment_id}</strong>
+        <span className="review-context-label">Current control</span>
+        <strong>{review.control_code} · {review.control_title}</strong>
+      </div>
       <label className="review-comment">
         Pending result
-        <select value={review.result_id} onChange={selectResult} disabled={isSubmitting}>
+        <select value={review.result_id} onChange={selectResult} disabled={isSubmitting || isCoolingDown}>
           {Array.from(reviewsByAssessment, ([assessmentId, items]) => (
             <optgroup key={assessmentId} label={items[0].assessment_title || assessmentId}>
               {items.map((item) => (
@@ -434,14 +526,13 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
       </label>
 
       {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
 
       <div className="review-actions">
         {!isEditing && (
           <>
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isCoolingDown}
               onClick={() => handleDecision("accepted")}
             >
               Accept
@@ -449,7 +540,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isCoolingDown}
               onClick={startEditing}
             >
               Edit result
@@ -457,7 +548,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isCoolingDown}
               onClick={() => handleDecision("rejected")}
             >
               Reject
@@ -469,7 +560,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
           <>
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isCoolingDown}
               onClick={() => handleDecision("modified")}
             >
               Submit modified result
