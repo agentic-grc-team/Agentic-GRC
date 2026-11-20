@@ -18,6 +18,10 @@ from .schemas import (
 )
 
 LOW_CONFIDENCE = 0.5
+# Explanations the participant can ask for on one question. They do not use the follow-up
+# budget (HU-05), but without their own limit a participant who keeps asking, or a model that
+# keeps reading answers as questions, would loop on the same control forever (AGRC-140).
+MAX_CLARIFICATIONS = 2
 
 
 def decide_next_step(
@@ -26,8 +30,16 @@ def decide_next_step(
     max_follow_ups: int,
     evidence_asked: bool = False,
     ambiguity_clarifications_used: int = 0,
+    clarifications_used: int = 0,
 ) -> NextStep:
     can_follow_up = follow_ups_used < max_follow_ups
+    if interp.intent is Intent.clarification_request and clarifications_used >= MAX_CLARIFICATIONS:
+        return _close(
+            ControlStatus.not_assessed,
+            f"The participant still asked what the question means after {MAX_CLARIFICATIONS} explanations.",
+            "rule:clarify_limit",
+            review=True,
+        )
     # Never create a control result from a low-confidence interpretation. Ask one
     # focused question first; if the response remains unclear, route a not-assessed
     # draft to a human instead of guessing a status.
@@ -62,7 +74,7 @@ def _clarify(reason: str, rule_id: str) -> NextStep:
 
 
 def _decide(i: AnswerInterpretation, can_follow_up: bool, evidence_asked: bool) -> NextStep:
-    # Clarification does not count as a follow-up and never closes the control (HU-05).
+    # Clarification does not count as a follow-up (HU-05); its own limit is checked in decide_next_step.
     if i.intent is Intent.clarification_request:
         return _clarify("The participant asked what the question means.", "rule:clarify")
 
@@ -121,4 +133,4 @@ def _decide(i: AnswerInterpretation, can_follow_up: bool, evidence_asked: bool) 
     # unsure
     if can_follow_up:
         return _ask(Missing.knowledge_owner, "The participant does not know the answer.", "rule:unsure_ask_owner")
-    return _close(ControlStatus.not_assessed, "Nobody in the session could answer.", "rule:unsure_limit")
+    return _close(ControlStatus.not_assessed, "Nobody in the session could answer.", "rule:unsure_limit", review=True)

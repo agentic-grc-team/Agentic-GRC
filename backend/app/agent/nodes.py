@@ -39,6 +39,7 @@ class InterviewState(TypedDict, total=False):
     current_index: int
     follow_ups_used: int
     ambiguity_clarifications_used: int
+    clarifications_used: int  # explanations given because the participant asked what the question means
     evidence_asked: bool  # an evidence request was already made for the current question
     pending_message: str  # what the agent says next to the participant
     turns: Annotated[list[dict], operator.add]  # full transcript, append-only
@@ -67,6 +68,7 @@ def initial_state(
         "current_index": 0,
         "follow_ups_used": 0,
         "ambiguity_clarifications_used": 0,
+        "clarifications_used": 0,
         "turns": [],
         "traces": [],
         "results": {},
@@ -157,6 +159,7 @@ class InterviewNodes:
             "pending_message": text,
             "follow_ups_used": 0,
             "ambiguity_clarifications_used": 0,
+            "clarifications_used": 0,
             "evidence_asked": False,
             "turns": [self._turn(s, q.code, "agent", "question", text)],
         }
@@ -187,6 +190,7 @@ class InterviewNodes:
             self.d.max_follow_ups,
             s.get("evidence_asked", False),
             s.get("ambiguity_clarifications_used", 0),
+            s.get("clarifications_used", 0),
         )
         trace = self._trace(
             s, q,
@@ -240,7 +244,8 @@ class InterviewNodes:
                 text = fallback
             updates = {"ambiguity_clarifications_used": s.get("ambiguity_clarifications_used", 0) + 1}
         else:
-            system, user = prompts.clarify(q, latest_answer)
+            earlier = [t["content"] for t in turns if t["speaker"] == "agent" and t["turn_type"] == "clarification"]
+            system, user = prompts.clarify(q, latest_answer, earlier)
             try:
                 out, _ = self.d.llm.structured(
                     prompt_id=prompts.CLARIFY_ID,
@@ -253,7 +258,7 @@ class InterviewNodes:
             except LLMError:
                 text = q.clarification
             text = f"{text}\n\n{q.text}"
-            updates = {}
+            updates = {"clarifications_used": s.get("clarifications_used", 0) + 1}
 
         return {
             **updates,
