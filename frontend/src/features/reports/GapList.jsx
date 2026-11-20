@@ -5,6 +5,25 @@ const BASIS_LABELS = {
   consultant_version: "consultant version",
 };
 
+// HU-16: each finding shows the evidence behind its result, or says plainly that there is none.
+function GapEvidence({ gap }) {
+  const linked = gap.linked_evidence || [];
+  const cited = gap.evidence || [];
+  if (gap.evidence_absent || (linked.length === 0 && cited.length === 0)) {
+    return <span className="gap-evidence-none">No evidence</span>;
+  }
+  return (
+    <ul className="gap-evidence">
+      {linked.map((file) => (
+        <li key={file.id}>{`${file.file_name} (${file.file_type})`}</li>
+      ))}
+      {cited.map((reference) => (
+        <li key={`${reference.source_type}:${reference.reference}`}>{reference.reference}</li>
+      ))}
+    </ul>
+  );
+}
+
 // HU-17: the gaps of an assessment, ordered by criticality, so the security officer knows where to start.
 // The list comes with the report preview and is built from the same report view, so the two always agree.
 export default function GapList({ gapList }) {
@@ -41,6 +60,7 @@ export default function GapList({ gapList }) {
                 <th scope="col">Status</th>
                 <th scope="col">Priority</th>
                 <th scope="col">Risks</th>
+                <th scope="col">Evidence</th>
                 <th scope="col">Why</th>
               </tr>
             </thead>
@@ -77,6 +97,9 @@ export default function GapList({ gapList }) {
                         ))}
                       </ul>
                     )}
+                  </td>
+                  <td>
+                    <GapEvidence gap={gap} />
                   </td>
                   <td>{gap.classified ? gap.reason : "No classification rule for this control yet."}</td>
                 </tr>
