@@ -240,3 +240,42 @@ def test_the_gap_list_reuses_a_given_report_view():
     view = view.model_copy(update={"results": []})
 
     assert build_gap_list(data, NOW, view=view).gaps == []
+
+
+def test_each_gap_carries_its_evidence_or_says_there_is_none():
+    """HU-16: a finding shows the evidence behind it, or states explicitly that there is none."""
+    from app.schemas.report import EvidenceReference, LinkedEvidenceFile
+
+    cited = EvidenceReference(
+        source_type="interview_turn", reference="Interview turn 4", nature="attestation"
+    )
+    linked = LinkedEvidenceFile(
+        id=uuid4(), file_name="mfa-policy.pdf", file_type="PDF", size_bytes=1024,
+        sha256="a" * 64, uploaded_at=NOW.replace(hour=9), linked_at=NOW.replace(hour=10),
+    )
+    data = report_input(**{
+        "PR.AA-01": [consultant_version("not_implemented")],
+        "PR.AA-03": [consultant_version("partially_implemented", evidence=[cited])],
+        "PR.AA-05": [consultant_version("partially_implemented")],
+    })
+    data.controls[2].linked_evidence = [linked]
+
+    gaps = {gap.control_code: gap for gap in build_gap_list(data, NOW).gaps}
+
+    assert gaps["PR.AA-01"].evidence_absent is True
+    assert gaps["PR.AA-01"].evidence == [] and gaps["PR.AA-01"].linked_evidence == []
+
+    assert gaps["PR.AA-03"].evidence_absent is False
+    assert [e.reference for e in gaps["PR.AA-03"].evidence] == ["Interview turn 4"]
+
+    assert gaps["PR.AA-05"].evidence_absent is False
+    assert [f.file_name for f in gaps["PR.AA-05"].linked_evidence] == ["mfa-policy.pdf"]
+
+
+def test_implemented_and_not_applicable_controls_are_not_gaps():
+    data = report_input(**{
+        "PR.AA-01": [consultant_version("implemented")],
+        "PR.AA-03": [consultant_version("not_applicable")],
+        "PR.AA-05": [consultant_version("not_implemented")],
+    })
+    assert codes(build_gap_list(data, NOW)) == ["PR.AA-05"]

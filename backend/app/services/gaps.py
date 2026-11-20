@@ -13,7 +13,7 @@ priority. When the HU-16 gap findings exist, they can replace the control result
 from datetime import datetime
 
 from app.schemas.gaps import Gap, GapList, GapRisk
-from app.schemas.report import ReportInput, ReportView
+from app.schemas.report import FinalResult, ReportInput, ReportView
 from app.services.reports.builder import build_report_view
 from app.services.risk_classification import (
     GAP_STATUS_ORDER,
@@ -54,42 +54,33 @@ def build_gap_list(
         except ValueError:
             unclassified.append(result)
 
-    gaps = []
-    for classification in order_gaps(classified):
-        result = by_code[classification.control_code]
-        gaps.append(
-            Gap(
-                control_code=result.code,
-                control_title=result.title,
-                control_status=result.control_status,
-                status_label=result.status_label,
-                classified=True,
-                priority=classification.priority,
-                risks=[
-                    GapRisk(name=name, severity=severity)
-                    for name, severity in classification.risks
-                ],
-                reason=classification.reason,
-                result_version=latest_version[result.code],
-                basis=result.basis,
-                explanation=result.explanation,
-                evidence_pending=result.evidence_pending,
-            )
+    def gap(result: FinalResult, **classification_fields) -> Gap:
+        return Gap(
+            control_code=result.code,
+            control_title=result.title,
+            control_status=result.control_status,
+            status_label=result.status_label,
+            result_version=latest_version[result.code],
+            basis=result.basis,
+            explanation=result.explanation,
+            evidence_pending=result.evidence_pending,
+            evidence=result.evidence,
+            linked_evidence=result.linked_evidence,
+            evidence_absent=not result.evidence and not result.linked_evidence,
+            **classification_fields,
         )
-    for result in sorted(unclassified, key=lambda item: item.code):
-        gaps.append(
-            Gap(
-                control_code=result.code,
-                control_title=result.title,
-                control_status=result.control_status,
-                status_label=result.status_label,
-                classified=False,
-                result_version=latest_version[result.code],
-                basis=result.basis,
-                explanation=result.explanation,
-                evidence_pending=result.evidence_pending,
-            )
+
+    gaps = [
+        gap(
+            by_code[classification.control_code],
+            classified=True,
+            priority=classification.priority,
+            risks=[GapRisk(name=name, severity=severity) for name, severity in classification.risks],
+            reason=classification.reason,
         )
+        for classification in order_gaps(classified)
+    ]
+    gaps += [gap(result, classified=False) for result in sorted(unclassified, key=lambda item: item.code)]
 
     return GapList(
         organization_id=data.organization.id,

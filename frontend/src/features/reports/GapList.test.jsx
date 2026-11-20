@@ -28,6 +28,9 @@ const gapList = {
       basis: "accepted_agent_result",
       explanation: "MFA is not enforced.",
       evidence_pending: false,
+      evidence: [],
+      linked_evidence: [],
+      evidence_absent: true,
     },
     {
       control_code: "PR.AA-01",
@@ -42,6 +45,19 @@ const gapList = {
       basis: "consultant_version",
       explanation: "Leavers are disabled late.",
       evidence_pending: false,
+      evidence: [{ source_type: "interview_turn", reference: "Interview turn 4", nature: "attestation" }],
+      linked_evidence: [
+        {
+          id: "file-1",
+          file_name: "leavers-procedure.pdf",
+          file_type: "PDF",
+          size_bytes: 2048,
+          sha256: "a".repeat(64),
+          uploaded_at: "2026-11-14T09:00:00Z",
+          linked_at: "2026-11-14T10:00:00Z",
+        },
+      ],
+      evidence_absent: false,
     },
   ],
 };
@@ -78,6 +94,17 @@ describe("GapList", () => {
     expect(within(unclassified).getByText("—")).toBeInTheDocument();
     expect(within(unclassified).getByText("No classification rule for this control yet.")).toBeInTheDocument();
     expect(within(unclassified).queryByText(/High|Critical|Medium|Low/)).not.toBeInTheDocument();
+  });
+
+  it("shows each gap's evidence, or says plainly that there is none (HU-16)", async () => {
+    renderGapList();
+
+    const table = await screen.findByRole("table", { name: "Gaps by criticality" });
+    const [, withoutEvidence, withEvidence] = within(table).getAllByRole("row");
+    expect(within(withoutEvidence).getByText("No evidence")).toBeInTheDocument();
+    expect(within(withEvidence).getByText("leavers-procedure.pdf (PDF)")).toBeInTheDocument();
+    expect(within(withEvidence).getByText("Interview turn 4")).toBeInTheDocument();
+    expect(within(withEvidence).queryByText("No evidence")).not.toBeInTheDocument();
   });
 
   it("says that the rules are provisional and how many controls have no final result yet", async () => {
