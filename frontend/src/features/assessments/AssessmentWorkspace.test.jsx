@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../api/client.js";
+import { getReportPreview } from "../reports/api.js";
 import { listOrganizations } from "../organizations/api.js";
 import { createAssessment, getAssessmentScope, listAssessments } from "./api.js";
 import AssessmentWorkspace from "./AssessmentWorkspace.jsx";
@@ -9,6 +10,8 @@ import AssessmentWorkspace from "./AssessmentWorkspace.jsx";
 vi.mock("../organizations/api.js", () => ({
   listOrganizations: vi.fn(),
 }));
+
+vi.mock("../reports/api.js", () => ({ getReportPreview: vi.fn() }));
 
 vi.mock("./AssessmentEvidence.jsx", () => ({
   default: ({ organizationId, assessmentId }) => (
@@ -80,6 +83,15 @@ function renderWorkspace(props = {}) {
 
 describe("AssessmentWorkspace", () => {
   beforeEach(() => {
+    getReportPreview.mockReset();
+    getReportPreview.mockResolvedValue({
+      summary: {
+        coverage_pct: 50,
+        pending: 1,
+        status_counts: { implemented: 1, partially_implemented: 0, not_implemented: 0, not_assessed: 0 },
+      },
+      exclusions: [],
+    });
     listOrganizations.mockResolvedValue(organizations);
     listAssessments.mockImplementation((organizationId) =>
       Promise.resolve(organizationId === "org-1" ? [assessment("assess-1", "Q3 baseline")] : []),
@@ -104,6 +116,33 @@ describe("AssessmentWorkspace", () => {
     expect(screen.getAllByText("Halverston Community Bank").length).toBeGreaterThan(0);
     expect(screen.getByText("PR.AA-03")).toBeInTheDocument();
     expect(screen.getByText("demo-0.2")).toBeInTheDocument();
+  });
+
+  it("shows the selected assessment's compliance summary from the report preview", async () => {
+    renderWorkspace();
+
+    const summary = await screen.findByRole("heading", { name: "Compliance summary" });
+    expect(summary.closest("section")).toHaveTextContent("50.0%");
+    expect(summary.closest("section")).toHaveTextContent("1 awaiting a final result");
+    expect(summary.closest("section")).toHaveTextContent("not a compliance score");
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-a");
+  });
+
+  it("does not show a late compliance summary from another assessment", async () => {
+    const oldPreview = deferred();
+    getReportPreview.mockReturnValueOnce(oldPreview.promise);
+    renderWorkspace();
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+
+    // Changing organizations loads a fresh list and selects its assessment.
+    listAssessments.mockImplementation((orgId) => Promise.resolve(orgId === "org-2" ? [assessment("assess-2", "Q4 review", "org-2")] : [assessment("assess-1", "Q3 baseline")]));
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
+    await waitFor(() => expect(getReportPreview).toHaveBeenCalledWith("org-2", "assess-2", "token-a"));
+    await screen.findByRole("heading", { name: "Compliance summary" });
+    await act(async () => {
+      oldPreview.resolve({ summary: { coverage_pct: 99, status_counts: {} }, exclusions: [] });
+    });
+    expect(screen.queryByText("99.0%")).not.toBeInTheDocument();
   });
 
   it("starts with the organization chosen in another screen", async () => {
