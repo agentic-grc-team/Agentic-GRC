@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, apiRequest } from "./client.js";
+import { ApiError, apiRequest, setAccessTokenRefresher } from "./client.js";
+
+function reply(status, body = {}) {
+  return { status, ok: status >= 200 && status < 300, json: async () => body };
+}
 
 describe("apiRequest", () => {
   afterEach(() => {
@@ -49,5 +53,60 @@ describe("apiRequest", () => {
     expect(options.headers.has("Content-Type")).toBe(false);
     expect(options.headers.get("Authorization")).toBe("Bearer signed-token");
     expect(options.credentials).toBe("omit");
+  });
+
+  describe("after a 401", () => {
+    let unregister = () => {};
+    afterEach(() => unregister());
+
+    it("retries once with a renewed token and the same request", async () => {
+      const refresher = vi.fn().mockResolvedValue("fresh-token");
+      unregister = setAccessTokenRefresher(refresher);
+      fetch
+        .mockResolvedValueOnce(reply(401, { detail: "A valid Supabase session is required." }))
+        .mockResolvedValueOnce(reply(201, { id: "turn-2" }));
+
+      const body = JSON.stringify({ content: "We use MFA.", client_request_id: "request-1" });
+      await expect(apiRequest("/turns", { method: "POST", accessToken: "stale-token", body }))
+        .resolves.toEqual({ id: "turn-2" });
+
+      expect(refresher).toHaveBeenCalledWith("stale-token");
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const [, retry] = fetch.mock.calls[1];
+      expect(retry.headers.get("Authorization")).toBe("Bearer fresh-token");
+      expect(retry.method).toBe("POST");
+      expect(retry.body).toBe(body);
+    });
+
+    it("returns the 401 when the session cannot be renewed", async () => {
+      unregister = setAccessTokenRefresher(vi.fn().mockResolvedValue(null));
+      fetch.mockResolvedValueOnce(reply(401, { detail: "A valid Supabase session is required." }));
+
+      const request = apiRequest("/organizations", { accessToken: "stale-token" });
+      await expect(request).rejects.toMatchObject({ status: 401 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry when the refresher returns the same token or fails", async () => {
+      unregister = setAccessTokenRefresher(vi.fn().mockResolvedValue("stale-token"));
+      fetch.mockResolvedValueOnce(reply(401));
+      await expect(apiRequest("/organizations", { accessToken: "stale-token" })).rejects.toBeInstanceOf(ApiError);
+
+      unregister = setAccessTokenRefresher(vi.fn().mockRejectedValue(new Error("offline")));
+      fetch.mockResolvedValueOnce(reply(401));
+      await expect(apiRequest("/organizations", { accessToken: "stale-token" })).rejects.toMatchObject({ status: 401 });
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("leaves other errors and unauthenticated requests alone", async () => {
+      const refresher = vi.fn().mockResolvedValue("fresh-token");
+      unregister = setAccessTokenRefresher(refresher);
+      fetch.mockResolvedValueOnce(reply(403)).mockResolvedValueOnce(reply(401));
+
+      await expect(apiRequest("/organizations", { accessToken: "token" })).rejects.toMatchObject({ status: 403 });
+      await expect(apiRequest("/auth/invitations/accept")).rejects.toMatchObject({ status: 401 });
+      expect(refresher).not.toHaveBeenCalled();
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
   });
 });

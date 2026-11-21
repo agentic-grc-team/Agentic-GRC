@@ -105,6 +105,7 @@ function renderWorkspace(props = {}) {
 describe("InterviewWorkspace", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    window.sessionStorage.clear();
     listOrganizations.mockResolvedValue(organizations);
     listAssessments.mockResolvedValue(assessments);
     openInterview.mockResolvedValue(interview());
@@ -518,6 +519,9 @@ describe("InterviewWorkspace", () => {
       act(() => { vi.advanceTimersByTime(600); });
       expect(container.querySelector(".interview-avatar-idle")).not.toBeNull();
       fireEvent.change(answerBox(), { target: { value: "MFA enforced" } });
+      // jsdom dispatches the draft's storage event on a 0 ms timer; only the typing timer may remain.
+      act(() => { vi.advanceTimersByTime(0); });
+      expect(vi.getTimerCount()).toBe(1);
       unmount();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -547,4 +551,62 @@ describe("InterviewWorkspace", () => {
     expect(screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeNull();
   });
 
+
+  describe("when the session expires mid-interview", () => {
+    it("keeps the unsent answer and resends it with the same request id after signing in again", async () => {
+      submitInterviewTurn.mockRejectedValueOnce(new ApiError(401, { detail: "A valid Supabase session is required." }));
+      const first = renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      sendAnswer("We use Okta with MFA.");
+      expect(await screen.findByRole("alert")).toHaveTextContent("session has expired");
+      const firstRequestId = submitInterviewTurn.mock.calls[0][2].client_request_id;
+
+      // Signing in again unmounts the workspace and mounts a new one.
+      first.unmount();
+      getKickoffStatus.mockResolvedValue({ id: "session-1", closed: false });
+      renderWorkspace({ accessToken: "token-b", initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+
+      expect(answerBox()).toHaveValue("We use Okta with MFA.");
+      fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+      await screen.findByText("Who reviews access rights?");
+      const retry = submitInterviewTurn.mock.calls[1];
+      expect(retry[2]).toMatchObject({ client_request_id: firstRequestId, replies_to_turn_id: "turn-1" });
+      expect(retry[3]).toBe("token-b");
+      expect(window.sessionStorage.getItem("agrc.interview-draft:session-1")).toBeNull();
+    });
+
+    it("does not restore a draft written for a question that is no longer open", async () => {
+      const first = renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      fireEvent.change(answerBox(), { target: { value: "Answer to the old question" } });
+      first.unmount();
+
+      const answered = interview({
+        turns: [turn(), receipt().turn, ...receipt().agent_turns],
+      });
+      openInterview.mockResolvedValue(answered);
+      renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+
+      expect(answerBox()).toHaveValue("");
+    });
+
+    it("starts a new request id when the restored answer is edited", async () => {
+      submitInterviewTurn.mockRejectedValueOnce(new ApiError(401, {}));
+      const first = renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      sendAnswer("We use MFA.");
+      await screen.findByRole("alert");
+      const firstRequestId = submitInterviewTurn.mock.calls[0][2].client_request_id;
+      first.unmount();
+
+      renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      sendAnswer("We use MFA for every administrator.");
+      await screen.findByText("Who reviews access rights?");
+
+      expect(submitInterviewTurn.mock.calls[1][2].client_request_id).not.toBe(firstRequestId);
+    });
+  });
 });

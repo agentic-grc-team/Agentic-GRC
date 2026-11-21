@@ -1,11 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { ApiError } from "../api/client.js";
+import { ApiError, setAccessTokenRefresher } from "../api/client.js";
 import { toBrowserPath } from "../basePath.js";
+import { clearInterviewDrafts } from "../features/interviews/draftStorage.js";
 import { getCurrentAccount } from "./api.js";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase.js";
 
 const AuthContext = createContext(null);
+
+export const SESSION_EXPIRED_MESSAGE =
+  "Your session has expired. Sign in again to continue where you left off.";
 
 function accountFromSession(account, session) {
   const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
@@ -45,10 +49,47 @@ export function AuthProvider({ children }) {
     const supabase = getSupabaseClient();
     let isMounted = true;
     let latestRequest = 0;
+    let loadedUserId = null;
+
+    function endExpiredSession() {
+      if (isMounted) {
+        setAuthError(SESSION_EXPIRED_MESSAGE);
+      }
+      void supabase.auth.signOut({ scope: "local" });
+    }
+
+    // Called by the API client after a 401. getSession() renews a token that is about to expire;
+    // if it still returns the rejected token, force a refresh. When the session cannot be renewed,
+    // sign out locally so the user gets the login screen instead of a dead workspace.
+    async function refreshAccessToken(staleToken) {
+      const { data, error } = await supabase.auth.getSession();
+      let session = error ? null : data.session;
+      if (session?.access_token === staleToken) {
+        const refreshed = await supabase.auth.refreshSession();
+        if (refreshed.error) {
+          // A network failure is not an expired session: keep the user signed in and let the
+          // request fail as it is, so it can be retried.
+          const status = refreshed.error.status;
+          if (!(status >= 400 && status < 500)) {
+            return null;
+          }
+          session = null;
+        } else {
+          session = refreshed.data.session;
+        }
+      }
+      if (!session?.access_token) {
+        endExpiredSession();
+        return null;
+      }
+      return session.access_token;
+    }
+    const unregisterRefresher = setAccessTokenRefresher(refreshAccessToken);
 
     async function loadSession(session) {
       const requestId = ++latestRequest;
       if (!session?.access_token) {
+        loadedUserId = null;
         if (isMounted) {
           setUser(null);
           setIsLoading(false);
@@ -59,6 +100,7 @@ export function AuthProvider({ children }) {
       try {
         const account = await getCurrentAccount(session.access_token);
         if (isMounted && requestId === latestRequest) {
+          loadedUserId = session.user?.id ?? account.id;
           setUser(accountFromSession(account, session));
           setAuthError("");
         }
@@ -78,7 +120,14 @@ export function AuthProvider({ children }) {
       }
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // A refreshed token belongs to the account already loaded: swap the token in place rather
+      // than looking the account up again, so a failed lookup cannot leave the old token in use.
+      if (event === "TOKEN_REFRESHED" && session?.access_token && loadedUserId && session.user?.id === loadedUserId) {
+        ++latestRequest;
+        setUser((current) => (current ? accountFromSession(current, session) : current));
+        return;
+      }
       queueMicrotask(() => void loadSession(session));
     });
 
@@ -108,6 +157,7 @@ export function AuthProvider({ children }) {
 
     return () => {
       isMounted = false;
+      unregisterRefresher();
       subscription.unsubscribe();
     };
   }, []);
@@ -155,6 +205,7 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     setAuthError("");
     setUser(null);
+    clearInterviewDrafts();
     if (isSupabaseConfigured()) {
       await getSupabaseClient().auth.signOut();
     }

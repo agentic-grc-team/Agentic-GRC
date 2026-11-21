@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import InterviewAvatar from "./InterviewAvatar.jsx";
 import { getInterview, submitInterviewTurn } from "./api.js";
+import { loadInterviewDraft, saveInterviewDraft } from "./draftStorage.js";
 import { describeInterviewError, isRetryableInterviewError } from "./errors.js";
 import EvidenceUpload from "../organizations/EvidenceUpload.jsx";
 
@@ -39,9 +40,16 @@ export default function InterviewConversation({
   organizationId, assessmentId, interview, accessToken, onSessionClosed, participantName,
 }) {
   const session = interview.session;
+  const [savedDraft] = useState(() => {
+    if (session?.closed) return null;
+    const draft = loadInterviewDraft(session.id);
+    const openTurn = mergeTurns([], interview.turns || []).at(-1);
+    // Only restore a draft written for the question that is still open.
+    return draft && openTurn?.speaker === "agent" && draft.turnId === openTurn.id ? draft : null;
+  });
   const [turns, setTurns] = useState(() => mergeTurns([], interview.turns || []));
   const [closed, setClosed] = useState(Boolean(session?.closed));
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(savedDraft?.content ?? "");
   const [isTyping, setIsTyping] = useState(false);
   const typingTimerRef = useRef(null);
   const [isSending, setIsSending] = useState(false);
@@ -49,7 +57,7 @@ export default function InterviewConversation({
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const accessTokenRef = useRef(accessToken);
-  const pendingRequestRef = useRef(null);
+  const pendingRequestRef = useRef(savedDraft?.pending ?? null);
   const sendingRef = useRef(false);
   const activeRef = useRef(true);
   const endRef = useRef(null);
@@ -93,9 +101,18 @@ export default function InterviewConversation({
     }
   }, [awaitingAnswer, isSending, turns.length]);
 
+  function storeDraft(content) {
+    const pending = pendingRequestRef.current?.content === content.trim() ? pendingRequestRef.current : null;
+    saveInterviewDraft(
+      session.id,
+      content.trim() && latestAgentTurn ? { content, pending, turnId: latestAgentTurn.id } : null,
+    );
+  }
+
   function updateAnswer(event) {
     const value = event.target.value;
     setAnswer(value);
+    storeDraft(value);
     setIsTyping(Boolean(value.trim()));
     clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => setIsTyping(false), 1800);
@@ -123,6 +140,7 @@ export default function InterviewConversation({
       ? pendingRequestRef.current
       : { content, id: newRequestId() };
     pendingRequestRef.current = pending;
+    storeDraft(answer);
 
     try {
       const receipt = await submitInterviewTurn(
@@ -142,6 +160,7 @@ export default function InterviewConversation({
       }
       pendingRequestRef.current = null;
       setAnswer("");
+      saveInterviewDraft(session.id, null);
 
       if (receipt.idempotent_replay) {
         try {
