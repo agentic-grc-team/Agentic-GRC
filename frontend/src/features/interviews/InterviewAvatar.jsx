@@ -2,6 +2,27 @@ import { useEffect, useState } from "react";
 import "./InterviewAvatar.css";
 import { assetUrl } from "../../basePath.js";
 
+const avatarImages = [
+  "interview-guide.webp",
+  "interview-guide-smile.webp",
+  "interview-guide-attentive.webp",
+  "interview-guide-blink.webp",
+  "interview-guide-thinking.webp",
+  "interview-office.webp",
+];
+const preloadedImages = new Map();
+
+export function preloadInterviewAvatar() {
+  for (const file of avatarImages) {
+    const url = assetUrl(`avatars/${file}`);
+    if (preloadedImages.has(url)) continue;
+    const image = new Image();
+    image.src = url;
+    image.decode?.().catch(() => {});
+    preloadedImages.set(url, image);
+  }
+}
+
 export default function InterviewAvatar({ state }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [blinking, setBlinking] = useState(false);
@@ -51,7 +72,9 @@ export default function InterviewAvatar({ state }) {
 
   return (
     <div className={`interview-avatar-figure interview-avatar-${state}`} aria-hidden="true">
-      <div className="interview-avatar-backdrop" />
+      <div className="interview-avatar-backdrop">
+        <img src={assetUrl("avatars/interview-office.webp")} alt="" draggable="false" decoding="async" />
+      </div>
 
       <div className={`interview-avatar-portrait ${showThinkingPose ? "has-thinking-pose" : ""}`}>
         <img
@@ -99,17 +122,15 @@ export default function InterviewAvatar({ state }) {
             onError={() => setBlinkReady(false)}
           />
         </div>
-        {thinking && (
-          <img
-            className={`interview-avatar-thinking-pose ${thinkingReady ? "is-visible" : ""}`}
-            src={assetUrl("avatars/interview-guide-thinking.webp")}
-            alt=""
-            draggable="false"
-            decoding="async"
-            onLoad={() => setThinkingReady(true)}
-            onError={() => setThinkingReady(false)}
-          />
-        )}
+        <img
+          className={`interview-avatar-thinking-pose ${showThinkingPose ? "is-visible" : ""}`}
+          src={assetUrl("avatars/interview-guide-thinking.webp")}
+          alt=""
+          draggable="false"
+          decoding="async"
+          onLoad={() => setThinkingReady(true)}
+          onError={() => setThinkingReady(false)}
+        />
       </div>
     </div>
   );

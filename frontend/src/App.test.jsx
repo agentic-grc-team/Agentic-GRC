@@ -86,12 +86,12 @@ describe("App sign-in options", () => {
     expect(authMock.signIn).not.toHaveBeenCalled();
   });
 
-  it("preserves the selected workspace when navigating to evidence and back", async () => {
+  it("preserves the selected workspace when navigating to the legacy evidence URL and back", async () => {
     authMock.user = { accessToken: "token", email: "member@example.com" };
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Beta/ }));
-    fireEvent.click(screen.getByRole("link", { name: /Upload evidence/ }));
-    expect(window.location.search).toContain("organization_id=beta");
+    window.history.pushState({}, "", "/evidence?organization_id=beta");
+    window.dispatchEvent(new PopStateEvent("popstate"));
     expect(await screen.findByRole("combobox")).toHaveValue("beta");
     fireEvent.click(screen.getByRole("link", { name: /Back to workspaces/ }));
     expect(await screen.findByRole("heading", { level: 1, name: "Beta" })).toBeInTheDocument();
@@ -113,7 +113,8 @@ describe("App sign-in options", () => {
     expect(screen.queryByText("Consultant", { selector: ".account-role" })).not.toBeInTheDocument();
     expect(screen.getByText("Beta", { selector: ".organization-context-name" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("link", { name: /Upload evidence/ }));
+    window.history.pushState({}, "", "/evidence?organization_id=beta");
+    window.dispatchEvent(new PopStateEvent("popstate"));
     expect(await screen.findByRole("combobox")).toHaveValue("beta");
     fireEvent.click(screen.getByRole("button", { name: "Change organization" }));
     expect(await screen.findByRole("button", { name: /Beta/ })).toHaveAttribute("aria-current", "true");
