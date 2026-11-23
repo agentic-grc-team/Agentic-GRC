@@ -43,11 +43,9 @@ def extract_text(file_path: str, extension: str) -> str:
             with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
         elif extension == ".pdf":
+            # Pages are separated by a form feed, so passage matching (HU-12) can tell the page.
             with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
+                text = "\f".join(page.extract_text() or "" for page in pdf.pages)
         elif extension == ".docx":
             doc = Document(file_path)
             for para in doc.paragraphs:
@@ -63,8 +61,9 @@ def extract_text(file_path: str, extension: str) -> str:
     
     if not text.strip():
         raise ValueError("Document contains no readable text.")
-        
-    return text.strip()
+
+    # Keep leading form feeds: they stand for empty first pages and keep the page numbers right.
+    return text.strip(" \t\r\n")
 
 def _remove_file(path: str) -> None:
     if os.path.exists(path):
