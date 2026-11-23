@@ -6,21 +6,32 @@ const BASIS_LABELS = {
 };
 
 // HU-16: each finding shows the evidence behind its result, or says plainly that there is none.
+// Like the report, a linked file shows its verification label and whether it was added after the review:
+// such a file did not support the reviewed result, so the backend does not count it as evidence.
 function GapEvidence({ gap }) {
   const linked = gap.linked_evidence || [];
   const cited = gap.evidence || [];
-  if (gap.evidence_absent || (linked.length === 0 && cited.length === 0)) {
+  if (linked.length === 0 && cited.length === 0) {
     return <span className="gap-evidence-none">No evidence</span>;
   }
   return (
-    <ul className="gap-evidence">
-      {linked.map((file) => (
-        <li key={file.id}>{`${file.file_name} (${file.file_type})`}</li>
-      ))}
-      {cited.map((reference) => (
-        <li key={`${reference.source_type}:${reference.reference}`}>{reference.reference}</li>
-      ))}
-    </ul>
+    <>
+      {gap.evidence_absent && <span className="gap-evidence-none">No evidence at the time of the review</span>}
+      <ul className="gap-evidence">
+        {linked.map((file) => (
+          <li key={file.id}>
+            <span className="gap-evidence-name">{file.file_name}</span>
+            <span className="gap-evidence-meta">
+              {`${file.file_type} · ${file.verification_label}`}
+              {file.added_after_review && " · Added after the review"}
+            </span>
+          </li>
+        ))}
+        {cited.map((reference) => (
+          <li key={`${reference.source_type}:${reference.reference}`}>{reference.reference}</li>
+        ))}
+      </ul>
+    </>
   );
 }
 

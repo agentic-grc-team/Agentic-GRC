@@ -66,7 +66,10 @@ def build_gap_list(
             evidence_pending=result.evidence_pending,
             evidence=result.evidence,
             linked_evidence=result.linked_evidence,
-            evidence_absent=not result.evidence and not result.linked_evidence,
+            # A file linked after the review did not support the reviewed result (it is still listed,
+            # marked as added after the review), so it does not count as evidence behind the gap.
+            evidence_absent=not result.evidence
+            and all(file.added_after_review for file in result.linked_evidence),
             **classification_fields,
         )
 

@@ -279,3 +279,21 @@ def test_implemented_and_not_applicable_controls_are_not_gaps():
         "PR.AA-05": [consultant_version("not_implemented")],
     })
     assert codes(build_gap_list(data, NOW)) == ["PR.AA-05"]
+
+
+def test_a_file_linked_after_the_review_is_listed_but_does_not_count_as_evidence():
+    """A file the reviewer never saw did not support the reviewed result (#76 review)."""
+    from app.schemas.report import LinkedEvidenceFile
+
+    late = LinkedEvidenceFile(
+        id=uuid4(), file_name="late.pdf", file_type="PDF", size_bytes=10, sha256="b" * 64,
+        uploaded_at=NOW.replace(hour=13), linked_at=NOW.replace(hour=14),
+    )
+    data = report_input(**{"PR.AA-03": [consultant_version("not_implemented")]})
+    data.controls[0].linked_evidence = [late]
+
+    (gap,) = build_gap_list(data, NOW).gaps
+
+    assert [f.file_name for f in gap.linked_evidence] == ["late.pdf"]
+    assert gap.linked_evidence[0].added_after_review is True
+    assert gap.evidence_absent is True

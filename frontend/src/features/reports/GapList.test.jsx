@@ -55,6 +55,9 @@ const gapList = {
           sha256: "a".repeat(64),
           uploaded_at: "2026-11-14T09:00:00Z",
           linked_at: "2026-11-14T10:00:00Z",
+          added_after_review: false,
+          verification: "not_verified",
+          verification_label: "Not verified",
         },
       ],
       evidence_absent: false,
@@ -102,9 +105,26 @@ describe("GapList", () => {
     const table = await screen.findByRole("table", { name: "Gaps by criticality" });
     const [, withoutEvidence, withEvidence] = within(table).getAllByRole("row");
     expect(within(withoutEvidence).getByText("No evidence")).toBeInTheDocument();
-    expect(within(withEvidence).getByText("leavers-procedure.pdf (PDF)")).toBeInTheDocument();
+    expect(within(withEvidence).getByText("leavers-procedure.pdf")).toBeInTheDocument();
+    expect(within(withEvidence).getByText("PDF · Not verified")).toBeInTheDocument();
+    expect(within(withEvidence).queryByText(/Added after the review/)).not.toBeInTheDocument();
     expect(within(withEvidence).getByText("Interview turn 4")).toBeInTheDocument();
     expect(within(withEvidence).queryByText("No evidence")).not.toBeInTheDocument();
+  });
+
+  it("marks a file linked after the review and does not present it as supporting evidence", async () => {
+    const [first, second] = gapList.gaps;
+    const lateFile = { ...second.linked_evidence[0], added_after_review: true };
+    renderGapList({
+      ...gapList,
+      gaps: [first, { ...second, evidence: [], linked_evidence: [lateFile], evidence_absent: true }],
+    });
+
+    const table = await screen.findByRole("table", { name: "Gaps by criticality" });
+    const row = within(table).getAllByRole("row")[2];
+    expect(within(row).getByText("No evidence at the time of the review")).toBeInTheDocument();
+    expect(within(row).getByText("leavers-procedure.pdf")).toBeInTheDocument();
+    expect(within(row).getByText("PDF · Not verified · Added after the review")).toBeInTheDocument();
   });
 
   it("says that the rules are provisional and how many controls have no final result yet", async () => {

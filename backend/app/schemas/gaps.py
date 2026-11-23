@@ -34,7 +34,8 @@ class Gap(BaseModel):
     basis: FinalBasis
     explanation: str
     evidence_pending: bool = False
-    # HU-16: the evidence behind the result, or an explicit statement that there is none.
+    # HU-16: the evidence behind the result, or an explicit statement that there is none. Files
+    # linked after the review are listed (marked added_after_review) but do not count against evidence_absent.
     evidence: list[EvidenceReference] = []
     linked_evidence: list[LinkedEvidenceFile] = []
     evidence_absent: bool

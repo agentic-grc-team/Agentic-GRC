@@ -68,5 +68,16 @@
 }
 
 .gap-evidence-none {
+  display: block;
   color: var(--quiet);
+}
+
+.gap-evidence-name,
+.gap-evidence-meta {
+  display: block;
+}
+
+.gap-evidence-meta {
+  color: var(--muted);
+  font: 10px var(--mono);
 }
