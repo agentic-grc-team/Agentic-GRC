@@ -183,6 +183,7 @@ def run_model(model: str, cases: list[dict], kb, settings: Settings, repeat: int
                 follow_ups_used=0,
                 max_follow_ups=settings.max_follow_ups,
                 evidence_asked=case.get("evidence_asked", False),
+                clarifications_used=case.get("clarifications_used", 0),
             )
 
             # Per-turn latency:

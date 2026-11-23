@@ -158,6 +158,54 @@ def test_clarification_does_not_consume_follow_ups():
     assert any(t["turn_type"] == "clarification" for t in s["turns"])
 
 
+def test_repeated_clarification_requests_stop_and_go_to_review():
+    """AGRC-140: the MFA case where the participant keeps asking what the question means."""
+    llm = FakeLLM({
+        "interpret_answer": lambda _u: I(intent="clarification_request", confidence=1.0),
+        "clarify_question": lambda _u: Clarification(explanation="It is an extra code on your phone."),
+    })
+    nodes, _ = make(llm)
+    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]),
+                     ["what is a second factor?", "still lost", "which accounts?"])
+
+    r = s["results"]["IAM-01"]
+    assert r["status"] == "not_assessed" and r["requires_human_review"]
+    assert r["follow_ups_used"] == 0
+    assert [t["turn_type"] for t in s["turns"] if t["speaker"] == "agent"].count("clarification") == 2
+
+
+def test_clarification_sees_what_was_already_explained():
+    llm = FakeLLM({
+        "interpret_answer": scripted_interpretations(
+            I(intent="clarification_request"), I(intent="clarification_request"), I(category="no"),
+        ),
+        "clarify_question": scripted_interpretations(
+            Clarification(explanation="Like a bank code on your phone."),
+            Clarification(explanation="Admin accounts are the ones that can change settings."),
+        ),
+    })
+    nodes, _ = make(llm)
+    run_scripted(nodes, initial_state("org", "a1", ["IAM-01"]), ["what is that?", "which accounts?", "No"])
+
+    second_clarify = [user for prompt_id, user in llm.calls if prompt_id == "clarify_question"][1]
+    assert "Like a bank code on your phone." in second_clarify
+    assert "do not repeat" in second_clarify
+
+
+def test_clarification_limit_resets_on_the_next_question():
+    llm = FakeLLM({
+        "interpret_answer": scripted_interpretations(
+            I(intent="clarification_request"), I(intent="clarification_request"), I(category="no"),
+            I(intent="clarification_request"), I(category="no"),
+        ),
+        "clarify_question": lambda _u: Clarification(explanation="Explained."),
+    })
+    nodes, _ = make(llm)
+    s = run_scripted(nodes, initial_state("org", "a1", ["IAM-01", "IAM-02"]),
+                     ["what?", "what?", "No", "what?", "No"])
+    assert s["results"]["IAM-02"]["status"] == "not_implemented"
+
+
 def test_moves_to_next_question():
     llm = FakeLLM({"interpret_answer": lambda _u: I(category="no")})
     nodes, _ = make(llm)
