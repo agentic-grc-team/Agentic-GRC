@@ -23,6 +23,12 @@ export function getAssessmentScope(organizationId, assessmentId, accessToken) {
   );
 }
 
+export function getPassageMatches(organizationId, assessmentId, accessToken) {
+  return apiRequest(
+    `${assessmentsPath(organizationId)}/${encodeURIComponent(assessmentId)}/passage-matches`,
+    { accessToken },
+  );
+}
 export function listAssessmentControls(organizationId, assessmentId, accessToken) {
   return apiRequest(
     `${assessmentsPath(organizationId)}/${encodeURIComponent(assessmentId)}/controls`,

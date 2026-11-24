@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { listOrganizations } from "../organizations/api.js";
 import { createAssessment, getAssessmentScope, listAssessments } from "./api.js";
 import AssessmentEvidence from "./AssessmentEvidence.jsx";
+import AssessmentPassages from "./AssessmentPassages.jsx";
 import AssessmentScope from "./AssessmentScope.jsx";
 import { acceptsInterviews, assessmentStatusLabel } from "./statusLabels.js";
 import "./AssessmentWorkspace.css";
@@ -295,6 +296,15 @@ export default function AssessmentWorkspace({
       {isLoadingScope && <p role="status">Loading assessment scope…</p>}
       {scopeError && <p role="alert">{scopeError}</p>}
       {scope && <AssessmentScope scope={scope} />}
+      {scope && selectedOrganization?.role === "consultant" && selectedOrganizationId && selectedAssessmentId && (
+        <AssessmentPassages
+          key={`${selectedOrganizationId}:${selectedAssessmentId}:${sessionKey}`}
+          scope={scope}
+          organizationId={selectedOrganizationId}
+          assessmentId={selectedAssessmentId}
+          accessToken={accessToken}
+        />
+      )}
       {scope && selectedOrganizationId && selectedAssessmentId && (
         <AssessmentEvidence
           key={`${selectedOrganizationId}:${selectedAssessmentId}`}
