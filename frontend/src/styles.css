@@ -794,3 +794,75 @@ a.rail-navigation-item { text-decoration: none; }
   .app-shell.is-interview-active .app-rail { width: 54px; }
   .app-shell.is-interview-active .app-main { margin-left: 0; }
 }
+
+/* AGRC-154: readable text and visible keyboard focus in core workflows. */
+:root {
+  --muted: #b3bdc7;
+  --quiet: #a9b5c0;
+}
+
+body { min-width: 320px; }
+
+.brand-name small, .rail-label, .eyebrow,
+.assessment-facts dt, .report-summary dt, .report-table th,
+.review-trace-context dt, .review-context-label {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: .06em;
+}
+
+.rail-navigation-item, .primary-button, .secondary-button,
+.sign-out-button, .review-actions button, .review-continue-button {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.assessment-field, .report-org-select, .review-comment,
+.organization-form label, .invite-form label { font-size: 13px; }
+
+.assessment-field select, .assessment-field input,
+.report-org-select select, .review-comment select, .review-comment textarea,
+.organization-form input, .organization-form select,
+.invite-form input, .invite-form select {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.review-section h3, .report-section h3 { font-size: 13px; }
+.report-table { font-size: 14px; }
+.report-table td:first-child { font-size: 13px; }
+.report-meta, .report-linked-evidence-meta, .report-evidence-note,
+.report-section .report-evidence-note, .review-section p.review-trace-meta,
+.review-trace-sources { font-size: 12px; }
+
+.muted-copy, .sidebar-footnote, .sidebar-empty,
+.rail-bottom span, .evidence-dropzone span { color: var(--muted); }
+.muted-copy, .evidence-dropzone span { font-size: 12px; }
+.organization-list-copy strong { font-size: 13px; }
+.organization-list-copy small { font-size: 11px; }
+
+.account-email, .account-role, .organization-list-copy strong,
+.conversation-heading h1 {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.review-comment textarea:focus-visible,
+.review-comment select:focus-visible,
+.evidence-dropzone:focus-visible {
+  outline: 2px solid var(--mint-strong);
+  outline-offset: 3px;
+}
+
+@media (max-width: 700px) {
+  .app-rail, .app-shell.is-interview-active .app-rail { padding-inline: 5px; }
+  .rail-navigation-item { width: 44px; }
+}
+
+@media (max-width: 960px) {
+  .report-workspace .report-org-select {
+    max-width: min(100%, 540px);
+  }
+}
