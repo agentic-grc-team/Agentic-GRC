@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
-import { getPassageMatches } from "./api.js";
-import "./AssessmentPassages.css";
+import { getPassageMatches } from "../assessments/api.js";
+import "./ProposedPassages.css";
 
-export default function AssessmentPassages({ scope, organizationId, assessmentId, accessToken }) {
-  const controls = (scope.functions || []).flatMap((group) =>
-    group.categories.flatMap((category) => category.controls),
-  );
-  const [selectedCode, setSelectedCode] = useState(controls[0]?.code || "");
+export default function ProposedPassages({ organizationId, assessmentId, controlCode, accessToken, sessionId }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -17,7 +13,7 @@ export default function AssessmentPassages({ scope, organizationId, assessmentId
 
   useEffect(() => () => {
     requestRef.current += 1;
-  }, []);
+  }, [organizationId, assessmentId, controlCode, sessionId]);
 
   async function loadMatches() {
     const request = ++requestRef.current;
@@ -25,6 +21,9 @@ export default function AssessmentPassages({ scope, organizationId, assessmentId
     setError("");
     try {
       const data = await getPassageMatches(organizationId, assessmentId, tokenRef.current);
+      if (data.organization_id !== organizationId || data.assessment_id !== assessmentId) {
+        throw new Error("Passage matches do not belong to this assessment.");
+      }
       if (request === requestRef.current) setResult(data);
     } catch (failure) {
       if (request === requestRef.current) setError(failure?.message || "Could not load passage matches.");
@@ -33,38 +32,31 @@ export default function AssessmentPassages({ scope, organizationId, assessmentId
     }
   }
 
-  if (controls.length === 0) return null;
+  if (!controlCode) return null;
 
-  const matches = (result?.matches || []).filter((item) => item.control_code === selectedCode);
-  const noTerms = result?.controls_without_terms?.includes(selectedCode);
+  const currentResult = result?.organization_id === organizationId &&
+    result?.assessment_id === assessmentId ? result : null;
+  const matches = (currentResult?.matches || []).filter((item) => item.control_code === controlCode);
+  const noTerms = currentResult?.controls_without_terms?.includes(controlCode);
   const documentCount = new Set(matches.map((match) => match.evidence_file_id)).size;
 
   return (
-    <section className="assessment-passages" aria-labelledby="assessment-passages-heading">
+    <section className="assessment-passages" aria-label={`Proposed passages for ${controlCode}`}>
       <p className="eyebrow">DOCUMENT MATCHES</p>
-      <h2 id="assessment-passages-heading">Passages relevant to controls</h2>
+      <h4>Proposed passages for {controlCode}</h4>
       <p className="assessment-note">
-        These are suggested matches, not verified evidence or confirmed answers.
+        These proposed matches are unverified. Review the passage and source before using them as evidence.
         Finding a passage does not attach the file or change a control result.
       </p>
 
-      <label className="assessment-field">
-        Control
-        <select value={selectedCode} onChange={(event) => setSelectedCode(event.target.value)}>
-          {controls.map((control) => (
-            <option key={control.code} value={control.code}>
-              {`${control.code} · ${control.title}`}
-            </option>
-          ))}
-        </select>
-      </label>
+
       <button className="secondary-button" type="button" disabled={loading} onClick={loadMatches}>
-        {loading ? "Finding passages…" : result ? "Refresh matches" : "Find relevant passages"}
+        {loading ? "Finding passages…" : currentResult ? "Refresh matches" : "Find relevant passages"}
       </button>
 
       {loading && <p role="status">Checking uploaded documents…</p>}
       {error && <p role="alert">{error}</p>}
-      {result && !loading && (
+      {currentResult && !loading && (
         <div className="assessment-passages-results">
           {matches.length > 0 && (
             <p className="assessment-note">
@@ -75,14 +67,14 @@ export default function AssessmentPassages({ scope, organizationId, assessmentId
             <p className="assessment-note">
               Matching terms are not available for this control yet; no conclusion can be drawn.
             </p>
-          ) : result.files_checked === 0 ? (
+          ) : currentResult.files_checked === 0 ? (
             <p className="assessment-note">No uploaded documents are available to check.</p>
           ) : matches.length === 0 ? (
             <p className="assessment-note">
-              {`No matching passages found in ${result.files_checked} ${result.files_checked === 1 ? "document" : "documents"} checked.`}
+              {`No matching passages found in ${currentResult.files_checked} ${currentResult.files_checked === 1 ? "document" : "documents"} checked.`}
             </p>
           ) : (
-            <ul aria-label={`Passages for ${selectedCode}`}>
+            <ul aria-label={`Passages for ${controlCode}`}>
               {matches.map((match) => (
                 <li key={`${match.evidence_file_id}:${match.locator.char_start}:${match.control_code}`}>
                   <strong>{match.file_name}</strong>
@@ -105,7 +97,7 @@ export default function AssessmentPassages({ scope, organizationId, assessmentId
             </ul>
           )}
           <p className="assessment-passages-footnote">
-            {`Matcher: ${result.matcher_version}. The match score ranks passages; it is not a probability that a control is implemented.`}
+            {`Matcher: ${currentResult.matcher_version}. The match score ranks passages; it is not a probability that a control is implemented.`}
           </p>
         </div>
       )}

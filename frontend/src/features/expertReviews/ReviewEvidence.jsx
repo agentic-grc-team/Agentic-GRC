@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { getReviewEvidence } from "./api.js";
+import ProposedPassages from "./ProposedPassages.jsx";
 
 function formatFileSize(bytes) {
   if (bytes < 1000) {
@@ -14,7 +15,7 @@ function formatFileSize(bytes) {
   return `${(bytes / 1000000).toFixed(1)} MB`;
 }
 
-export default function ReviewEvidence({ resultId, accessToken, sessionId }) {
+export default function ReviewEvidence({ resultId, organizationId, assessmentId, controlCode, accessToken, sessionId }) {
   const [response, setResponse] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const accessTokenRef = useRef(accessToken);
@@ -137,6 +138,17 @@ export default function ReviewEvidence({ resultId, accessToken, sessionId }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {organizationId && assessmentId && controlCode && (
+        <ProposedPassages
+          key={`${resultId}:${sessionKey}`}
+          organizationId={organizationId}
+          assessmentId={assessmentId}
+          controlCode={controlCode}
+          accessToken={accessToken}
+          sessionId={sessionKey}
+        />
       )}
 
       <h4>Document sources cited by the AI</h4>

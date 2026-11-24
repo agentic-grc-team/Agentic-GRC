@@ -198,7 +198,7 @@ describe("AssessmentWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Existing" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "New assessment title" })).not.toBeInTheDocument();
     expect(screen.getByText(/An administrator or consultant creates assessments/)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Passages relevant to controls" })).not.toBeInTheDocument();
+
   });
 
   it("lets a platform administrator create in any listed organization", async () => {

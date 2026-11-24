@@ -6,7 +6,7 @@
   background: var(--panel);
 }
 
-.assessment-passages h2 {
+.assessment-passages h4 {
   margin: 6px 0 10px;
   color: #eef1f4;
   font: 600 18px var(--display);

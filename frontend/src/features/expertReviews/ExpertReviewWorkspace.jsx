@@ -441,6 +441,9 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
       <ReviewEvidence
         resultId={review.result_id}
+        organizationId={review.organization_id}
+        assessmentId={review.assessment_id}
+        controlCode={review.control_code}
         accessToken={accessToken}
         sessionId={sessionKey}
       />

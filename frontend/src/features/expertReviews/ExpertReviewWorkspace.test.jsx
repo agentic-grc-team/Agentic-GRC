@@ -82,6 +82,9 @@ describe("ExpertReviewWorkspace", () => {
     ).toBeInTheDocument();
 
     expect(screen.getByText("78%")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Proposed passages for PR.AA-03" }),
+    ).toBeInTheDocument();
 
     expect(listPendingReviews).toHaveBeenCalledWith(
       "test-token",
@@ -115,6 +118,12 @@ describe("ExpertReviewWorkspace", () => {
     });
 
     expect(screen.getByRole("heading", { name: "PR.AA-05" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Proposed passages for PR.AA-05" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Proposed passages for PR.AA-03" }),
+    ).not.toBeInTheDocument();
     expect(onOrganizationChange).toHaveBeenLastCalledWith(otherResult.organization_id);
     expect(screen.getByLabelText("Review comment")).toHaveValue("");
     expect(getReviewEvidence).toHaveBeenLastCalledWith(otherResult.result_id, "test-token");
