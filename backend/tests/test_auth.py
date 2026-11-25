@@ -20,7 +20,9 @@ from app.security.supabase import (
     SupabaseUnavailable,
     SupabaseUserAlreadyExists,
     create_invited_identity,
+    close_auth_client,
     get_verified_identity,
+    _auth_client,
 )
 
 
@@ -67,6 +69,26 @@ class InvitationTokenTests(unittest.TestCase):
 
 
 class SupabaseAuthServiceTests(unittest.TestCase):
+    def test_reuses_connection_pool_but_validates_each_token(self) -> None:
+        response = Mock(status_code=401, is_success=False)
+        close_auth_client()
+        try:
+            with patch("app.security.supabase.httpx.Client") as client_factory:
+                client_factory.return_value.send.return_value = response
+                for token in ("first", "second"):
+                    with self.assertRaises(SupabaseInvalidToken):
+                        get_verified_identity(token, settings())
+                self.assertEqual(client_factory.call_count, 1)
+                self.assertEqual(client_factory.return_value.send.call_count, 2)
+                self.assertEqual(
+                    [call.args[0].headers["Authorization"] for call in client_factory.return_value.send.call_args_list],
+                    ["Bearer first", "Bearer second"],
+                )
+                close_auth_client()
+                client_factory.return_value.close.assert_called_once()
+        finally:
+            _auth_client.cache_clear()
+
     def test_validates_access_tokens_with_supabase_and_normalizes_identity(self) -> None:
         response = Mock(
             status_code=200,
@@ -79,29 +101,32 @@ class SupabaseAuthServiceTests(unittest.TestCase):
                 }
             ),
         )
-        with patch("app.security.supabase.httpx.get", return_value=response) as request:
+        with patch("app.security.supabase._auth_client") as client:
+            request = client.return_value.send
+            request.return_value = response
             identity = get_verified_identity("supabase-access-token", settings())
 
         self.assertEqual(identity.email, "admin@example.com")
         self.assertTrue(identity.email_verified)
-        self.assertEqual(request.call_args.args[0], "https://project.example.supabase.co/auth/v1/user")
+        self.assertEqual(str(request.call_args.args[0].url), "https://project.example.supabase.co/auth/v1/user")
         self.assertEqual(
-            request.call_args.kwargs["headers"]["Authorization"],
+            request.call_args.args[0].headers["Authorization"],
             "Bearer supabase-access-token",
         )
-        self.assertEqual(request.call_args.kwargs["headers"]["apikey"], "sb_publishable_test-key")
+        self.assertEqual(request.call_args.args[0].headers["apikey"], "sb_publishable_test-key")
 
     def test_rejects_access_tokens_not_accepted_by_supabase(self) -> None:
         response = Mock(status_code=401, is_success=False)
-        with patch("app.security.supabase.httpx.get", return_value=response):
+        with patch("app.security.supabase._auth_client") as client:
+            client.return_value.send.return_value = response
             with self.assertRaises(SupabaseInvalidToken):
                 get_verified_identity("invalid-token", settings())
 
     def test_reports_auth_service_unavailability_without_exposing_response_body(self) -> None:
         with patch(
-            "app.security.supabase.httpx.get",
-            side_effect=httpx.ConnectError("private network detail"),
-        ):
+            "app.security.supabase._auth_client",
+        ) as client:
+            client.return_value.send.side_effect = httpx.ConnectError("private network detail")
             with self.assertRaises(SupabaseUnavailable):
                 get_verified_identity("access-token", settings())
 
