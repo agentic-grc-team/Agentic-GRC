@@ -1,0 +1,1 @@
+Administrators use mandatory multi-factor authentication (MFA) with an authenticator application for every privileged account. The policy covers Microsoft 365 and server administrators. Reference marker TEST-131-A1.
