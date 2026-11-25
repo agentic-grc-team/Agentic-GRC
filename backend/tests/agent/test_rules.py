@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.agent.rules import decide_next_step
+from app.agent.rules import MAX_CLARIFICATIONS, decide_next_step
 from app.agent.schemas import (
     Action,
     AnswerCategory,
@@ -83,6 +83,29 @@ def test_clarification_never_closes_even_at_limit():
     assert decide_next_step(interp(intent="clarification_request"), 3, 3).action is Action.clarify
 
 
+def test_clarification_closes_for_review_after_the_explanation_limit():
+    """AGRC-140: a participant who keeps asking does not loop on the same control forever."""
+    asks = interp(intent="clarification_request")
+    assert decide_next_step(asks, 0, 3, clarifications_used=MAX_CLARIFICATIONS - 1).action is Action.clarify
+
+    step = decide_next_step(asks, 0, 3, clarifications_used=MAX_CLARIFICATIONS)
+    assert step.action is Action.close
+    assert step.status is ControlStatus.not_assessed
+    assert step.requires_human_review
+    assert step.rule_id == "rule:clarify_limit"
+
+
+def test_clarification_limit_does_not_affect_a_real_answer():
+    step = decide_next_step(interp(category="no"), 0, 3, clarifications_used=MAX_CLARIFICATIONS)
+    assert step.status is ControlStatus.not_implemented
+
+
+def test_nobody_can_answer_goes_to_human_review():
+    step = decide_next_step(interp(category="unsure"), 3, 3)
+    assert step.status is ControlStatus.not_assessed
+    assert step.requires_human_review
+
+
 def test_low_confidence_answer_requires_clarification_before_human_review():
     step = decide_next_step(interp(category="no", confidence=0.3), 0, 3)
     assert step.action is Action.clarify
@@ -112,5 +135,9 @@ def test_eval_labels_agree_with_rules(case, kb):
     i = interp(intent=e["intent"], category=e.get("category", "unsure"),
                specificity="detailed" if detailed else "vague", scope=detailed,
                evidence=e.get("mentions_evidence", False))
-    step = decide_next_step(i, 0, 3, evidence_asked=case.get("evidence_asked", False))
+    step = decide_next_step(
+        i, 0, 3,
+        evidence_asked=case.get("evidence_asked", False),
+        clarifications_used=case.get("clarifications_used", 0),
+    )
     assert step.action.value == e["action"]
