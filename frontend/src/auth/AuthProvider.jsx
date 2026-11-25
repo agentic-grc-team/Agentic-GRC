@@ -31,6 +31,10 @@ function getAccountOnce(accessToken, requestRef) {
 export const SESSION_EXPIRED_MESSAGE =
   "Your session has expired. Sign in again to continue where you left off.";
 
+function isSessionRejected(error) {
+  return error?.status >= 400 && error?.status < 500;
+}
+
 function accountFromSession(account, session) {
   const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
   const { display_name, full_name, name } = session.user?.user_metadata ?? {};
@@ -82,16 +86,19 @@ export function AuthProvider({ children }) {
     // Called by the API client after a 401. getSession() renews a token that is about to expire;
     // if it still returns the rejected token, force a refresh. When the session cannot be renewed,
     // sign out locally so the user gets the login screen instead of a dead workspace.
+    // getSession() also refreshes an already-expired token itself, so either call can fail for a
+    // network reason or a 5xx. Only a 4xx means Supabase rejected the session; anything else keeps
+    // the user signed in and lets the request fail as it is, so it can be retried.
     async function refreshAccessToken(staleToken) {
       const { data, error } = await supabase.auth.getSession();
+      if (error && !isSessionRejected(error)) {
+        return null;
+      }
       let session = error ? null : data.session;
       if (session?.access_token === staleToken) {
         const refreshed = await supabase.auth.refreshSession();
         if (refreshed.error) {
-          // A network failure is not an expired session: keep the user signed in and let the
-          // request fail as it is, so it can be retried.
-          const status = refreshed.error.status;
-          if (!(status >= 400 && status < 500)) {
+          if (!isSessionRejected(refreshed.error)) {
             return null;
           }
           session = null;

@@ -233,6 +233,36 @@ describe("AuthProvider", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
 
+    it("keeps the user signed in when getSession cannot refresh an expired token for a network reason", async () => {
+      await renderSignedIn();
+      supabaseMock.auth.getSession.mockResolvedValue({
+        data: { session: null },
+        error: { status: 0, message: "Failed to fetch" },
+      });
+      fetch.mockResolvedValueOnce(reply(401));
+
+      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).rejects.toMatchObject({ status: 401 });
+
+      expect(supabaseMock.auth.refreshSession).not.toHaveBeenCalled();
+      expect(supabaseMock.auth.signOut).not.toHaveBeenCalled();
+      expect(screen.getByText("admin@example.com")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("signs out when getSession reports that Supabase rejected the session", async () => {
+      await renderSignedIn();
+      supabaseMock.auth.getSession.mockResolvedValue({
+        data: { session: null },
+        error: { status: 400, message: "Invalid Refresh Token" },
+      });
+      fetch.mockResolvedValueOnce(reply(401));
+
+      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).rejects.toMatchObject({ status: 401 });
+
+      expect(supabaseMock.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+      expect(await screen.findByRole("alert")).toHaveTextContent(SESSION_EXPIRED_MESSAGE);
+    });
+
     it("clears unsent interview answers on an explicit sign out", async () => {
       await renderSignedIn();
       saveInterviewDraft("session-1", { content: "Unsent answer", pending: null, turnId: "turn-1" });
