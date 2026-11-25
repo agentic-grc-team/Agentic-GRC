@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { ApiError, setAccessTokenRefresher } from "../api/client.js";
 import { toBrowserPath } from "../basePath.js";
@@ -40,9 +48,10 @@ function accountFromSession(account, session) {
   const { display_name, full_name, name } = session.user?.user_metadata ?? {};
   return {
     ...account,
-    displayName: [display_name, full_name, name].find(
-      (value) => typeof value === "string" && value.trim(),
-    )?.trim() || "",
+    displayName:
+      [display_name, full_name, name]
+        .find((value) => typeof value === "string" && value.trim())
+        ?.trim() || "",
     accessToken: session.access_token,
     expiresAt: new Date(expirySeconds * 1000).toISOString(),
   };
@@ -66,7 +75,9 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
-      setAuthError("Supabase Auth is not configured. Add the frontend environment values and restart Vite.");
+      setAuthError(
+        "Supabase Auth is not configured. Add the frontend environment values and restart Vite.",
+      );
       setIsLoading(false);
       return undefined;
     }
@@ -149,10 +160,17 @@ export function AuthProvider({ children }) {
       }
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       // A refreshed token belongs to the account already loaded: swap the token in place rather
       // than looking the account up again, so a failed lookup cannot leave the old token in use.
-      if (event === "TOKEN_REFRESHED" && session?.access_token && loadedUserId && session.user?.id === loadedUserId) {
+      if (
+        event === "TOKEN_REFRESHED" &&
+        session?.access_token &&
+        loadedUserId &&
+        session.user?.id === loadedUserId
+      ) {
         ++latestRequest;
         setUser((current) => (current ? accountFromSession(current, session) : current));
         return;
@@ -165,7 +183,8 @@ export function AuthProvider({ children }) {
       setAuthError("Google sign-in could not be completed. Please try again.");
     }
 
-    void supabase.auth.getSession()
+    void supabase.auth
+      .getSession()
       .then(({ data, error }) => {
         if (!isMounted) {
           return;

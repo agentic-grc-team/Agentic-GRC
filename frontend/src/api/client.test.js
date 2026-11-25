@@ -18,11 +18,16 @@ describe("apiRequest", () => {
       json: async () => ({ id: "org-1" }),
     });
 
-    await expect(apiRequest("/organizations", { accessToken: "signed-token" })).resolves.toEqual({ id: "org-1" });
-    expect(fetch).toHaveBeenCalledWith("/api/v1/organizations", expect.objectContaining({
-      credentials: "omit",
-      headers: expect.any(Headers),
-    }));
+    await expect(apiRequest("/organizations", { accessToken: "signed-token" })).resolves.toEqual({
+      id: "org-1",
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/organizations",
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.any(Headers),
+      }),
+    );
     const [, options] = fetch.mock.calls[0];
     expect(options.headers.get("Authorization")).toBe("Bearer signed-token");
   });
@@ -47,7 +52,12 @@ describe("apiRequest", () => {
     const body = new FormData();
     body.append("organization_id", "alpha");
     body.append("file", new File(["evidence"], "policy.txt"));
-    await apiRequest("/evidence/", { method: "POST", accessToken: "signed-token", body, headers: { "Content-Type": "application/json" } });
+    await apiRequest("/evidence/", {
+      method: "POST",
+      accessToken: "signed-token",
+      body,
+      headers: { "Content-Type": "application/json" },
+    });
     const [, options] = fetch.mock.calls[0];
     expect(options.body).toBe(body);
     expect(options.headers.has("Content-Type")).toBe(false);
@@ -67,8 +77,9 @@ describe("apiRequest", () => {
         .mockResolvedValueOnce(reply(201, { id: "turn-2" }));
 
       const body = JSON.stringify({ content: "We use MFA.", client_request_id: "request-1" });
-      await expect(apiRequest("/turns", { method: "POST", accessToken: "stale-token", body }))
-        .resolves.toEqual({ id: "turn-2" });
+      await expect(
+        apiRequest("/turns", { method: "POST", accessToken: "stale-token", body }),
+      ).resolves.toEqual({ id: "turn-2" });
 
       expect(refresher).toHaveBeenCalledWith("stale-token");
       expect(fetch).toHaveBeenCalledTimes(2);
@@ -90,11 +101,15 @@ describe("apiRequest", () => {
     it("does not retry when the refresher returns the same token or fails", async () => {
       unregister = setAccessTokenRefresher(vi.fn().mockResolvedValue("stale-token"));
       fetch.mockResolvedValueOnce(reply(401));
-      await expect(apiRequest("/organizations", { accessToken: "stale-token" })).rejects.toBeInstanceOf(ApiError);
+      await expect(
+        apiRequest("/organizations", { accessToken: "stale-token" }),
+      ).rejects.toBeInstanceOf(ApiError);
 
       unregister = setAccessTokenRefresher(vi.fn().mockRejectedValue(new Error("offline")));
       fetch.mockResolvedValueOnce(reply(401));
-      await expect(apiRequest("/organizations", { accessToken: "stale-token" })).rejects.toMatchObject({ status: 401 });
+      await expect(
+        apiRequest("/organizations", { accessToken: "stale-token" }),
+      ).rejects.toMatchObject({ status: 401 });
       expect(fetch).toHaveBeenCalledTimes(2);
     });
 
@@ -103,7 +118,9 @@ describe("apiRequest", () => {
       unregister = setAccessTokenRefresher(refresher);
       fetch.mockResolvedValueOnce(reply(403)).mockResolvedValueOnce(reply(401));
 
-      await expect(apiRequest("/organizations", { accessToken: "token" })).rejects.toMatchObject({ status: 403 });
+      await expect(apiRequest("/organizations", { accessToken: "token" })).rejects.toMatchObject({
+        status: 403,
+      });
       await expect(apiRequest("/auth/invitations/accept")).rejects.toMatchObject({ status: 401 });
       expect(refresher).not.toHaveBeenCalled();
       expect(fetch).toHaveBeenCalledTimes(2);

@@ -36,9 +36,18 @@ function AuthProbe() {
       <span>{user?.email || "signed out"}</span>
       <span data-testid="token">{user?.accessToken || ""}</span>
       {authError && <span role="alert">{authError}</span>}
-      <button type="button" onClick={() => void signIn("admin@example.com", "password").catch(() => {})}>Sign in</button>
-      <button type="button" onClick={() => void signInWithGoogle().catch(() => {})}>Google</button>
-      <button type="button" onClick={() => void signOut()}>Sign out</button>
+      <button
+        type="button"
+        onClick={() => void signIn("admin@example.com", "password").catch(() => {})}
+      >
+        Sign in
+      </button>
+      <button type="button" onClick={() => void signInWithGoogle().catch(() => {})}>
+        Google
+      </button>
+      <button type="button" onClick={() => void signOut()}>
+        Sign out
+      </button>
     </div>
   );
 }
@@ -54,7 +63,9 @@ describe("AuthProvider", () => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
     supabaseMock.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
-    supabaseMock.auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
+    supabaseMock.auth.onAuthStateChange.mockReturnValue({
+      data: { subscription: { unsubscribe: vi.fn() } },
+    });
     supabaseMock.auth.signOut.mockResolvedValue({ error: null });
   });
 
@@ -65,7 +76,11 @@ describe("AuthProvider", () => {
       email: "admin@example.com",
       is_platform_admin: true,
     });
-    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -80,13 +95,21 @@ describe("AuthProvider", () => {
   it("shares a simultaneous profile lookup triggered by session restore and auth event", async () => {
     let onAuthChange;
     let resolveAccount;
-    getCurrentAccount.mockReturnValue(new Promise((resolve) => { resolveAccount = resolve; }));
+    getCurrentAccount.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAccount = resolve;
+      }),
+    );
     supabaseMock.auth.getSession.mockResolvedValue({ data: { session }, error: null });
     supabaseMock.auth.onAuthStateChange.mockImplementation((callback) => {
       onAuthChange = callback;
       return { data: { subscription: { unsubscribe: vi.fn() } } };
     });
-    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
     onAuthChange("INITIAL_SESSION", session);
 
     await waitFor(() => expect(getCurrentAccount).toHaveBeenCalledTimes(1));
@@ -101,14 +124,20 @@ describe("AuthProvider", () => {
 
   it("starts Google OAuth through Supabase with the application callback URL", async () => {
     supabaseMock.auth.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
-    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Google" }));
 
-    await waitFor(() => expect(supabaseMock.auth.signInWithOAuth).toHaveBeenCalledWith({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    }));
+    await waitFor(() =>
+      expect(supabaseMock.auth.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      }),
+    );
   });
 
   it("removes the local Supabase session on sign out", async () => {
@@ -118,7 +147,11 @@ describe("AuthProvider", () => {
       email: "admin@example.com",
       is_platform_admin: true,
     });
-    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("admin@example.com");
 
@@ -133,7 +166,11 @@ describe("AuthProvider", () => {
       data: { session: null },
       error: { code: "invalid_credentials", message: "invalid_credentials" },
     });
-    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Email or password is incorrect.");
@@ -155,7 +192,11 @@ describe("AuthProvider", () => {
       });
       supabaseMock.auth.getSession.mockResolvedValue({ data: { session }, error: null });
       getCurrentAccount.mockResolvedValue(account);
-      render(<AuthProvider><AuthProbe /></AuthProvider>);
+      render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>,
+      );
       await screen.findByText("admin@example.com");
       expect(screen.getByTestId("token")).toHaveTextContent("supabase-access-token");
     }
@@ -178,7 +219,9 @@ describe("AuthProvider", () => {
       });
       fetch.mockResolvedValueOnce(reply(401)).mockResolvedValueOnce(reply(200, { ok: true }));
 
-      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).resolves.toEqual({ ok: true });
+      await expect(
+        apiRequest("/organizations", { accessToken: "supabase-access-token" }),
+      ).resolves.toEqual({ ok: true });
 
       expect(supabaseMock.auth.refreshSession).toHaveBeenCalledOnce();
       expect(fetch.mock.calls[1][1].headers.get("Authorization")).toBe("Bearer renewed-token");
@@ -201,14 +244,20 @@ describe("AuthProvider", () => {
 
     it("signs out locally with a clear message when the session cannot be renewed", async () => {
       await renderSignedIn();
-      saveInterviewDraft("session-1", { content: "Unsent answer", pending: null, turnId: "turn-1" });
+      saveInterviewDraft("session-1", {
+        content: "Unsent answer",
+        pending: null,
+        turnId: "turn-1",
+      });
       supabaseMock.auth.refreshSession.mockResolvedValue({
         data: { session: null },
         error: { status: 400, message: "Invalid Refresh Token" },
       });
       fetch.mockResolvedValueOnce(reply(401));
 
-      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).rejects.toMatchObject({ status: 401 });
+      await expect(
+        apiRequest("/organizations", { accessToken: "supabase-access-token" }),
+      ).rejects.toMatchObject({ status: 401 });
       act(() => emitAuthEvent("SIGNED_OUT", null));
 
       expect(await screen.findByRole("alert")).toHaveTextContent(SESSION_EXPIRED_MESSAGE);
@@ -226,7 +275,9 @@ describe("AuthProvider", () => {
       });
       fetch.mockResolvedValueOnce(reply(401));
 
-      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).rejects.toMatchObject({ status: 401 });
+      await expect(
+        apiRequest("/organizations", { accessToken: "supabase-access-token" }),
+      ).rejects.toMatchObject({ status: 401 });
 
       expect(supabaseMock.auth.signOut).not.toHaveBeenCalled();
       expect(screen.getByText("admin@example.com")).toBeInTheDocument();
@@ -241,7 +292,9 @@ describe("AuthProvider", () => {
       });
       fetch.mockResolvedValueOnce(reply(401));
 
-      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).rejects.toMatchObject({ status: 401 });
+      await expect(
+        apiRequest("/organizations", { accessToken: "supabase-access-token" }),
+      ).rejects.toMatchObject({ status: 401 });
 
       expect(supabaseMock.auth.refreshSession).not.toHaveBeenCalled();
       expect(supabaseMock.auth.signOut).not.toHaveBeenCalled();
@@ -257,7 +310,9 @@ describe("AuthProvider", () => {
       });
       fetch.mockResolvedValueOnce(reply(401));
 
-      await expect(apiRequest("/organizations", { accessToken: "supabase-access-token" })).rejects.toMatchObject({ status: 401 });
+      await expect(
+        apiRequest("/organizations", { accessToken: "supabase-access-token" }),
+      ).rejects.toMatchObject({ status: 401 });
 
       expect(supabaseMock.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
       expect(await screen.findByRole("alert")).toHaveTextContent(SESSION_EXPIRED_MESSAGE);
@@ -265,7 +320,11 @@ describe("AuthProvider", () => {
 
     it("clears unsent interview answers on an explicit sign out", async () => {
       await renderSignedIn();
-      saveInterviewDraft("session-1", { content: "Unsent answer", pending: null, turnId: "turn-1" });
+      saveInterviewDraft("session-1", {
+        content: "Unsent answer",
+        pending: null,
+        turnId: "turn-1",
+      });
 
       fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
