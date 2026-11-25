@@ -69,6 +69,27 @@ class InvitationTokenTests(unittest.TestCase):
 
 
 class SupabaseAuthServiceTests(unittest.TestCase):
+    def test_shared_auth_client_never_sends_a_previous_users_cookie(self) -> None:
+        requests = []
+        user_id = str(uuid4())
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={"id": user_id, "email": "user@example.com", "email_confirmed_at": "now"},
+                headers={"set-cookie": "session=previous-user; Path=/"},
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(respond), timeout=5.0) as client:
+            with patch("app.security.supabase._auth_client", return_value=client):
+                get_verified_identity("first", settings())
+                get_verified_identity("second", settings())
+
+        self.assertEqual([request.headers["Authorization"] for request in requests],
+                         ["Bearer first", "Bearer second"])
+        self.assertNotIn("cookie", requests[1].headers)
+
     def test_reuses_connection_pool_but_validates_each_token(self) -> None:
         response = Mock(status_code=401, is_success=False)
         close_auth_client()

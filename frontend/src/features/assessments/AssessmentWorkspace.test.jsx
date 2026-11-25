@@ -66,7 +66,9 @@ function scopeFor(item, organizationName = "Halverston Community Bank") {
           {
             code: "PR.AA",
             name: "Identity Management, Authentication, and Access Control",
-            controls: [{ code: "PR.AA-03", title: "Users, services, and hardware are authenticated" }],
+            controls: [
+              { code: "PR.AA-03", title: "Users, services, and hardware are authenticated" },
+            ],
           },
         ],
       },
@@ -109,7 +111,9 @@ describe("AssessmentWorkspace", () => {
   it("starts with the organization chosen in another screen", async () => {
     renderWorkspace({ initialOrganizationId: "org-2" });
 
-    expect(await screen.findByText("This organization has no assessments yet.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("This organization has no assessments yet."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Organization" })).toHaveValue("org-2");
     expect(listAssessments).toHaveBeenCalledWith("org-2", "token-a");
   });
@@ -118,11 +122,15 @@ describe("AssessmentWorkspace", () => {
     const membership = deferred();
     listOrganizations.mockReturnValue(membership.promise);
     listAssessments.mockResolvedValue([assessment("assess-2", "Private", "org-2")]);
-    getAssessmentScope.mockResolvedValue(scopeFor(assessment("assess-2", "Private", "org-2"), "Beta Industries"));
+    getAssessmentScope.mockResolvedValue(
+      scopeFor(assessment("assess-2", "Private", "org-2"), "Beta Industries"),
+    );
     renderWorkspace({ initialOrganizationId: "org-2" });
 
     expect(listAssessments).toHaveBeenCalledWith("org-2", "token-a");
-    await waitFor(() => expect(getAssessmentScope).toHaveBeenCalledWith("org-2", "assess-2", "token-a"));
+    await waitFor(() =>
+      expect(getAssessmentScope).toHaveBeenCalledWith("org-2", "assess-2", "token-a"),
+    );
     expect(screen.queryByRole("heading", { name: "Private" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Assessment" })).not.toBeInTheDocument();
 
@@ -133,14 +141,24 @@ describe("AssessmentWorkspace", () => {
   it("never displays a remembered organization's data if membership is no longer present", async () => {
     const membership = deferred();
     listOrganizations.mockReturnValue(membership.promise);
-    listAssessments.mockImplementation((organizationId) => Promise.resolve(
-      organizationId === "org-2"
-        ? [assessment("assess-2", "Private", "org-2")]
-        : [assessment("assess-1", "Q3 baseline")],
-    ));
-    getAssessmentScope.mockImplementation((organizationId, assessmentId) => Promise.resolve(
-      scopeFor(assessment(assessmentId, organizationId === "org-2" ? "Private" : "Q3 baseline", organizationId)),
-    ));
+    listAssessments.mockImplementation((organizationId) =>
+      Promise.resolve(
+        organizationId === "org-2"
+          ? [assessment("assess-2", "Private", "org-2")]
+          : [assessment("assess-1", "Q3 baseline")],
+      ),
+    );
+    getAssessmentScope.mockImplementation((organizationId, assessmentId) =>
+      Promise.resolve(
+        scopeFor(
+          assessment(
+            assessmentId,
+            organizationId === "org-2" ? "Private" : "Q3 baseline",
+            organizationId,
+          ),
+        ),
+      ),
+    );
     renderWorkspace({ initialOrganizationId: "org-2" });
     await waitFor(() => expect(getAssessmentScope).toHaveBeenCalled());
 
@@ -149,12 +167,33 @@ describe("AssessmentWorkspace", () => {
     expect(screen.queryByRole("heading", { name: "Private" })).not.toBeInTheDocument();
   });
 
+  it("does not flash an access error from a remembered organization before membership is confirmed", async () => {
+    const membership = deferred();
+    listOrganizations.mockReturnValue(membership.promise);
+    listAssessments.mockImplementation((organizationId) =>
+      organizationId === "org-2"
+        ? Promise.reject(new ApiError(404, { detail: "Not found" }))
+        : Promise.resolve([assessment("assess-1", "Q3 baseline")]),
+    );
+
+    renderWorkspace({ initialOrganizationId: "org-2" });
+    await waitFor(() => expect(listAssessments).toHaveBeenCalledWith("org-2", "token-a"));
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () => membership.resolve([organizations[0]]));
+    expect(await screen.findByRole("heading", { name: "Q3 baseline" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("reports the selected organization to the app", async () => {
     const onOrganizationChange = vi.fn();
     renderWorkspace({ onOrganizationChange });
 
     await screen.findByRole("heading", { name: "Q3 baseline" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), {
+      target: { value: "org-2" },
+    });
 
     await waitFor(() => expect(onOrganizationChange).toHaveBeenLastCalledWith("org-2"));
   });
@@ -180,7 +219,9 @@ describe("AssessmentWorkspace", () => {
     expect(screen.getByRole("textbox", { name: "New assessment title" })).toHaveValue("");
 
     getAssessmentScope.mockResolvedValue(scopeFor(assessment("assess-1", "Q3 baseline")));
-    fireEvent.change(screen.getByRole("combobox", { name: "Assessment" }), { target: { value: "assess-1" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Assessment" }), {
+      target: { value: "assess-1" },
+    });
 
     expect(await screen.findByRole("heading", { name: "Q3 baseline" })).toBeInTheDocument();
     expect(screen.queryByText(/was created/)).not.toBeInTheDocument();
@@ -190,7 +231,9 @@ describe("AssessmentWorkspace", () => {
     renderWorkspace();
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "   " } });
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), {
+      target: { value: "   " },
+    });
 
     expect(screen.getByRole("button", { name: "Create assessment" })).toBeDisabled();
     fireEvent.submit(screen.getByRole("button", { name: "Create assessment" }).closest("form"));
@@ -204,7 +247,9 @@ describe("AssessmentWorkspace", () => {
     renderWorkspace();
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "Q4" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), {
+      target: { value: "Q4" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -219,7 +264,9 @@ describe("AssessmentWorkspace", () => {
     renderWorkspace();
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "Q4" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), {
+      target: { value: "Q4" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This field cannot be blank.");
@@ -227,12 +274,16 @@ describe("AssessmentWorkspace", () => {
 
   it("lets a representative see the scope but not create an assessment", async () => {
     listAssessments.mockResolvedValue([assessment("assess-9", "Existing", "org-2")]);
-    getAssessmentScope.mockResolvedValue(scopeFor(assessment("assess-9", "Existing", "org-2"), "Beta Industries"));
+    getAssessmentScope.mockResolvedValue(
+      scopeFor(assessment("assess-9", "Existing", "org-2"), "Beta Industries"),
+    );
     renderWorkspace({ initialOrganizationId: "org-2" });
 
     expect(await screen.findByRole("heading", { name: "Existing" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "New assessment title" })).not.toBeInTheDocument();
-    expect(screen.getByText(/An administrator or consultant creates assessments/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/An administrator or consultant creates assessments/),
+    ).toBeInTheDocument();
   });
 
   it("lets a platform administrator create in any listed organization", async () => {
@@ -256,22 +307,30 @@ describe("AssessmentWorkspace", () => {
     listOrganizations.mockResolvedValue([]);
     renderWorkspace();
 
-    expect(await screen.findByText(/You are not a member of any organization yet/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/You are not a member of any organization yet/),
+    ).toBeInTheDocument();
     expect(listAssessments).not.toHaveBeenCalled();
   });
 
   it("ignores a late assessment list from the previously selected organization", async () => {
     const slowFirstList = deferred();
     listAssessments.mockImplementation((organizationId) =>
-      organizationId === "org-1" ? slowFirstList.promise : Promise.resolve([assessment("assess-b", "Beta review", "org-2")]),
+      organizationId === "org-1"
+        ? slowFirstList.promise
+        : Promise.resolve([assessment("assess-b", "Beta review", "org-2")]),
     );
     getAssessmentScope.mockImplementation((organizationId, assessmentId) =>
-      Promise.resolve(scopeFor(assessment(assessmentId, "Beta review", organizationId), "Beta Industries")),
+      Promise.resolve(
+        scopeFor(assessment(assessmentId, "Beta review", organizationId), "Beta Industries"),
+      ),
     );
     renderWorkspace();
     await waitFor(() => expect(listAssessments).toHaveBeenCalledWith("org-1", "token-a"));
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), {
+      target: { value: "org-2" },
+    });
     expect(await screen.findByRole("heading", { name: "Beta review" })).toBeInTheDocument();
 
     await act(async () => {
@@ -289,10 +348,16 @@ describe("AssessmentWorkspace", () => {
     renderWorkspace();
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "Q4" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), {
+      target: { value: "Q4" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
-    expect(await screen.findByText("This organization has no assessments yet.")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), {
+      target: { value: "org-2" },
+    });
+    expect(
+      await screen.findByText("This organization has no assessments yet."),
+    ).toBeInTheDocument();
     const listCalls = listAssessments.mock.calls.length;
 
     await act(async () => {
@@ -310,13 +375,21 @@ describe("AssessmentWorkspace", () => {
     renderWorkspace();
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "Q4" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), {
+      target: { value: "Q4" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), {
+      target: { value: "org-2" },
+    });
     await screen.findByText("This organization has no assessments yet.");
 
     await act(async () => {
-      slowCreate.reject(new ApiError(403, { detail: "Only administrators and consultants can start an assessment." }));
+      slowCreate.reject(
+        new ApiError(403, {
+          detail: "Only administrators and consultants can start an assessment.",
+        }),
+      );
     });
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -329,10 +402,14 @@ describe("AssessmentWorkspace", () => {
 
     rerender(<AssessmentWorkspace accessToken="token-b" sessionId="user-a" />);
     createAssessment.mockResolvedValue(assessment("assess-2", "After refresh"));
-    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), { target: { value: "After refresh" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "New assessment title" }), {
+      target: { value: "After refresh" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create assessment" }));
 
-    await waitFor(() => expect(createAssessment).toHaveBeenCalledWith("org-1", "After refresh", "token-b"));
+    await waitFor(() =>
+      expect(createAssessment).toHaveBeenCalledWith("org-1", "After refresh", "token-b"),
+    );
     await waitFor(() => expect(listAssessments.mock.calls.length).toBe(callsBefore + 1));
     expect(listAssessments).toHaveBeenLastCalledWith("org-1", "token-b");
     expect(listOrganizations).toHaveBeenCalledTimes(1);
@@ -349,7 +426,13 @@ describe("AssessmentWorkspace", () => {
   });
 
   it("still offers the interview while results await review", async () => {
-    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "awaiting_review", accepts_interviews: true }]);
+    listAssessments.mockResolvedValue([
+      {
+        ...assessment("assess-1", "Q3 baseline"),
+        status: "awaiting_review",
+        accepts_interviews: true,
+      },
+    ]);
     renderWorkspace({ onStartInterview: vi.fn() });
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
@@ -357,7 +440,9 @@ describe("AssessmentWorkspace", () => {
   });
 
   it("offers no interview for a completed assessment", async () => {
-    listAssessments.mockResolvedValue([{ ...assessment("assess-1", "Q3 baseline"), status: "completed", accepts_interviews: false }]);
+    listAssessments.mockResolvedValue([
+      { ...assessment("assess-1", "Q3 baseline"), status: "completed", accepts_interviews: false },
+    ]);
     renderWorkspace({ onStartInterview: vi.fn() });
     await screen.findByRole("heading", { name: "Q3 baseline" });
 
