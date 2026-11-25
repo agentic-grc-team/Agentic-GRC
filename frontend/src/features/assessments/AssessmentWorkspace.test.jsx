@@ -114,6 +114,41 @@ describe("AssessmentWorkspace", () => {
     expect(listAssessments).toHaveBeenCalledWith("org-2", "token-a");
   });
 
+  it("starts loading the remembered organization immediately but waits for membership before showing results", async () => {
+    const membership = deferred();
+    listOrganizations.mockReturnValue(membership.promise);
+    listAssessments.mockResolvedValue([assessment("assess-2", "Private", "org-2")]);
+    getAssessmentScope.mockResolvedValue(scopeFor(assessment("assess-2", "Private", "org-2"), "Beta Industries"));
+    renderWorkspace({ initialOrganizationId: "org-2" });
+
+    expect(listAssessments).toHaveBeenCalledWith("org-2", "token-a");
+    await waitFor(() => expect(getAssessmentScope).toHaveBeenCalledWith("org-2", "assess-2", "token-a"));
+    expect(screen.queryByRole("heading", { name: "Private" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Assessment" })).not.toBeInTheDocument();
+
+    await act(async () => membership.resolve(organizations));
+    expect(await screen.findByRole("heading", { name: "Private" })).toBeInTheDocument();
+  });
+
+  it("never displays a remembered organization's data if membership is no longer present", async () => {
+    const membership = deferred();
+    listOrganizations.mockReturnValue(membership.promise);
+    listAssessments.mockImplementation((organizationId) => Promise.resolve(
+      organizationId === "org-2"
+        ? [assessment("assess-2", "Private", "org-2")]
+        : [assessment("assess-1", "Q3 baseline")],
+    ));
+    getAssessmentScope.mockImplementation((organizationId, assessmentId) => Promise.resolve(
+      scopeFor(assessment(assessmentId, organizationId === "org-2" ? "Private" : "Q3 baseline", organizationId)),
+    ));
+    renderWorkspace({ initialOrganizationId: "org-2" });
+    await waitFor(() => expect(getAssessmentScope).toHaveBeenCalled());
+
+    await act(async () => membership.resolve([organizations[0]]));
+    await screen.findByRole("heading", { name: "Q3 baseline" });
+    expect(screen.queryByRole("heading", { name: "Private" })).not.toBeInTheDocument();
+  });
+
   it("reports the selected organization to the app", async () => {
     const onOrganizationChange = vi.fn();
     renderWorkspace({ onOrganizationChange });
