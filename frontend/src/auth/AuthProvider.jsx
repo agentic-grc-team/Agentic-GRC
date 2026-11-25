@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.js";
 import { toBrowserPath } from "../basePath.js";
@@ -6,6 +6,26 @@ import { getCurrentAccount } from "./api.js";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase.js";
 
 const AuthContext = createContext(null);
+const ACCOUNT_REUSE_MS = 30_000;
+
+function getAccountOnce(accessToken, requestRef) {
+  const existing = requestRef.current;
+  if (existing?.accessToken === accessToken && Date.now() < existing.expiresAt) {
+    return existing.request;
+  }
+  const request = getCurrentAccount(accessToken);
+  const entry = { accessToken, request, expiresAt: Infinity };
+  requestRef.current = entry;
+  void request.then(
+    () => {
+      if (requestRef.current === entry) entry.expiresAt = Date.now() + ACCOUNT_REUSE_MS;
+    },
+    () => {
+      if (requestRef.current === entry) requestRef.current = null;
+    },
+  );
+  return request;
+}
 
 function accountFromSession(account, session) {
   const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
@@ -34,6 +54,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const accountRequestRef = useRef(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -49,6 +70,7 @@ export function AuthProvider({ children }) {
     async function loadSession(session) {
       const requestId = ++latestRequest;
       if (!session?.access_token) {
+        accountRequestRef.current = null;
         if (isMounted) {
           setUser(null);
           setIsLoading(false);
@@ -57,7 +79,7 @@ export function AuthProvider({ children }) {
       }
 
       try {
-        const account = await getCurrentAccount(session.access_token);
+        const account = await getAccountOnce(session.access_token, accountRequestRef);
         if (isMounted && requestId === latestRequest) {
           setUser(accountFromSession(account, session));
           setAuthError("");
@@ -126,7 +148,7 @@ export function AuthProvider({ children }) {
       if (!data.session) {
         throw new Error("Supabase did not return an authenticated session.");
       }
-      const account = await getCurrentAccount(data.session.access_token);
+      const account = await getAccountOnce(data.session.access_token, accountRequestRef);
       const nextUser = accountFromSession(account, data.session);
       setUser(nextUser);
       return nextUser;
@@ -154,6 +176,7 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     setAuthError("");
+    accountRequestRef.current = null;
     setUser(null);
     if (isSupabaseConfigured()) {
       await getSupabaseClient().auth.signOut();

@@ -7,7 +7,7 @@ from .schemas import Missing, Question
 
 INTERPRET_ID, INTERPRET_VERSION = "interpret_answer", "0.3.2"
 FOLLOW_UP_ID, FOLLOW_UP_VERSION = "generate_follow_up", "0.3.0"
-CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.3.0"
+CLARIFY_ID, CLARIFY_VERSION = "clarify_question", "0.4.0"
 
 _ROLE = (
     "You are a cybersecurity consultant interviewing an organization to assess its security controls. "
@@ -82,16 +82,24 @@ def follow_up(question: Question, turns: list[dict], key_quote: str, missing: Mi
     return system, user
 
 
-def clarify(question: Question, participant_message: str) -> tuple[str, str]:
+def clarify(
+    question: Question, participant_message: str, earlier_explanations: list[str] | None = None
+) -> tuple[str, str]:
     system = (
         f"{_ROLE}\n\nThe participant did not understand the question. Explain it in at most 3 sentences, "
         "with an everyday example, and end by inviting them to answer. Do not answer for them. "
+        "If you already explained it, answer the participant's specific doubt in a different way: "
+        "do not repeat an earlier explanation or example. "
         "Return JSON with the field 'explanation'."
     )
     user = (
         f"Question: {question.text}\nWhat we need to learn: {question.intent}\n"
         f"Participant's message: {participant_message}"
     )
+    # Stored clarification turns end with the question itself; only the explanation is useful here.
+    earlier = [e.removesuffix(f"\n\n{question.text}").strip() for e in earlier_explanations or []]
+    if earlier:
+        user += "\n\nWhat you already explained (do not repeat it):\n" + "\n".join(f"- {e}" for e in earlier)
     return system, user
 
 

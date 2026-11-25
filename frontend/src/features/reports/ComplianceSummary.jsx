@@ -28,7 +28,8 @@ export default function ComplianceSummary({ summary, exclusionCount = 0 }) {
         </p>
       </div>
       <p className="compliance-summary-caption">
-        Review coverage is the share of controls with a final result or approved exclusion. It is not a compliance score.
+        Review coverage is the share of controls with a final result or approved exclusion. It is
+        not a compliance score.
       </p>
       <dl className="compliance-summary-counts">
         {STATUS_LABELS.map(([key, label]) => (

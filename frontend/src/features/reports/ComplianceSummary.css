@@ -40,7 +40,9 @@
   line-height: 1.5;
 }
 
-.compliance-summary-caption { margin: 12px 0 16px; }
+.compliance-summary-caption {
+  margin: 12px 0 16px;
+}
 
 .compliance-summary-counts {
   display: grid;
@@ -70,8 +72,12 @@
   font: 600 19px var(--display);
 }
 
-.compliance-summary-footnote { margin: 13px 0 0; }
+.compliance-summary-footnote {
+  margin: 13px 0 0;
+}
 
 @media (max-width: 600px) {
-  .compliance-summary-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compliance-summary-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

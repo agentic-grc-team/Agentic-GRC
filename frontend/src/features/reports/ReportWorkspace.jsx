@@ -30,8 +30,7 @@ function describeReportError(error) {
 }
 
 function formatAssessmentOptionText(assessment) {
-  const statusLabel =
-    ASSESSMENT_STATUS_LABELS[assessment.status] || assessment.status;
+  const statusLabel = ASSESSMENT_STATUS_LABELS[assessment.status] || assessment.status;
   let text = `${assessment.title} · ${statusLabel}`;
   if (assessment.started_at) {
     try {
@@ -91,10 +90,11 @@ export default function ReportWorkspace({
   const onOrganizationChangeRef = useRef(onOrganizationChange);
 
   useEffect(() => {
+    const downloadRequest = downloadRequestRef;
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      ++downloadRequestRef.current;
+      ++downloadRequest.current;
     };
   }, []);
 
@@ -308,11 +308,7 @@ export default function ReportWorkspace({
     setDownloadError(null);
 
     try {
-      const { blob, filename } = await download(
-        orgId,
-        assessmentId,
-        token
-      );
+      const { blob, filename } = await download(orgId, assessmentId, token);
 
       if (!isMountedRef.current || downloadId !== downloadRequestRef.current) return;
 
@@ -325,9 +321,7 @@ export default function ReportWorkspace({
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
 
-      setDownloadStatus(
-        format === "json" ? "JSON export downloaded." : "Report downloaded."
-      );
+      setDownloadStatus(format === "json" ? "JSON export downloaded." : "Report downloaded.");
     } catch (err) {
       if (!isMountedRef.current || downloadId !== downloadRequestRef.current) return;
       setDownloadError(describeReportError(err));
@@ -351,16 +345,14 @@ export default function ReportWorkspace({
       <p className="eyebrow">ASSESSMENT REPORT</p>
       <h1 id="report-heading">Assessment report</h1>
       <p className="report-intro">
-        Preview the reviewed results of an assessment and download the PDF for the client. AI drafts that are not reviewed yet are listed separately and are never shown as final results.
+        Preview the reviewed results of an assessment and download the PDF for the client. AI drafts
+        that are not reviewed yet are listed separately and are never shown as final results.
       </p>
 
       {organizations.length >= 2 && (
         <label className="report-org-select">
           Organization
-          <select
-            value={selectedOrgId || ""}
-            onChange={(e) => setSelectedOrgId(e.target.value)}
-          >
+          <select value={selectedOrgId || ""} onChange={(e) => setSelectedOrgId(e.target.value)}>
             {organizations.map((org) => (
               <option key={org.id} value={org.id}>
                 {org.name}
@@ -374,33 +366,37 @@ export default function ReportWorkspace({
         <p className="report-org-text">Organization: {organizations[0].name}</p>
       )}
 
-      {selectedOrgId && !isLoadingOrgs && !orgsError && !isLoadingAssessments && !assessmentsError && (
-        <>
-          {assessments.length >= 2 && (
-            <label className="report-org-select">
-              Assessment
-              <select
-                value={selectedAssessmentId || ""}
-                onChange={(e) => setSelectedAssessmentId(e.target.value)}
-              >
-                {assessments.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {formatAssessmentOptionText(a)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+      {selectedOrgId &&
+        !isLoadingOrgs &&
+        !orgsError &&
+        !isLoadingAssessments &&
+        !assessmentsError && (
+          <>
+            {assessments.length >= 2 && (
+              <label className="report-org-select">
+                Assessment
+                <select
+                  value={selectedAssessmentId || ""}
+                  onChange={(e) => setSelectedAssessmentId(e.target.value)}
+                >
+                  {assessments.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {formatAssessmentOptionText(a)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
-          {assessments.length === 1 && (
-            <p className="report-org-text">Assessment: {assessments[0].title}</p>
-          )}
+            {assessments.length === 1 && (
+              <p className="report-org-text">Assessment: {assessments[0].title}</p>
+            )}
 
-          {assessments.length === 0 && (
-            <p className="report-empty">No assessments yet for this organization.</p>
-          )}
-        </>
-      )}
+            {assessments.length === 0 && (
+              <p className="report-empty">No assessments yet for this organization.</p>
+            )}
+          </>
+        )}
 
       {showEmptyState && (
         <p className="report-empty">
@@ -453,9 +449,7 @@ export default function ReportWorkspace({
             <div>
               <div className="report-title-wrap">
                 <h2>{preview.assessment.title}</h2>
-                {preview.is_demo_data && (
-                  <span className="report-badge">Demo data</span>
-                )}
+                {preview.is_demo_data && <span className="report-badge">Demo data</span>}
               </div>
               <p className="report-meta">
                 {`${preview.assessment.framework} · Knowledge base ${preview.assessment.kb_version} · Status: ${
@@ -497,7 +491,8 @@ export default function ReportWorkspace({
 
           {preview.summary?.pending > 0 && (
             <p className="report-notice">
-              {preview.summary.pending} control(s) pending expert review. They are listed separately and are not presented as final results.
+              {preview.summary.pending} control(s) pending expert review. They are listed separately
+              and are not presented as final results.
             </p>
           )}
 
@@ -532,7 +527,10 @@ export default function ReportWorkspace({
             </div>
           </dl>
 
-          <ComplianceSummary summary={preview.summary} exclusionCount={preview.exclusions?.length ?? 0} />
+          <ComplianceSummary
+            summary={preview.summary}
+            exclusionCount={preview.exclusions?.length ?? 0}
+          />
 
           <GapList gapList={preview.gap_list} />
 
@@ -540,7 +538,8 @@ export default function ReportWorkspace({
             <h3>Reviewed results</h3>
             {preview.summary?.final_with_evidence_pending > 0 && (
               <p className="report-evidence-note">
-                Results marked “Evidence pending” were accepted by an Aligo consultant on the basis of the participant's statement; the supporting evidence has not been validated yet.
+                Results marked “Evidence pending” were accepted by an Aligo consultant on the basis
+                of the participant's statement; the supporting evidence has not been validated yet.
               </p>
             )}
             {!preview.results || preview.results.length === 0 ? (
@@ -595,9 +594,7 @@ export default function ReportWorkspace({
                               {result.status_label}
                             </span>
                             {result.evidence_pending && (
-                              <span className="report-evidence-badge">
-                                Evidence pending
-                              </span>
+                              <span className="report-evidence-badge">Evidence pending</span>
                             )}
                           </td>
                           <td>{reviewerText}</td>
@@ -670,4 +667,3 @@ export default function ReportWorkspace({
     </section>
   );
 }
-

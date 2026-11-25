@@ -87,6 +87,17 @@ describe("OrganizationWorkspace", () => {
     expect(screen.getByRole("button", { name: /Send invitation/ })).toBeInTheDocument();
   });
 
+  it("shows an overview instead of onboarding instructions to a representative", async () => {
+    listOrganizations.mockResolvedValue([{ ...existingOrganization, role: "representative" }]);
+
+    render(<OrganizationWorkspace accessToken="test-token" />);
+
+    expect(await screen.findByRole("region", { name: "Organization overview" })).toBeInTheDocument();
+    expect(screen.getByText(/answer interview questions, provide requested evidence/i)).toBeInTheDocument();
+    expect(screen.getByText(/continue its interview or view an available report/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Create an assessment in Assessments/i)).not.toBeInTheDocument();
+  });
+
   it("sends a consultant invitation and reports the seven-day activation link", async () => {
     listOrganizations.mockResolvedValue([existingOrganization]);
     createInvitation.mockResolvedValue({ email: "teammate@example.com" });
