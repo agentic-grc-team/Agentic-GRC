@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from uuid import UUID
 
 import httpx
@@ -25,6 +26,22 @@ class SupabaseUserAlreadyExists(Exception):
 
 class SupabaseUnavailable(Exception):
     """Supabase Auth could not complete a request."""
+
+
+@lru_cache(maxsize=1)
+def _auth_client() -> httpx.Client:
+    # Keep connections warm while validating every bearer token with Supabase.
+    return httpx.Client(timeout=5.0)
+
+
+def start_auth_client() -> None:
+    _auth_client()
+
+
+def close_auth_client() -> None:
+    if _auth_client.cache_info().currsize:
+        _auth_client().close()
+        _auth_client.cache_clear()
 
 
 def _base_url(settings: Settings) -> str:
@@ -65,14 +82,13 @@ def _parse_identity(payload: object) -> SupabaseIdentity:
 def get_verified_identity(access_token: str, settings: Settings) -> SupabaseIdentity:
     """Validate a bearer token against Supabase Auth instead of trusting its claims locally."""
     try:
-        response = httpx.get(
-            f"{_base_url(settings)}/auth/v1/user",
-            headers={
-                "apikey": _publishable_key(settings),
-                "Authorization": f"Bearer {access_token}",
-            },
-            timeout=5.0,
+        # Build the request independently so a shared client's cookie jar cannot
+        # attach a previous user's cookies to another user's verification request.
+        request = httpx.Request(
+            "GET", f"{_base_url(settings)}/auth/v1/user",
+            headers={"apikey": _publishable_key(settings), "Authorization": f"Bearer {access_token}"},
         )
+        response = _auth_client().send(request)
     except httpx.RequestError as exc:
         raise SupabaseUnavailable("Supabase Auth is temporarily unavailable.") from exc
 
