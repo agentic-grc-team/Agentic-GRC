@@ -9,5 +9,6 @@ AI-powered GRC assessment platform developed as part of the international studen
 | [`frontend/`](frontend/README.md) | Web application |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records |
 | [`docs/design/`](docs/design/) | Design documents, such as the reasoning trace schema |
+| [`docs/coding-standards.md`](docs/coding-standards.md) | Code style and local quality checks |
 
 For local Ollama setup, configuration, benchmarks, and the alpha demo checklist, see [docs/ollama-setup.md](docs/ollama-setup.md).

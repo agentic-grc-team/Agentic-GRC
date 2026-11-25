@@ -77,6 +77,28 @@ describe("AuthProvider", () => {
     expect(getCurrentAccount).toHaveBeenCalledWith("supabase-access-token");
   });
 
+  it("shares a simultaneous profile lookup triggered by session restore and auth event", async () => {
+    let onAuthChange;
+    let resolveAccount;
+    getCurrentAccount.mockReturnValue(new Promise((resolve) => { resolveAccount = resolve; }));
+    supabaseMock.auth.getSession.mockResolvedValue({ data: { session }, error: null });
+    supabaseMock.auth.onAuthStateChange.mockImplementation((callback) => {
+      onAuthChange = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    onAuthChange("INITIAL_SESSION", session);
+
+    await waitFor(() => expect(getCurrentAccount).toHaveBeenCalledTimes(1));
+    resolveAccount({ id: "user-1", email: "admin@example.com" });
+    expect(await screen.findByText("admin@example.com")).toBeInTheDocument();
+    await act(async () => {
+      onAuthChange("SIGNED_IN", session);
+      await Promise.resolve();
+    });
+    expect(getCurrentAccount).toHaveBeenCalledTimes(1);
+  });
+
   it("starts Google OAuth through Supabase with the application callback URL", async () => {
     supabaseMock.auth.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
     render(<AuthProvider><AuthProbe /></AuthProvider>);
