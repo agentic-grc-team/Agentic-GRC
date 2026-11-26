@@ -26,9 +26,9 @@ A match only says that a passage is about a control. It never says the control i
 
 ## How passages are matched (`lexical-0.1`)
 
-- **Passages.** A passage ends at a blank line, a heading, a page break or about 700 characters. Wrapped PDF lines of one paragraph stay together. A heading (numbered like `3.2 Access Review`, in capitals, ending with a colon, or a short title) becomes the `section` of the passages under it.
+- **Passages.** A passage ends at a blank line, a heading, a page break or about 700 characters. Wrapped PDF lines of one paragraph stay together. A heading (numbered like `3.2 Access Review`, in capitals, or a short line ending with a colon) becomes the `section` of the passages under it. A short line in Title Case is not taken as a heading, because it may be a sentence without a final period and would then never appear in an excerpt.
 - **Terms.** Each control has core terms and supporting terms, in English and Spanish (clients upload Spanish policies). Text and terms are compared in lower case without accents, as whole words, allowing hyphens and plurals: `Autenticación multifactor` matches `autenticacion multifactor`, and `multi-factor` matches `multi factor`.
-- **Match.** A passage matches a control only with at least one core term, in the passage or in its section heading. Supporting terms alone (`employee`, `quarterly`, `administrator`) never make a match.
+- **Match.** A passage matches a control only when it is about the control itself: it has a core term of its own, or a supporting term under a heading that has a core term. A heading never makes a match on its own (a date under an `MFA` heading is not MFA evidence), and supporting terms alone (`employee`, `quarterly`, `administrator`) never make a match either.
 - **Confidence.** One core term gives 0.55; each further core term or supporting term (up to three) adds 0.1, capped at 0.95. It is a ranking signal, not a calibrated probability. For HU-13 we suggest a threshold of **0.65**, a core term plus one more signal, rather than 0.6.
 - **Limits per file.** At most three passages per file and control, most confident first.
 - **Controls without terms.** An in-scope control without terms gets no match and is listed in `controls_without_terms`, so "no terms yet" is never read as "no relevant passage". Today only the demo controls PR.AA-01, PR.AA-03 and PR.AA-05 have terms; a test checks that every control in the knowledge-base scope has them.
@@ -46,9 +46,10 @@ A match only says that a passage is about a control. It never says the control i
 | `matched_terms` | Core terms first, then supporting terms: the explanation of the match |
 | `confidence` | 0–1, see above |
 | `matcher_version` | `lexical-0.1` |
-| `linked` | The file is already linked to this control |
+| `verification` | Always `not_verified`: a match is a suggestion, never verified evidence. Same marker as linked files in the report ("Not yet verified by Aligo") |
+| `linked` | The file is already linked to this control. Linking does not verify it either |
 
-This is the contract in section 2 of `hu13-evidence-answer-proposals.md`, plus `control_code`, `file_name`, `reference`, `matched_terms` and `linked`.
+This is the contract in section 2 of `hu13-evidence-answer-proposals.md`, plus `control_code`, `file_name`, `reference`, `matched_terms`, `verification` and `linked`.
 
 ## Pages
 

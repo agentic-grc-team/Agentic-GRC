@@ -19,7 +19,7 @@ from tests.test_assessments_db import make_assessment, make_control, make_organi
 from tests.test_evidence_db import store
 
 MFA_POLICY = (
-    "Access Control Policy\fSection on privileged accounts.\n\n"
+    "Cover page of the policy.\f1. Access Control Policy\nSection on privileged accounts.\n\n"
     "All administrator accounts must use multi-factor authentication with an authenticator app."
 )
 ACCESS_REVIEW = "Revisión de accesos: el responsable del sistema revisa los permisos cada trimestre."
@@ -123,7 +123,7 @@ def test_a_match_names_the_file_control_passage_and_terms(api, setup):
     assert mfa["evidence_file_id"] == str(setup.mfa_file.id)
     assert mfa["reference"] == f"document_span:{setup.mfa_file.id}#page=2"
     assert mfa["locator"]["page"] == 2
-    assert mfa["locator"]["section"] == "Access Control Policy"
+    assert mfa["locator"]["section"] == "1. Access Control Policy"
     start, end = mfa["locator"]["char_start"], mfa["locator"]["char_end"]
     assert MFA_POLICY[start:end] == (
         "All administrator accounts must use multi-factor authentication with an authenticator app."
@@ -131,6 +131,7 @@ def test_a_match_names_the_file_control_passage_and_terms(api, setup):
     assert mfa["excerpt"] == MFA_POLICY[start:end]
     assert mfa["matched_terms"] == ["multi factor authentication", "administrator", "authenticator"]
     assert mfa["confidence"] == 0.75
+    assert mfa["verification"] == "not_verified"
     assert mfa["linked"] is False
 
 
@@ -151,6 +152,8 @@ def test_a_file_already_linked_to_the_control_is_marked(api, setup, db):
 
     linked = {match["control_code"]: match["linked"] for match in body["matches"]}
     assert linked == {"PR.AA-03": True, "PR.AA-05": False}
+    # Linking the file does not make the passage verified evidence.
+    assert {match["verification"] for match in body["matches"]} == {"not_verified"}
 
 
 def test_the_list_can_be_limited_to_one_file_and_to_a_minimum_confidence(api, setup):
