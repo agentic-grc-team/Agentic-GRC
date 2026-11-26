@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.report import LinkedEvidenceVerification
+
 
 class PassageLocator(BaseModel):
     # Page is known for PDFs uploaded since HU-12 (their pages are kept apart); otherwise null.
@@ -28,7 +30,11 @@ class PassageMatchRead(BaseModel):
     matched_terms: list[str]
     confidence: float = Field(ge=0, le=1)
     matcher_version: str
-    # The file is already linked to this control (evidence_control_links).
+    # A match is a suggestion, never verified evidence: the same marker and label as linked files
+    # in the report ("Not yet verified by Aligo").
+    verification: LinkedEvidenceVerification = "not_verified"
+    # The file is already linked to this control (evidence_control_links). Linking a file does
+    # not verify it either.
     linked: bool
 
 

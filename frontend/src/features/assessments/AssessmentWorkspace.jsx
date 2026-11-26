@@ -36,7 +36,9 @@ export default function AssessmentWorkspace({
   const [organizations, setOrganizations] = useState([]);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(true);
   const [organizationsError, setOrganizationsError] = useState("");
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  // A selection carried from another screen can start loading assessments while
+  // the organization list independently confirms current membership.
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
 
   const [assessments, setAssessments] = useState([]);
   const [isLoadingAssessments, setIsLoadingAssessments] = useState(false);
@@ -165,7 +167,10 @@ export default function AssessmentWorkspace({
   }, [selectedOrganizationId, selectedAssessmentId, sessionKey]);
 
   const selectedOrganization = organizations.find((item) => item.id === selectedOrganizationId) || null;
-  const selectedAssessment = assessments.find((item) => item.id === selectedAssessmentId) || null;
+  const visibleAssessments = assessments.filter((item) => item.organization_id === selectedOrganizationId);
+  const selectedAssessment = visibleAssessments.find((item) => item.id === selectedAssessmentId) || null;
+  const visibleScope = scope?.organization_id === selectedOrganizationId && scope?.assessment?.id === selectedAssessmentId
+    ? scope : null;
   const canCreate = Boolean(
     selectedOrganization && (isPlatformAdmin || CREATOR_ROLES.includes(selectedOrganization.role)),
   );
@@ -269,11 +274,11 @@ export default function AssessmentWorkspace({
         <p className="assessment-empty">This organization has no assessments yet.</p>
       )}
 
-      {assessments.length > 0 && (
+      {selectedOrganization && visibleAssessments.length > 0 && (
         <label className="assessment-field">
           Assessment
           <select value={selectedAssessmentId} onChange={(event) => selectAssessment(event.target.value)}>
-            {assessments.map((item) => (
+            {visibleAssessments.map((item) => (
               <option key={item.id} value={item.id}>
                 {`${item.title} · ${assessmentStatusLabel(item.status)}`}
               </option>
@@ -282,7 +287,7 @@ export default function AssessmentWorkspace({
         </label>
       )}
 
-      {onStartInterview && acceptsInterviews(selectedAssessment) && (
+      {selectedOrganization && onStartInterview && acceptsInterviews(selectedAssessment) && (
         <button
           className="primary-button assessment-interview-button"
           type="button"
@@ -293,10 +298,9 @@ export default function AssessmentWorkspace({
       )}
 
       {isLoadingScope && <p role="status">Loading assessment scope…</p>}
-      {scopeError && <p role="alert">{scopeError}</p>}
-      {scope && <AssessmentScope scope={scope} />}
-
-      {scope && selectedOrganizationId && selectedAssessmentId && (
+      {selectedOrganization && scopeError && <p role="alert">{scopeError}</p>}
+      {selectedOrganization && visibleScope && <AssessmentScope scope={visibleScope} />}
+      {selectedOrganization && visibleScope && selectedAssessmentId && (
         <AssessmentEvidence
           key={`${selectedOrganizationId}:${selectedAssessmentId}`}
           organizationId={selectedOrganizationId}

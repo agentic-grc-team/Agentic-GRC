@@ -151,6 +151,32 @@ def test_a_heading_becomes_the_section_and_its_terms_count():
     assert match.excerpt == "All access rights are checked every quarter by the system owner."
 
 
+def test_a_heading_alone_never_makes_a_match():
+    # Reported in review of #81: a date under an "MFA" heading was shown as MFA evidence.
+    text = "4. MFA\nVerification date: 2026-11-06\n\nAll other text here about nothing."
+
+    assert matches_for(text, "PR.AA-03") == []
+
+
+def test_a_heading_term_counts_only_with_a_term_of_the_passage_itself():
+    with_term = "4. MFA\nAll administrator accounts are covered."
+    without_term = "4. MFA\nAll other text here about nothing."
+
+    [match] = matches_for(with_term, "PR.AA-03")
+    assert match.matched_terms == ("mfa", "administrator")
+    assert matches_for(without_term, "PR.AA-03") == []
+
+
+def test_a_title_case_sentence_is_part_of_the_passage_not_a_heading():
+    # Reported in review of #81: this sentence became the section and never appeared in an excerpt.
+    text = "MFA Is Required For Admins\nAll other text here about nothing."
+
+    [match] = matches_for(text, "PR.AA-03")
+
+    assert match.passage.section is None
+    assert match.excerpt.startswith("MFA Is Required For Admins")
+
+
 def test_a_long_passage_gives_a_short_excerpt_around_the_first_core_term():
     filler = "This sentence describes general security governance in some detail. " * 8
     text = filler + "Administrators must use multi-factor authentication for every remote login. " + filler

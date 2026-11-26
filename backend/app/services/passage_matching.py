@@ -220,23 +220,23 @@ _PATTERNS = {
 }
 
 _NUMBERED_HEADING = re.compile(r"^(?:\d+(?:\.\d+)*\.?|[A-Z]\.|section \d+|article \d+)\s+\S", re.IGNORECASE)
-_SMALL_WORDS = {"a", "an", "and", "of", "the", "for", "to", "in", "on", "de", "del", "la", "el", "y", "los", "las"}
 
 
 def _is_heading(line: str) -> bool:
+    """Numbered lines, lines in capitals and short lines ending with a colon.
+
+    A short line in Title Case is not taken as a heading: it may be a sentence without a final
+    period ("MFA Is Required For Admins"), and a heading is never part of a passage's excerpt.
+    """
     stripped = line.strip()
     if not 3 <= len(stripped) <= 90 or stripped[-1] in ".;,":
         return False
-    words = stripped.split()
-    if len(words) > 12:
+    if len(stripped.split()) > 12:
         return False
     if stripped.endswith(":") or _NUMBERED_HEADING.match(stripped):
         return True
     letters = [char for char in stripped if char.isalpha()]
-    if len(letters) >= 4 and all(char.isupper() for char in letters):
-        return True
-    title_words = [word for word in words if word.lower() not in _SMALL_WORDS]
-    return 0 < len(words) <= 6 and all(word[:1].isupper() for word in title_words)
+    return len(letters) >= 4 and all(char.isupper() for char in letters)
 
 
 def split_passages(text: str) -> list[Passage]:
@@ -333,17 +333,24 @@ def match_text(text: str, control_codes: list[str]) -> list[TextMatch]:
         for passage in passages:
             scope = folded[passage.char_start:passage.char_end]
             heading = fold(passage.section or "")
-            core = []
+            own_core = []
+            heading_core = []
             first_hit = None
             for term, pattern in core_patterns:
                 hit = pattern.search(scope)
-                if hit or pattern.search(heading):
-                    core.append(term)
-                    if hit and (first_hit is None or hit.start() < first_hit):
+                if hit:
+                    own_core.append(term)
+                    if first_hit is None or hit.start() < first_hit:
                         first_hit = hit.start()
-            if not core:
-                continue
+                elif pattern.search(heading):
+                    heading_core.append(term)
             supporting = [term for term, pattern in supporting_patterns if pattern.search(scope)]
+            # The passage must be about the control itself: a core term of its own, or a supporting
+            # term under a heading with a core term. A heading never makes a match on its own, so a
+            # paragraph with only a date under an "MFA" heading is not shown as MFA evidence.
+            if not own_core and not (heading_core and supporting):
+                continue
+            core = own_core + heading_core
             anchor = passage.char_start + (first_hit or 0)
             found.append(
                 TextMatch(

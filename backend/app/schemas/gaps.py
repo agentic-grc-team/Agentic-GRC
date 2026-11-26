@@ -5,7 +5,13 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas.report import ControlStatus, FinalBasis, ReportView
+from app.schemas.report import (
+    ControlStatus,
+    EvidenceReference,
+    FinalBasis,
+    LinkedEvidenceFile,
+    ReportView,
+)
 
 
 class GapRisk(BaseModel):
@@ -28,6 +34,11 @@ class Gap(BaseModel):
     basis: FinalBasis
     explanation: str
     evidence_pending: bool = False
+    # HU-16: the evidence behind the result, or an explicit statement that there is none. Files
+    # linked after the review are listed (marked added_after_review) but do not count against evidence_absent.
+    evidence: list[EvidenceReference] = []
+    linked_evidence: list[LinkedEvidenceFile] = []
+    evidence_absent: bool
 
 
 class GapList(BaseModel):
