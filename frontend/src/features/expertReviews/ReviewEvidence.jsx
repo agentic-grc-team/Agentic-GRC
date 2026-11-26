@@ -15,7 +15,14 @@ function formatFileSize(bytes) {
   return `${(bytes / 1000000).toFixed(1)} MB`;
 }
 
-export default function ReviewEvidence({ resultId, organizationId, assessmentId, controlCode, accessToken, sessionId }) {
+export default function ReviewEvidence({
+  resultId,
+  organizationId,
+  assessmentId,
+  controlCode,
+  accessToken,
+  sessionId,
+}) {
   const [response, setResponse] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const accessTokenRef = useRef(accessToken);
@@ -31,10 +38,7 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
 
     async function loadEvidence() {
       try {
-        const evidence = await getReviewEvidence(
-          resultId,
-          accessTokenRef.current,
-        );
+        const evidence = await getReviewEvidence(resultId, accessTokenRef.current);
 
         if (active) {
           setResponse({ resultId, sessionKey, evidence });
@@ -56,10 +60,7 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
   // Hide old data immediately when the result or session changes.
   let current = null;
 
-  if (
-    response?.resultId === resultId &&
-    response?.sessionKey === sessionKey
-  ) {
+  if (response?.resultId === resultId && response?.sessionKey === sessionKey) {
     current = response;
   }
 
@@ -78,14 +79,10 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
         <h3>Evidence and sources</h3>
 
         <p role="alert">
-          Unable to load evidence and sources.
-          This does not mean evidence is absent.
+          Unable to load evidence and sources. This does not mean evidence is absent.
         </p>
 
-        <button
-          type="button"
-          onClick={() => setAttempt(attempt + 1)}
-        >
+        <button type="button" onClick={() => setAttempt(attempt + 1)}>
           Retry evidence
         </button>
       </div>
@@ -94,17 +91,11 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
 
   const evidence = current.evidence;
 
-  const documentSources = evidence.sources.filter(
-    (item) => item.source_type === "document_span",
-  );
+  const documentSources = evidence.sources.filter((item) => item.source_type === "document_span");
 
-  const interviews = evidence.sources.filter(
-    (item) => item.source_type === "interview_turn",
-  );
+  const interviews = evidence.sources.filter((item) => item.source_type === "interview_turn");
 
-  const otherSources = evidence.sources.filter(
-    (item) => item.source_type === "other",
-  );
+  const otherSources = evidence.sources.filter((item) => item.source_type === "other");
 
   return (
     <div className="review-section review-evidence">
@@ -119,9 +110,8 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
       <h4>Documents linked to this control</h4>
 
       <p>
-        Attached documents still need consultant verification.
-        Current attachments can differ from the sources cited
-        when the AI result was saved.
+        Attached documents still need consultant verification. Current attachments can differ from
+        the sources cited when the AI result was saved.
       </p>
 
       {evidence.linked_documents.length === 0 ? (
@@ -164,13 +154,9 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
                   "Document unavailable in this assessment context"}
               </strong>
 
-              <p className="review-source-reference">
-                {source.reference}
-              </p>
+              <p className="review-source-reference">{source.reference}</p>
 
-              {source.excerpt && (
-                <blockquote>{source.excerpt}</blockquote>
-              )}
+              {source.excerpt && <blockquote>{source.excerpt}</blockquote>}
             </li>
           ))}
         </ul>
@@ -179,9 +165,8 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
       <h4>Interview statements</h4>
 
       <p>
-        Statements from the interview are attestations, not
-        documentary evidence. Statements marked as quoted from
-        the transcript are the participant's saved answers.
+        Statements from the interview are attestations, not documentary evidence. Statements marked
+        as quoted from the transcript are the participant's saved answers.
       </p>
 
       {interviews.length === 0 ? (
@@ -190,9 +175,7 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
         <ul>
           {interviews.map((source) => (
             <li key={source.reference}>
-              <span className="review-source-reference">
-                {source.reference}
-              </span>
+              <span className="review-source-reference">{source.reference}</span>
 
               {source.excerpt ? (
                 <>
@@ -217,9 +200,7 @@ export default function ReviewEvidence({ resultId, organizationId, assessmentId,
 
           <ul>
             {otherSources.map((source) => (
-              <li key={source.reference}>
-                {source.reference} — source not resolved
-              </li>
+              <li key={source.reference}>{source.reference} — source not resolved</li>
             ))}
           </ul>
         </>

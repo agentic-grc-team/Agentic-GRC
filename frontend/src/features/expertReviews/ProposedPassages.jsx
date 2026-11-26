@@ -3,7 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { getPassageMatches } from "../assessments/api.js";
 import "./ProposedPassages.css";
 
-export default function ProposedPassages({ organizationId, assessmentId, controlCode, accessToken, sessionId }) {
+export default function ProposedPassages({
+  organizationId,
+  assessmentId,
+  controlCode,
+  accessToken,
+  sessionId,
+}) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -11,9 +17,12 @@ export default function ProposedPassages({ organizationId, assessmentId, control
   const tokenRef = useRef(accessToken);
   tokenRef.current = accessToken;
 
-  useEffect(() => () => {
-    requestRef.current += 1;
-  }, [organizationId, assessmentId, controlCode, sessionId]);
+  useEffect(
+    () => () => {
+      requestRef.current += 1;
+    },
+    [organizationId, assessmentId, controlCode, sessionId],
+  );
 
   async function loadMatches() {
     const request = ++requestRef.current;
@@ -26,7 +35,8 @@ export default function ProposedPassages({ organizationId, assessmentId, control
       }
       if (request === requestRef.current) setResult(data);
     } catch (failure) {
-      if (request === requestRef.current) setError(failure?.message || "Could not load passage matches.");
+      if (request === requestRef.current)
+        setError(failure?.message || "Could not load passage matches.");
     } finally {
       if (request === requestRef.current) setLoading(false);
     }
@@ -34,9 +44,13 @@ export default function ProposedPassages({ organizationId, assessmentId, control
 
   if (!controlCode) return null;
 
-  const currentResult = result?.organization_id === organizationId &&
-    result?.assessment_id === assessmentId ? result : null;
-  const matches = (currentResult?.matches || []).filter((item) => item.control_code === controlCode);
+  const currentResult =
+    result?.organization_id === organizationId && result?.assessment_id === assessmentId
+      ? result
+      : null;
+  const matches = (currentResult?.matches || []).filter(
+    (item) => item.control_code === controlCode,
+  );
   const noTerms = currentResult?.controls_without_terms?.includes(controlCode);
   const documentCount = new Set(matches.map((match) => match.evidence_file_id)).size;
 
@@ -45,13 +59,16 @@ export default function ProposedPassages({ organizationId, assessmentId, control
       <p className="eyebrow">DOCUMENT MATCHES</p>
       <h4>Proposed passages for {controlCode}</h4>
       <p className="assessment-note">
-        These proposed matches are unverified. Review the passage and source before using them as evidence.
-        Finding a passage does not attach the file or change a control result.
+        These proposed matches are unverified. Review the passage and source before using them as
+        evidence. Finding a passage does not attach the file or change a control result.
       </p>
 
-
       <button className="secondary-button" type="button" disabled={loading} onClick={loadMatches}>
-        {loading ? "Finding passages…" : currentResult ? "Refresh matches" : "Find relevant passages"}
+        {loading
+          ? "Finding passages…"
+          : currentResult
+            ? "Refresh matches"
+            : "Find relevant passages"}
       </button>
 
       {loading && <p role="status">Checking uploaded documents…</p>}
@@ -76,22 +93,32 @@ export default function ProposedPassages({ organizationId, assessmentId, control
           ) : (
             <ul aria-label={`Passages for ${controlCode}`}>
               {matches.map((match) => (
-                <li key={`${match.evidence_file_id}:${match.locator.char_start}:${match.control_code}`}>
+                <li
+                  key={`${match.evidence_file_id}:${match.locator.char_start}:${match.control_code}`}
+                >
                   <strong>{match.file_name}</strong>
                   <p className="assessment-passages-location">
                     {[
                       match.locator.page && `Page ${match.locator.page}`,
                       match.locator.section && `Section ${match.locator.section}`,
-                      `Characters ${match.locator.char_start}–${match.locator.char_end}`,
-                    ].filter(Boolean).join(" · ")}
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                   <blockquote>{match.excerpt}</blockquote>
                   <p className="assessment-passages-location">
-                    {`Source: ${match.reference} · Matched: ${match.matched_terms.join(", ")} · Match score: ${match.confidence}`}
+                    {match.verification === "not_verified" && "Not yet verified by Aligo"}
                   </p>
                   <p className="assessment-passages-location">
-                    {match.linked ? "File already linked to this control" : "File not linked to this control"}
+                    {match.linked
+                      ? "File already linked to this control"
+                      : "File not linked to this control"}
                   </p>
+                  <details className="assessment-passages-details">
+                    <summary>Match details</summary>
+                    <p>{`Source: ${match.reference}`}</p>
+                    <p>{`Characters ${match.locator.char_start}–${match.locator.char_end} · Matched: ${match.matched_terms.join(", ")} · Match score: ${match.confidence}`}</p>
+                  </details>
                 </li>
               ))}
             </ul>

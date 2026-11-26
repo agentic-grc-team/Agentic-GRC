@@ -12,8 +12,15 @@
   font: 600 18px var(--display);
 }
 
-.assessment-passages .secondary-button { margin-bottom: 16px; }
-.assessment-passages-results ul { display: grid; gap: 10px; padding: 0; list-style: none; }
+.assessment-passages .secondary-button {
+  margin-bottom: 16px;
+}
+.assessment-passages-results ul {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
 .assessment-passages-results li {
   padding: 14px;
   border: 1px solid var(--line-soft);
@@ -21,7 +28,9 @@
   background: var(--panel-raised);
   overflow-wrap: anywhere;
 }
-.assessment-passages-results strong { color: var(--mint); }
+.assessment-passages-results strong {
+  color: var(--mint);
+}
 .assessment-passages-results blockquote {
   margin: 10px 0;
   padding-left: 12px;
@@ -29,9 +38,24 @@
   color: #e4e9ea;
   line-height: 1.6;
 }
-.assessment-passages-location, .assessment-passages-footnote {
+.assessment-passages-location,
+.assessment-passages-footnote {
   color: var(--quiet);
   font-size: 11px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.assessment-passages-details {
+  color: var(--quiet);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.assessment-passages-details summary {
+  cursor: pointer;
+}
+.assessment-passages-details p {
+  margin: 6px 0;
   overflow-wrap: anywhere;
 }
