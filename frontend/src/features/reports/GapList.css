@@ -81,3 +81,12 @@
   color: var(--muted);
   font: 10px var(--mono);
 }
+
+/* Keep the seven-column gap table readable when the page is zoomed. */
+.gap-list .report-table {
+  min-width: 1050px;
+}
+
+.gap-list .gap-risks li {
+  overflow-wrap: normal;
+}

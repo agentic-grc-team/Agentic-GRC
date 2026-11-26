@@ -242,11 +242,7 @@ describe("ReportWorkspace", () => {
 
     expect(listOrganizations).toHaveBeenCalledWith("test-bearer-token");
     expect(listAssessments).toHaveBeenCalledWith("org-1", "test-bearer-token");
-    expect(getReportPreview).toHaveBeenCalledWith(
-      "org-1",
-      "assess-1",
-      "test-bearer-token"
-    );
+    expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "test-bearer-token");
   });
 
   it("renders the summary tiles with the right numbers, including '50.0%'", async () => {
@@ -260,6 +256,12 @@ describe("ReportWorkspace", () => {
     expect(within(summary).getByText("Pending review").parentElement).toHaveTextContent("3");
     expect(within(summary).getByText("Exclusions").parentElement).toHaveTextContent("1");
     expect(within(summary).getByText("Coverage").parentElement).toHaveTextContent("50.0%");
+    const compliance = screen
+      .getByRole("heading", { name: "Compliance summary" })
+      .closest("section");
+    expect(compliance).toHaveTextContent("Implemented1");
+    expect(compliance).toHaveTextContent("Partially implemented1");
+    expect(compliance).toHaveTextContent("3 awaiting a final result · 1 approved exclusions");
   });
 
   it("shows the gap list that comes with the preview, without a separate request", async () => {
@@ -272,7 +274,9 @@ describe("ReportWorkspace", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(1);
     expect(within(rows[0]).getByText("PR.AA-03")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Based on version 2 · consultant version")).toBeInTheDocument();
+    expect(
+      within(rows[0]).getByText("Based on version 2 · consultant version"),
+    ).toBeInTheDocument();
     expect(getReportPreview).toHaveBeenCalledTimes(1);
   });
 
@@ -288,9 +292,7 @@ describe("ReportWorkspace", () => {
 
     const table = await screen.findByRole("table", { name: "Reviewed results" });
     expect(within(table).getByText("Partially implemented")).toBeInTheDocument();
-    expect(
-      within(table).getByText("Aligo Consultant (demo) · 2026-01-17")
-    ).toBeInTheDocument();
+    expect(within(table).getByText("Aligo Consultant (demo) · 2026-01-17")).toBeInTheDocument();
   });
 
   it("a pending control appears in the 'Pending review' table and not in the 'Reviewed results' table", async () => {
@@ -311,7 +313,7 @@ describe("ReportWorkspace", () => {
     const exclusionsTable = await screen.findByRole("table", { name: "Exclusions" });
     expect(within(exclusionsTable).getByText("PR.PS-06")).toBeInTheDocument();
     expect(
-      within(exclusionsTable).getByText("Organization does not develop software in-house.")
+      within(exclusionsTable).getByText("Organization does not develop software in-house."),
     ).toBeInTheDocument();
   });
 
@@ -321,9 +323,7 @@ describe("ReportWorkspace", () => {
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
 
     expect(screen.getByText("Demo data")).toHaveClass("report-badge");
-    expect(
-      screen.getByText(/3 control\(s\) pending expert review/)
-    ).toHaveClass("report-notice");
+    expect(screen.getByText(/3 control\(s\) pending expert review/)).toHaveClass("report-notice");
   });
 
   it("assessment status shows 'Awaiting review' (label), not awaiting_review", async () => {
@@ -346,11 +346,7 @@ describe("ReportWorkspace", () => {
     fireEvent.change(select, { target: { value: "org-2" } });
 
     await waitFor(() => {
-      expect(getReportPreview).toHaveBeenCalledWith(
-        "org-2",
-        "assess-1",
-        "test-token"
-      );
+      expect(getReportPreview).toHaveBeenCalledWith("org-2", "assess-1", "test-token");
     });
   });
 
@@ -393,11 +389,9 @@ describe("ReportWorkspace", () => {
     });
 
     // Make sure Org B is displayed and Org A is never displayed
+    expect(screen.getByRole("heading", { name: "Org B Assessment Title" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Org B Assessment Title" })
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Org A Assessment Title" })
+      screen.queryByRole("heading", { name: "Org A Assessment Title" }),
     ).not.toBeInTheDocument();
   });
 
@@ -407,7 +401,7 @@ describe("ReportWorkspace", () => {
     render(<ReportWorkspace accessToken="test-token" />);
 
     await screen.findByText(
-      "You are not a member of any organization yet. Ask your administrator for an invitation."
+      "You are not a member of any organization yet. Ask your administrator for an invitation.",
     );
 
     expect(getReportPreview).not.toHaveBeenCalled();
@@ -415,14 +409,17 @@ describe("ReportWorkspace", () => {
   });
 
   it("organizations request fails -> shows the error, not the empty state, and retries", async () => {
-    listOrganizations.mockRejectedValueOnce({ status: 401, message: "Could not validate credentials." });
+    listOrganizations.mockRejectedValueOnce({
+      status: 401,
+      message: "Could not validate credentials.",
+    });
 
     render(<ReportWorkspace accessToken="test-token" />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
     expect(
-      screen.queryByText(/You are not a member of any organization yet/)
+      screen.queryByText(/You are not a member of any organization yet/),
     ).not.toBeInTheDocument();
     expect(getReportPreview).not.toHaveBeenCalled();
 
@@ -460,9 +457,7 @@ describe("ReportWorkspace", () => {
     render(<ReportWorkspace accessToken="test-token" />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
-      "Your session has expired. Sign in again to continue."
-    );
+    expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
   });
 
   it("download success handles blob, anchor click, revokeObjectURL, and success status", async () => {
@@ -512,7 +507,7 @@ describe("ReportWorkspace", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("No report is available for this organization yet.");
     expect(
-      screen.getByRole("heading", { name: "Identity and access — demo assessment" })
+      screen.getByRole("heading", { name: "Identity and access — demo assessment" }),
     ).toBeInTheDocument();
   });
 
@@ -587,7 +582,7 @@ describe("ReportWorkspace", () => {
     });
 
     expect(
-      screen.queryByRole("heading", { name: "Old Token-1 Assessment Title" })
+      screen.queryByRole("heading", { name: "Old Token-1 Assessment Title" }),
     ).not.toBeInTheDocument();
 
     await act(async () => {
@@ -597,7 +592,7 @@ describe("ReportWorkspace", () => {
     await screen.findByRole("heading", { name: "Beta Assessment Title" });
     expect(screen.getByText(/Beta Industries/)).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Old Token-1 Assessment Title" })
+      screen.queryByRole("heading", { name: "Old Token-1 Assessment Title" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
   });
@@ -616,7 +611,7 @@ describe("ReportWorkspace", () => {
     rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     await screen.findByText(
-      "You are not a member of any organization yet. Ask your administrator for an invitation."
+      "You are not a member of any organization yet. Ask your administrator for an invitation.",
     );
 
     await act(async () => {
@@ -625,11 +620,11 @@ describe("ReportWorkspace", () => {
 
     expect(
       screen.getByText(
-        "You are not a member of any organization yet. Ask your administrator for an invitation."
-      )
+        "You are not a member of any organization yet. Ask your administrator for an invitation.",
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Identity and access — demo assessment" })
+      screen.queryByRole("heading", { name: "Identity and access — demo assessment" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -656,7 +651,7 @@ describe("ReportWorkspace", () => {
 
     expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
     expect(
-      screen.queryByRole("heading", { name: "Identity and access — demo assessment" })
+      screen.queryByRole("heading", { name: "Identity and access — demo assessment" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -749,7 +744,7 @@ describe("ReportWorkspace", () => {
     });
 
     expect(
-      screen.queryByText("No report is available for this organization yet.")
+      screen.queryByText("No report is available for this organization yet."),
     ).not.toBeInTheDocument();
   });
 
@@ -873,7 +868,9 @@ describe("ReportWorkspace", () => {
     // The same file uploaded twice is listed twice, and the later upload says it came after the review.
     expect(within(files).getAllByText("conditional-access-mfa.pdf")).toHaveLength(2);
     expect(within(files).getByText("PDF · Not yet verified by Aligo")).toBeInTheDocument();
-    expect(within(files).getByText("PDF · Not yet verified by Aligo · Added after the review")).toBeInTheDocument();
+    expect(
+      within(files).getByText("PDF · Not yet verified by Aligo · Added after the review"),
+    ).toBeInTheDocument();
 
     const otherRow = within(table).getByText(mockReportView.results[1].code).closest("tr");
     expect(within(otherRow).queryByRole("list")).not.toBeInTheDocument();
@@ -885,7 +882,7 @@ describe("ReportWorkspace", () => {
 
     const defaultSummary = screen.getByText("Controls in scope").closest("dl");
     expect(
-      within(defaultSummary).getByText("Final results with evidence pending").parentElement
+      within(defaultSummary).getByText("Final results with evidence pending").parentElement,
     ).toHaveTextContent("0");
 
     unmount();
@@ -896,7 +893,7 @@ describe("ReportWorkspace", () => {
 
     const variantSummary = screen.getByText("Controls in scope").closest("dl");
     expect(
-      within(variantSummary).getByText("Final results with evidence pending").parentElement
+      within(variantSummary).getByText("Final results with evidence pending").parentElement,
     ).toHaveTextContent("1");
   });
 
@@ -905,7 +902,7 @@ describe("ReportWorkspace", () => {
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
 
     expect(
-      screen.queryByText(/Results marked “Evidence pending” were accepted by an Aligo consultant/)
+      screen.queryByText(/Results marked “Evidence pending” were accepted by an Aligo consultant/),
     ).not.toBeInTheDocument();
 
     unmount();
@@ -915,7 +912,7 @@ describe("ReportWorkspace", () => {
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
 
     const note = screen.getByText(
-      /Results marked “Evidence pending” were accepted by an Aligo consultant on the basis of the participant's statement; the supporting evidence has not been validated yet\./
+      /Results marked “Evidence pending” were accepted by an Aligo consultant on the basis of the participant's statement; the supporting evidence has not been validated yet\./,
     );
     expect(note).toBeInTheDocument();
     expect(note).toHaveClass("report-evidence-note");
@@ -935,7 +932,7 @@ describe("ReportWorkspace", () => {
 
     const summary = screen.getByText("Controls in scope").closest("dl");
     expect(
-      within(summary).getByText("Final results with evidence pending").parentElement
+      within(summary).getByText("Final results with evidence pending").parentElement,
     ).toHaveTextContent("0");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -1135,8 +1132,16 @@ describe("ReportWorkspace", () => {
     expect(screen.getByText("Assessment: Org B Assessment")).toBeInTheDocument();
     expect(screen.queryByText("Assessment: Org A Assessment")).not.toBeInTheDocument();
     expect(getReportPreview).toHaveBeenCalledWith("org-2", "assess-b", "test-token");
-    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", expect.anything(), expect.anything());
-    expect(getReportPreview).not.toHaveBeenCalledWith(expect.anything(), "assess-a", expect.anything());
+    expect(getReportPreview).not.toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(getReportPreview).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "assess-a",
+      expect.anything(),
+    );
   });
 
   it("organization change never requests the new organization's preview with the previous organization's assessment", async () => {
@@ -1144,8 +1149,8 @@ describe("ReportWorkspace", () => {
       Promise.resolve(
         orgId === "org-1"
           ? [{ id: "assess-a", title: "Org A Assessment", status: "in_progress" }]
-          : [{ id: "assess-b", title: "Org B Assessment", status: "in_progress" }]
-      )
+          : [{ id: "assess-b", title: "Org B Assessment", status: "in_progress" }],
+      ),
     );
 
     render(<ReportWorkspace accessToken="test-token" />);
@@ -1334,19 +1339,17 @@ describe("ReportWorkspace", () => {
       Promise.resolve([
         { id: `${orgId}-assess-1`, title: `${orgId} Assess 1`, status: "in_progress" },
         { id: `${orgId}-assess-2`, title: `${orgId} Assess 2`, status: "in_progress" },
-      ])
+      ]),
     );
     getReportPreview.mockImplementation((orgId, assessId) =>
       Promise.resolve({
         ...mockReportView,
         organization: { ...mockReportView.organization, id: orgId },
         assessment: { ...mockReportView.assessment, id: assessId, title: `Preview ${assessId}` },
-      })
+      }),
     );
 
-    const { rerender } = render(
-      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
-    );
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await screen.findByRole("heading", { name: "Preview org-1-assess-1" });
 
@@ -1371,9 +1374,7 @@ describe("ReportWorkspace", () => {
 
     expect(screen.getByLabelText("Organization")).toHaveValue("org-2");
     expect(screen.getByLabelText("Assessment")).toHaveValue("org-2-assess-2");
-    expect(
-      screen.getByRole("heading", { name: "Preview org-2-assess-2" })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preview org-2-assess-2" })).toBeInTheDocument();
   });
 
   it("Token refresh uses the new token", async () => {
@@ -1381,14 +1382,14 @@ describe("ReportWorkspace", () => {
       Promise.resolve([
         { id: `${orgId}-assess-1`, title: `${orgId} Assess 1`, status: "in_progress" },
         { id: `${orgId}-assess-2`, title: `${orgId} Assess 2`, status: "in_progress" },
-      ])
+      ]),
     );
     getReportPreview.mockImplementation((orgId, assessId) =>
       Promise.resolve({
         ...mockReportView,
         organization: { ...mockReportView.organization, id: orgId },
         assessment: { ...mockReportView.assessment, id: assessId, title: `Preview ${assessId}` },
-      })
+      }),
     );
 
     URL.createObjectURL = vi.fn(() => "blob:test");
@@ -1400,9 +1401,7 @@ describe("ReportWorkspace", () => {
       filename: "report.pdf",
     });
 
-    const { rerender } = render(
-      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
-    );
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await screen.findByRole("heading", { name: "Preview org-1-assess-1" });
 
@@ -1428,9 +1427,7 @@ describe("ReportWorkspace", () => {
     const downloadDeferred = deferred();
     downloadReportPdf.mockReturnValueOnce(downloadDeferred.promise);
 
-    const { rerender } = render(
-      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
-    );
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
 
     const downloadBtn = screen.getByRole("button", { name: "Download PDF" });
@@ -1459,9 +1456,7 @@ describe("ReportWorkspace", () => {
       message: "Could not validate credentials.",
     });
 
-    const { rerender } = render(
-      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
-    );
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Your session has expired. Sign in again to continue.");
@@ -1476,9 +1471,7 @@ describe("ReportWorkspace", () => {
   });
 
   it("New session still resets", async () => {
-    const { rerender } = render(
-      <ReportWorkspace accessToken="token-1" sessionId="user-1" />
-    );
+    const { rerender } = render(<ReportWorkspace accessToken="token-1" sessionId="user-1" />);
 
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
@@ -1489,7 +1482,7 @@ describe("ReportWorkspace", () => {
     rerender(<ReportWorkspace accessToken="token-2" sessionId="user-2" />);
 
     expect(
-      screen.queryByRole("heading", { name: "Identity and access — demo assessment" })
+      screen.queryByRole("heading", { name: "Identity and access — demo assessment" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
     expect(listOrganizations).toHaveBeenCalledWith("token-2");
@@ -1497,18 +1490,18 @@ describe("ReportWorkspace", () => {
 
   it("initialOrganizationId", async () => {
     const { unmount } = render(
-      <ReportWorkspace
-        accessToken="test-token"
-        sessionId="user-1"
-        initialOrganizationId="org-2"
-      />
+      <ReportWorkspace accessToken="test-token" sessionId="user-1" initialOrganizationId="org-2" />,
     );
 
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
     // org-2 is requested first: the first organization (org-1) is never loaded on the way.
     expect(listAssessments.mock.calls[0]).toEqual(["org-2", "test-token"]);
     expect(listAssessments).not.toHaveBeenCalledWith("org-1", "test-token");
-    expect(getReportPreview).not.toHaveBeenCalledWith("org-1", expect.anything(), expect.anything());
+    expect(getReportPreview).not.toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      expect.anything(),
+    );
     expect(screen.getByLabelText("Organization")).toHaveValue("org-2");
 
     unmount();
@@ -1519,7 +1512,7 @@ describe("ReportWorkspace", () => {
         accessToken="test-token"
         sessionId="user-1"
         initialOrganizationId="unknown-org-id"
-      />
+      />,
     );
 
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
@@ -1535,7 +1528,7 @@ describe("ReportWorkspace", () => {
         accessToken="test-token"
         sessionId="user-1"
         onOrganizationChange={onOrganizationChange}
-      />
+      />,
     );
 
     await screen.findByRole("heading", { name: "Identity and access — demo assessment" });
@@ -1601,9 +1594,7 @@ describe("ReportWorkspace", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("No report is available for this organization yet.");
     expect(
-      screen.getByRole("heading", { name: "Identity and access — demo assessment" })
+      screen.getByRole("heading", { name: "Identity and access — demo assessment" }),
     ).toBeInTheDocument();
   });
 });
-
-
