@@ -146,6 +146,8 @@ interview turn after a reboot is slower.
 | API restarts in a loop | Bad value in `backend.env`, or the database is unreachable | Read the first error in `journalctl -u agentic-grc-api -b`; check the database port (section 4) |
 | Database errors in the API log | PostgreSQL down, `pg_hba.conf` or SSL rejecting the app VM | `systemctl status postgresql` and the PostgreSQL log on the database VM |
 | Login works in Supabase but the app refuses the user | User missing from `auth.users` on the database VM | Insert the user as in step 5 of the database setup in [`deployment-vm.md`](deployment-vm.md) |
+| Sign-in stays on "Signing in…", nginx `error.log` shows `upstream timed out … while connecting to upstream` with an `upstream` address starting with `64:ff9b::` | nginx resolved Supabase once, at start, to a NAT64 address that no longer works | `sudo systemctl restart nginx` so it resolves the name again. `curl -sS -o /dev/null -w '%{http_code}\n' https://<ref>.supabase.co/auth/v1/health` from the VM should answer `401` (no key) quickly |
+| Sign-in fails and `access.log` shows `POST /supabase/auth/v1/token…` with `401` | Frontend built with a wrong publishable key (a wrong password answers `400`) | Rebuild the frontend as in step 7 of [`deployment-vm.md`](deployment-vm.md), taking the key from `backend.env` |
 | Blank page or missing assets | Frontend built without `VITE_BASE_PATH=/agentic-grc/` | Rebuild (step 7) and run the `grep` check from the guide |
 | Disk full | Old dumps, logs or evidence | `df -h`; `sudo journalctl --vacuum-time=14d`; dumps older than 14 days are already deleted |
 

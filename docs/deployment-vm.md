@@ -88,8 +88,11 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
 7. Frontend, from `/opt/agentic-grc/frontend`:
    ```bash
    sudo -u agrc npm ci
+   # Reuse the backend's publishable key, so it is never typed by hand or shown on screen.
+   KEY=$(sudo grep -E '^SUPABASE_PUBLISHABLE_KEY=' /etc/agentic-grc/backend.env | cut -d= -f2- | tr -d '"'"'"'\r ')
    sudo -u agrc env VITE_BASE_PATH=/agentic-grc/ VITE_SUPABASE_URL=https://gita.udea.edu.co/agentic-grc/supabase \
-     VITE_SUPABASE_PUBLISHABLE_KEY=<...> VITE_SHOW_DEMO_REPORT=false npm run build
+     VITE_SUPABASE_PUBLISHABLE_KEY="$KEY" VITE_SHOW_DEMO_REPORT=false npm run build
+   unset KEY
    grep -o 'src="[^"]*"' dist/index.html   # must start with /agentic-grc/assets/
    ```
    The public URL is `https://gita.udea.edu.co/agentic-grc/`. The university proxy strips the
