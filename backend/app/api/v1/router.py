@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     health,
     interviews,
     organizations,
+    passage_matches,
     reference_data,
     reports,
     traces,
@@ -32,3 +33,4 @@ api_router.include_router(
 api_router.include_router(expert_reviews.router)
 api_router.include_router(reports.router)
 api_router.include_router(gaps.router)
+api_router.include_router(passage_matches.router)
