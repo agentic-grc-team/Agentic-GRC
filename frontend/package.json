@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "lint": "eslint .",
+    "format:check": "node scripts/check-format.mjs",
+    "format": "prettier --write",
     "preview": "vite preview",
     "test": "vitest run --pool=threads --maxWorkers=1 --no-file-parallelism",
     "test:watch": "vitest"
@@ -16,12 +19,17 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.28",
+    "prettier": "^3.10.1",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"
   }
