@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { listOrganizations } from "../organizations/api.js";
+import { getReportPreview } from "../reports/api.js";
+import ComplianceSummary from "../reports/ComplianceSummary.jsx";
 import { createAssessment, getAssessmentScope, listAssessments } from "./api.js";
 import AssessmentEvidence from "./AssessmentEvidence.jsx";
 import AssessmentScope from "./AssessmentScope.jsx";
@@ -49,6 +51,8 @@ export default function AssessmentWorkspace({
   const [scope, setScope] = useState(null);
   const [isLoadingScope, setIsLoadingScope] = useState(false);
   const [scopeError, setScopeError] = useState("");
+  const [compliancePreview, setCompliancePreview] = useState(null);
+  const [complianceError, setComplianceError] = useState("");
 
   const [title, setTitle] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -166,11 +170,37 @@ export default function AssessmentWorkspace({
     };
   }, [selectedOrganizationId, selectedAssessmentId, sessionKey]);
 
-  const selectedOrganization = organizations.find((item) => item.id === selectedOrganizationId) || null;
-  const visibleAssessments = assessments.filter((item) => item.organization_id === selectedOrganizationId);
-  const selectedAssessment = visibleAssessments.find((item) => item.id === selectedAssessmentId) || null;
-  const visibleScope = scope?.organization_id === selectedOrganizationId && scope?.assessment?.id === selectedAssessmentId
-    ? scope : null;
+  useEffect(() => {
+    let active = true;
+    setCompliancePreview(null);
+    setComplianceError("");
+    if (!selectedOrganizationId || !selectedAssessmentId) return undefined;
+
+    getReportPreview(selectedOrganizationId, selectedAssessmentId, accessTokenRef.current)
+      .then((data) => {
+        if (active) setCompliancePreview(data);
+      })
+      .catch((error) => {
+        if (active) setComplianceError(describeError(error));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedOrganizationId, selectedAssessmentId, sessionKey]);
+
+  const selectedOrganization =
+    organizations.find((item) => item.id === selectedOrganizationId) || null;
+  const visibleAssessments = assessments.filter(
+    (item) => item.organization_id === selectedOrganizationId,
+  );
+  const selectedAssessment =
+    visibleAssessments.find((item) => item.id === selectedAssessmentId) || null;
+  const visibleScope =
+    scope?.organization_id === selectedOrganizationId &&
+    scope?.assessment?.id === selectedAssessmentId
+      ? scope
+      : null;
   const canCreate = Boolean(
     selectedOrganization && (isPlatformAdmin || CREATOR_ROLES.includes(selectedOrganization.role)),
   );
@@ -218,8 +248,8 @@ export default function AssessmentWorkspace({
       <p className="eyebrow">SECURITY ASSESSMENTS</p>
       <h1 id="assessment-workspace-heading">Assessments</h1>
       <p className="assessment-intro">
-        Start an assessment for an organization and check which NIST CSF 2.0 functions, categories and
-        controls it covers before the interview begins.
+        Start an assessment for an organization and check which NIST CSF 2.0 functions, categories
+        and controls it covers before the interview begins.
       </p>
 
       {isLoadingOrganizations && <p role="status">Loading organizations…</p>}
@@ -233,7 +263,10 @@ export default function AssessmentWorkspace({
       {organizations.length > 0 && (
         <label className="assessment-field">
           Organization
-          <select value={selectedOrganizationId} onChange={(event) => selectOrganization(event.target.value)}>
+          <select
+            value={selectedOrganizationId}
+            onChange={(event) => selectOrganization(event.target.value)}
+          >
             {organizations.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
@@ -262,7 +295,8 @@ export default function AssessmentWorkspace({
       )}
       {selectedOrganization && !canCreate && (
         <p className="assessment-note">
-          An administrator or consultant creates assessments. You can see the scope of the existing ones below.
+          An administrator or consultant creates assessments. You can see the scope of the existing
+          ones below.
         </p>
       )}
       {createError && <p role="alert">{createError}</p>}
@@ -270,14 +304,20 @@ export default function AssessmentWorkspace({
 
       {isLoadingAssessments && <p role="status">Loading assessments…</p>}
       {assessmentsError && <p role="alert">{assessmentsError}</p>}
-      {selectedOrganization && !isLoadingAssessments && !assessmentsError && assessments.length === 0 && (
-        <p className="assessment-empty">This organization has no assessments yet.</p>
-      )}
+      {selectedOrganization &&
+        !isLoadingAssessments &&
+        !assessmentsError &&
+        assessments.length === 0 && (
+          <p className="assessment-empty">This organization has no assessments yet.</p>
+        )}
 
       {selectedOrganization && visibleAssessments.length > 0 && (
         <label className="assessment-field">
           Assessment
-          <select value={selectedAssessmentId} onChange={(event) => selectAssessment(event.target.value)}>
+          <select
+            value={selectedAssessmentId}
+            onChange={(event) => selectAssessment(event.target.value)}
+          >
             {visibleAssessments.map((item) => (
               <option key={item.id} value={item.id}>
                 {`${item.title} · ${assessmentStatusLabel(item.status)}`}
@@ -299,6 +339,15 @@ export default function AssessmentWorkspace({
 
       {isLoadingScope && <p role="status">Loading assessment scope…</p>}
       {selectedOrganization && scopeError && <p role="alert">{scopeError}</p>}
+      {selectedOrganization && complianceError && (
+        <p role="alert">Could not load compliance summary: {complianceError}</p>
+      )}
+      {selectedOrganization && visibleScope && compliancePreview && (
+        <ComplianceSummary
+          summary={compliancePreview.summary}
+          exclusionCount={compliancePreview.exclusions?.length ?? 0}
+        />
+      )}
       {selectedOrganization && visibleScope && <AssessmentScope scope={visibleScope} />}
       {selectedOrganization && visibleScope && selectedAssessmentId && (
         <AssessmentEvidence
