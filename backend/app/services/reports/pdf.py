@@ -16,7 +16,35 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from app.schemas.report import ASSESSMENT_STATUS_LABELS, ReportView
+from app.schemas.report import (
+    ASSESSMENT_STATUS_LABELS,
+    STATUS_LABELS,
+    AssessmentComparison,
+    ComplianceSummary,
+    ReportView,
+)
+
+CHANGE_LABELS = {
+    "improved": "Improved",
+    "declined": "Declined",
+    "unchanged": "Unchanged",
+    "not_comparable": "Not comparable",
+}
+
+
+def _compliance_text(compliance: ComplianceSummary | None) -> str:
+    if compliance is None or not compliance.available:
+        return "Unavailable (no Implemented, Partially implemented or Not implemented final result yet)"
+    return (
+        f"{compliance.value_pct}% (score {compliance.numerator:g} of {compliance.denominator} "
+        "eligible final results)"
+    )
+
+
+def _status_text(status: str) -> str:
+    if status == "pending":
+        return "Pending review"
+    return STATUS_LABELS.get(status, status)
 
 
 def _format_size(size_bytes: int) -> str:
@@ -75,7 +103,7 @@ def _make_page_callback(view: ReportView):
     return callback
 
 
-def render_report_pdf(view: ReportView) -> bytes:
+def render_report_pdf(view: ReportView, comparison: AssessmentComparison | None = None) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -283,7 +311,9 @@ def render_report_pdf(view: ReportView) -> bytes:
 
     # 4. "3. Summary"
     story.append(Paragraph("3. Summary", section_heading_style))
+    compliance = view.summary.compliance
     summary_data = [
+        [Paragraph("Compliance", table_cell_bold), Paragraph(_escape(_compliance_text(compliance)), table_cell_bold)],
         [Paragraph("Controls in scope", table_cell_bold), Paragraph(str(view.summary.controls_in_scope), table_cell_style)],
         [Paragraph("Final results", table_cell_bold), Paragraph(str(len(view.results)), table_cell_style)],
         [Paragraph("Final results with evidence pending", table_cell_bold), Paragraph(str(view.summary.final_with_evidence_pending), table_cell_style)],
@@ -298,6 +328,17 @@ def render_report_pdf(view: ReportView) -> bytes:
     summary_table = Table(summary_data, colWidths=[7.0 * cm, 10.0 * cm])
     summary_table.setStyle(kv_table_style)
     story.append(summary_table)
+    if compliance is not None:
+        story.append(Spacer(1, 4))
+        story.append(
+            Paragraph(
+                _escape(
+                    f"{compliance.definition} Outside the figure: {compliance.excluded_not_applicable} "
+                    f"not applicable, {compliance.not_assessed} not assessed, {compliance.pending} pending review."
+                ),
+                italic_style,
+            )
+        )
     story.append(Spacer(1, 10))
 
     # 5. "4. Reviewed results"
@@ -442,7 +483,121 @@ def render_report_pdf(view: ReportView) -> bytes:
         exclusions_table.setStyle(grid_table_style)
         story.append(exclusions_table)
 
+    if comparison is not None:
+        story.extend(
+            _comparison_story(
+                comparison,
+                section_heading_style,
+                body_style,
+                italic_style,
+                notice_style,
+                table_cell_style,
+                table_cell_bold,
+                table_header_style,
+                grid_table_style,
+                kv_table_style,
+            )
+        )
+
     page_callback = _make_page_callback(view)
     doc.build(story, onFirstPage=page_callback, onLaterPages=page_callback)
 
     return buffer.getvalue()
+
+
+def _comparison_story(
+    comparison: AssessmentComparison,
+    section_heading_style,
+    body_style,
+    italic_style,
+    notice_style,
+    table_cell_style,
+    table_cell_bold,
+    table_header_style,
+    grid_table_style,
+    kv_table_style,
+) -> list:
+    """Optional "7. Comparison" section (HU-24), only when a previous assessment was selected."""
+    previous = comparison.previous
+    current = comparison.current
+    story: list = [
+        Spacer(1, 10),
+        Paragraph(
+            _escape(f"7. Comparison with {previous.title}"),
+            section_heading_style,
+        ),
+    ]
+    for warning in comparison.warnings:
+        story.append(Paragraph(_escape(warning.message), notice_style))
+
+    change = comparison.compliance_change_pct
+    change_text = "Not available" if change is None else f"{change:+.1f} percentage points"
+    previous_date = _fmt_date(previous.completed_at) if previous.completed_at else "Not completed"
+    current_date = _fmt_date(current.completed_at) if current.completed_at else "Not completed"
+    kv = [
+        [
+            Paragraph("Previous assessment", table_cell_bold),
+            Paragraph(_escape(f"{previous.title} (completed {previous_date})"), table_cell_style),
+        ],
+        [
+            Paragraph("Previous compliance", table_cell_bold),
+            Paragraph(_escape(_compliance_text(previous.compliance)), table_cell_style),
+        ],
+        [
+            Paragraph("Current compliance", table_cell_bold),
+            Paragraph(_escape(f"{_compliance_text(current.compliance)}; completed {current_date}"), table_cell_style),
+        ],
+        [Paragraph("Change", table_cell_bold), Paragraph(_escape(change_text), table_cell_bold)],
+        [
+            Paragraph("Controls compared", table_cell_bold),
+            Paragraph(
+                _escape(
+                    f"{comparison.scope.common} in both assessments, {comparison.changed_controls} changed status"
+                ),
+                table_cell_style,
+            ),
+        ],
+    ]
+    kv_table = Table(kv, colWidths=[7.0 * cm, 10.0 * cm])
+    kv_table.setStyle(kv_table_style)
+    story.append(kv_table)
+    story.append(Spacer(1, 8))
+
+    changed = [item for item in comparison.controls if item.change != "unchanged"]
+    if not changed:
+        story.append(Paragraph("No compared control changed status.", italic_style))
+    else:
+        rows = [
+            [
+                Paragraph("Control", table_header_style),
+                Paragraph("Name", table_header_style),
+                Paragraph("Previous", table_header_style),
+                Paragraph("Current", table_header_style),
+                Paragraph("Change", table_header_style),
+            ]
+        ]
+        for item in changed:
+            rows.append(
+                [
+                    Paragraph(_escape(item.code), table_cell_bold),
+                    Paragraph(_escape(item.title), table_cell_style),
+                    Paragraph(_escape(_status_text(item.previous_status)), table_cell_style),
+                    Paragraph(_escape(_status_text(item.current_status)), table_cell_style),
+                    Paragraph(_escape(CHANGE_LABELS[item.change]), table_cell_style),
+                ]
+            )
+        table = Table(rows, colWidths=[2.3 * cm, 5.7 * cm, 3.2 * cm, 3.2 * cm, 2.6 * cm], repeatRows=1)
+        table.setStyle(grid_table_style)
+        story.append(table)
+
+    if comparison.scope.added or comparison.scope.removed:
+        story.append(Spacer(1, 6))
+        if comparison.scope.added:
+            story.append(
+                Paragraph(_escape("Only in the current assessment: " + ", ".join(comparison.scope.added)), body_style)
+            )
+        if comparison.scope.removed:
+            story.append(
+                Paragraph(_escape("Only in the previous assessment: " + ", ".join(comparison.scope.removed)), body_style)
+            )
+    return story
