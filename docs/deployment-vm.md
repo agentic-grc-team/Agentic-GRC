@@ -88,8 +88,11 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
 7. Frontend, from `/opt/agentic-grc/frontend`:
    ```bash
    sudo -u agrc npm ci
+   # Reuse the backend's publishable key, so it is never typed by hand or shown on screen.
+   KEY=$(sudo grep -E '^SUPABASE_PUBLISHABLE_KEY=' /etc/agentic-grc/backend.env | cut -d= -f2- | tr -d '"'"'"'\r ')
    sudo -u agrc env VITE_BASE_PATH=/agentic-grc/ VITE_SUPABASE_URL=https://gita.udea.edu.co/agentic-grc/supabase \
-     VITE_SUPABASE_PUBLISHABLE_KEY=<...> VITE_SHOW_DEMO_REPORT=false npm run build
+     VITE_SUPABASE_PUBLISHABLE_KEY="$KEY" VITE_SHOW_DEMO_REPORT=false npm run build
+   unset KEY
    grep -o 'src="[^"]*"' dist/index.html   # must start with /agentic-grc/assets/
    ```
    The public URL is `https://gita.udea.edu.co/agentic-grc/`. The university proxy strips the
@@ -104,10 +107,15 @@ M10: about 40 s per turn when the model is warm, and over 60 s when a call hits 
    `/etc/nginx/sites-available/`, link it in `sites-enabled/`, remove the `default` site, then
    `sudo nginx -t && sudo systemctl reload nginx`.
 
-## Accounts and memberships (no SMTP)
+## Accounts and memberships
 
-Outbound SMTP is blocked, so **Send invitation** fails. Users who already exist in Supabase Auth
-(and in the local `auth.users`, step 1.5) are given access with SQL on the database VM:
+**Send invitation** emails the invitee through the university relay `smtp.gita.lan:25`, from
+`agentic-grc@gita.udea.edu.co` (approved by the GITA group for this project: invitations only, no
+bulk mail). Set the four `SMTP_*` values from [`backend.env.example`](../deploy/vm/backend.env.example)
+and restart the API. The link in the email uses `APP_BASE_URL`, so it must be the public URL.
+
+If the relay is unavailable, users who already exist in Supabase Auth (and in the local
+`auth.users`, step 1.5) can still be given access with SQL on the database VM:
 
 ```sql
 -- Profiles for every confirmed user (also created automatically at first sign-in).

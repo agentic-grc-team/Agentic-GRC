@@ -203,6 +203,35 @@ class Exclusion(BaseModel):
     reviewed_at: datetime
 
 
+COMPLIANCE_PARTIAL_WEIGHT = 0.5
+COMPLIANCE_DEFINITION = (
+    "Compliance = (Implemented + 0.5 × Partially implemented) / "
+    "(Implemented + Partially implemented + Not implemented), over final reviewed results only. "
+    "Not applicable exclusions, Not assessed results and controls pending review are left out of "
+    "both numerator and denominator and are reported next to the figure."
+)
+
+
+class ComplianceSummary(BaseModel):
+    """One compliance figure for the assessment (HU-23), with everything needed to explain it.
+
+    Only final reviewed results count. When no final result is Implemented, Partially implemented or
+    Not implemented, the figure is unavailable (value_pct None), never 0% or 100%.
+    """
+
+    available: bool
+    value_pct: float | None = None  # numerator / denominator * 100, rounded to 1 decimal
+    numerator: float = 0.0  # implemented + 0.5 * partially_implemented
+    denominator: int = 0  # implemented + partially_implemented + not_implemented
+    implemented: int = 0
+    partially_implemented: int = 0
+    not_implemented: int = 0
+    excluded_not_applicable: int = 0  # final exclusions, outside the figure
+    not_assessed: int = 0  # final results marked not assessed, outside the figure
+    pending: int = 0  # controls without a final result yet, outside the figure
+    definition: str = COMPLIANCE_DEFINITION
+
+
 class ReportSummary(BaseModel):
     controls_in_scope: int
     finalized: int  # final results + exclusions
@@ -210,6 +239,7 @@ class ReportSummary(BaseModel):
     final_with_evidence_pending: int = 0
     coverage_pct: float  # finalized / controls_in_scope * 100, rounded to 1 decimal; 0.0 if no controls
     status_counts: dict[str, int]  # keys: implemented, partially_implemented, not_implemented, not_assessed (always all 4, zero if none). Excludes not_applicable.
+    compliance: ComplianceSummary | None = None  # HU-23; always set by the builder
 
 
 class ScopeItem(BaseModel):
@@ -230,12 +260,74 @@ class ReportView(BaseModel):
 
 
 REPORT_EXPORT_FORMAT = "agentic-grc.assessment-report"
-REPORT_EXPORT_VERSION = "1.1"  # 1.1 adds results[].linked_evidence
+REPORT_EXPORT_VERSION = "1.2"  # 1.1 adds results[].linked_evidence; 1.2 adds summary.compliance and comparison
+
+
+ComparisonChange = Literal["improved", "declined", "unchanged", "not_comparable"]
+ComparisonWarningCode = Literal[
+    "current_not_completed",
+    "framework_differs",
+    "kb_version_differs",
+    "scope_differs",
+    "compliance_unavailable",
+]
+
+
+class ComparedAssessment(BaseModel):
+    id: UUID
+    title: str
+    status: AssessmentStatus
+    completed_at: datetime | None = None
+    framework: str
+    kb_version: str
+    compliance: ComplianceSummary
+
+
+class ComparisonWarning(BaseModel):
+    code: ComparisonWarningCode
+    message: str
+
+
+class ComparisonScope(BaseModel):
+    added: list[str] = []  # control codes only in the current assessment
+    removed: list[str] = []  # control codes only in the previous assessment
+    common: int = 0
+
+
+class ControlComparison(BaseModel):
+    code: str
+    title: str
+    # Final status, or "pending" when the control has no final result in that assessment.
+    previous_status: str
+    current_status: str
+    change: ComparisonChange
+
+
+class AssessmentComparison(BaseModel):
+    """Current assessment against an earlier completed one of the same organization (HU-24)."""
+
+    current: ComparedAssessment
+    previous: ComparedAssessment
+    # Percentage points, current minus previous, rounded to 1 decimal. None when either is unavailable.
+    compliance_change_pct: float | None = None
+    warnings: list[ComparisonWarning] = []
+    scope: ComparisonScope
+    changed_controls: int = 0  # controls in both assessments whose status changed
+    controls: list[ControlComparison] = []  # controls in both assessments, sorted by code
+
+
+class ComparisonCandidate(BaseModel):
+    id: UUID
+    title: str
+    completed_at: datetime
+    framework: str
+    kb_version: str
 
 
 class ReportExport(BaseModel):
     """Structured export of a report view (HU-21). Same content as the preview and the PDF."""
 
     export_format: Literal["agentic-grc.assessment-report"] = REPORT_EXPORT_FORMAT
-    export_version: Literal["1.1"] = REPORT_EXPORT_VERSION
+    export_version: Literal["1.2"] = REPORT_EXPORT_VERSION
     report: ReportView
+    comparison: AssessmentComparison | None = None  # only when ?compare_with= is given

@@ -13,6 +13,8 @@ Evidence-pending rule:
 from datetime import datetime, timezone
 
 from app.schemas.report import (
+    COMPLIANCE_PARTIAL_WEIGHT,
+    ComplianceSummary,
     Exclusion,
     FinalResult,
     LinkedEvidenceFile,
@@ -37,6 +39,34 @@ def _linked_for_review(files: list[LinkedEvidenceFile], reviewed_at: datetime) -
         file.model_copy(update={"added_after_review": _utc(file.linked_at) > _utc(reviewed_at)})
         for file in files
     ]
+
+
+def compute_compliance(
+    status_counts: dict[str, int], exclusions: int, pending: int
+) -> ComplianceSummary:
+    """The HU-23 compliance figure from the final results of a report view.
+
+    Only Implemented, Partially implemented and Not implemented final results enter the figure.
+    Exclusions, Not assessed results and pending controls are counted next to it.
+    """
+    implemented = status_counts.get("implemented", 0)
+    partial = status_counts.get("partially_implemented", 0)
+    not_implemented = status_counts.get("not_implemented", 0)
+    denominator = implemented + partial + not_implemented
+    numerator = implemented + COMPLIANCE_PARTIAL_WEIGHT * partial
+    available = denominator > 0
+    return ComplianceSummary(
+        available=available,
+        value_pct=round(numerator / denominator * 100, 1) if available else None,
+        numerator=numerator,
+        denominator=denominator,
+        implemented=implemented,
+        partially_implemented=partial,
+        not_implemented=not_implemented,
+        excluded_not_applicable=exclusions,
+        not_assessed=status_counts.get("not_assessed", 0),
+        pending=pending,
+    )
 
 
 def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
@@ -182,6 +212,7 @@ def build_report_view(data: ReportInput, generated_at: datetime) -> ReportView:
         final_with_evidence_pending=final_with_evidence_pending,
         coverage_pct=coverage_pct,
         status_counts=status_counts,
+        compliance=compute_compliance(status_counts, len(exclusions), pending_count),
     )
 
     return ReportView(

@@ -1014,7 +1014,7 @@ def test_api_member_known_assessment_json_export_returns_200():
     assert f"agentic-grc-report-{KNOWN_ASSESSMENT_ID}.json" in content_disp
     data = json.loads(response.text)
     assert data["export_format"] == "agentic-grc.assessment-report"
-    assert data["export_version"] == "1.1"
+    assert data["export_version"] == "1.2"
 
 
 def test_json_export_report_matches_report_view():
