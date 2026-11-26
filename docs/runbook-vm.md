@@ -117,7 +117,7 @@ sudo tail -f /var/log/nginx/access.log /var/log/nginx/error.log
 # database VM
 sudo tail -n 200 /var/log/postgresql/postgresql-*-main.log
 sudo journalctl -u agentic-grc-backup -n 50             # last backup runs
-ls -lh /var/backups/agentic-grc                         # backups present and recent
+sudo -u postgres ls -lh /var/backups/agentic-grc       # backups present and recent (the folder is postgres-only)
 ```
 
 Add `-b` to `journalctl` to see only the current boot. Logs can contain interview content; do not
@@ -179,7 +179,7 @@ sudo systemctl stop agentic-grc-api
 
 # database VM
 sudo -u postgres /usr/local/bin/agentic-grc-backup            # safety dump of the current state
-ls -lt /var/backups/agentic-grc | head                        # choose the dump to restore
+sudo -u postgres ls -lt /var/backups/agentic-grc | head      # choose the dump to restore
 sudo -u postgres pg_restore --clean --if-exists -d agentic_grc /var/backups/agentic-grc/agentic_grc-<timestamp>.dump
 
 # app VM
@@ -187,6 +187,47 @@ sudo systemctl start agentic-grc-api
 ```
 
 Then run the checks in section 4 and log in. Interviews resume from the restored checkpoints.
+
+### Verify a backup (restore check)
+
+A dump is only known to be good once it has been restored. This check restores the newest dump
+into a separate database, `agentic_grc_restore_check`, compares it with the live database and
+removes it. The live `agentic_grc` is only read, and the API keeps running. Copy
+[`postgres/restore-check.sql`](../deploy/vm/postgres/restore-check.sql) to `/tmp` on the database
+VM first, like the other `deploy/vm/` files.
+
+```bash
+# database VM
+systemctl list-timers agentic-grc-backup.timer --no-pager    # last and next run
+sudo journalctl -u agentic-grc-backup -n 10 --no-pager        # the last runs succeeded
+sudo -u postgres ls -l --time-style=+%Y-%m-%dT%H:%M:%S%z /var/backups/agentic-grc
+DUMP=$(sudo -u postgres sh -c 'ls -t /var/backups/agentic-grc/agentic_grc-*.dump | head -1')
+sudo -u postgres pg_restore --list "$DUMP" | sed -n '2,12p'   # "Archive created at" is the backup time
+df -h /var/lib/postgresql                                     # room for a second copy of the database
+
+sudo -u postgres dropdb --if-exists agentic_grc_restore_check   # leftover from an interrupted check
+sudo -u postgres createdb -O agentic_grc -E UTF8 -T template0 agentic_grc_restore_check
+sudo -u postgres pg_restore --exit-on-error --single-transaction -d agentic_grc_restore_check "$DUMP"
+for db in agentic_grc agentic_grc_restore_check; do
+  echo "== $db"; sudo -u postgres psql -d "$db" -XAt -F ' | ' -f /tmp/restore-check.sql
+done
+sudo -u postgres dropdb agentic_grc_restore_check
+```
+
+The check passes when `pg_restore` ends without an error and both databases show the same Alembic
+version, the same table and trigger counts, and the same rows. The live database may have more
+rows than the restored one, but only rows created after the backup time (compare the "newest"
+lines). The restored database is a full copy of the Beta data: drop it as soon as the comparison
+is done.
+
+`pg_dump` does not keep database-level permissions, so a database restored from a dump accepts
+connections from every role until the grants are applied again (see [A VM is lost](#a-vm-is-lost)).
+Restoring over the live database (previous section) keeps them.
+
+| Date | Dump checked (`Archive created at`) | Result | Notes |
+|---|---|---|---|
+| 2026-11-21 | `agentic_grc-20261121T073023Z.dump`, created 2026-11-21 07:30:23 UTC (304 KB, PostgreSQL 18.6) | Passed | Restored on `db-agentic-grc` without errors. Same Alembic version (`20261116_0011`), tables, 8 triggers and row counts as the live database (10 assessments, 103 interview turns, 201 checkpoints; newest data 2026-11-18). Nightly runs succeeded every day from 18 to 21 Nov. The manual `pre-*.dump` files are outside the 14-day cleanup and stay until removed by hand. |
+| 2026-11-21 | Local rehearsal on PostgreSQL 18.7 with migrations up to `20261116_0011` and demo data | Passed | Same counts and triggers; the app role could read the copy, and the append-only triggers still rejected `UPDATE`. |
 
 ### Evidence files
 
@@ -207,9 +248,11 @@ Delete the archive from `/tmp` once it has been copied.
 
 1. Rebuild it from [`deployment-vm.md`](deployment-vm.md): section 1 for the database VM,
    section 2 for the app VM.
-2. Database VM: create the role and the empty database (steps 1 to 3), then restore the latest
-   dump as above instead of steps 4 and 5. The dumps live on the database VM itself, so if that VM
-   is lost they are lost too unless a copy was kept elsewhere.
+2. Database VM: create the role and the empty database (steps 1 to 3), restore the latest dump
+   with `sudo -u postgres pg_restore --exit-on-error -d agentic_grc <dump>` instead of steps 4 and
+   5, then apply `auth-users-grants.sql` (step 4): the dump does not include the database-level
+   grants. The dumps live on the database VM itself, so if that VM is lost they are lost too unless
+   a copy was kept elsewhere.
 3. App VM: write `backend.env` again from the template and the values the team lead holds. Restore
    the evidence archive if you have one.
 4. Run the checks in section 4.

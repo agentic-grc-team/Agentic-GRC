@@ -5,6 +5,7 @@
 # `mentions_evidence` is labelled on those cases only to measure the model; no rule depends on it
 # (4 labelled cases: too few to read the percentage as more than a warning).
 # `evidence_asked: true` marks dialogues where the evidence request was already made.
+# `clarifications_used: N` marks dialogues where the agent already explained the question N times.
 # Quote "yes" / "no": unquoted, YAML loads them as booleans.
 cases:
   - id: mfa-yes-detailed
@@ -72,6 +73,18 @@ cases:
     dialogue:
       - participant: "I'm not sure which accounts you mean by privileged."
     expected: {intent: clarification_request, action: clarify}
+
+  # AGRC-140: the participant still asks after two explanations, so the rules close for human review.
+  - id: mfa-clarification-after-two-explanations
+    question: IAM-01
+    clarifications_used: 2
+    dialogue:
+      - participant: "What do you mean by a second factor?"
+      - agent: "Think of your online banking: after the password, the bank sends a code to your phone. That code is the second factor."
+      - participant: "Sorry, I still don't get it. Is that like the password reset email?"
+      - agent: "Not quite: a reset email is used when you forget the password. Here we mean something asked every time you sign in."
+      - participant: "Which accounts count as administrator here?"
+    expected: {intent: clarification_request, action: close}
 
   - id: mfa-off-topic
     question: IAM-01

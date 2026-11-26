@@ -55,11 +55,38 @@
   color: var(--quiet);
 }
 
-.gap-risks {
+.gap-risks,
+.gap-evidence {
   margin: 0;
   padding-left: 16px;
 }
 
-.gap-risks li {
+.gap-risks li,
+.gap-evidence li {
   margin: 0 0 2px;
+  overflow-wrap: anywhere;
+}
+
+.gap-evidence-none {
+  display: block;
+  color: var(--quiet);
+}
+
+.gap-evidence-name,
+.gap-evidence-meta {
+  display: block;
+}
+
+.gap-evidence-meta {
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
+/* Keep the seven-column gap table readable when the page is zoomed. */
+.gap-list .report-table {
+  min-width: 1050px;
+}
+
+.gap-list .gap-risks li {
+  overflow-wrap: normal;
 }
