@@ -14,7 +14,26 @@ export function getReportPreview(organizationId, assessmentId, accessToken) {
   return apiRequest(reportPath(organizationId, assessmentId), { accessToken });
 }
 
-async function downloadReportFile(organizationId, assessmentId, accessToken, { extension, accept }) {
+export function getComparisonCandidates(organizationId, assessmentId, accessToken) {
+  return apiRequest(
+    `/organizations/${encodeURIComponent(organizationId)}/assessments/${encodeURIComponent(assessmentId)}/comparison/candidates`,
+    { accessToken },
+  );
+}
+
+export function getAssessmentComparison(organizationId, assessmentId, previousId, accessToken) {
+  return apiRequest(
+    `/organizations/${encodeURIComponent(organizationId)}/assessments/${encodeURIComponent(assessmentId)}/comparison?previous=${encodeURIComponent(previousId)}`,
+    { accessToken },
+  );
+}
+
+async function downloadReportFile(
+  organizationId,
+  assessmentId,
+  accessToken,
+  { extension, accept },
+) {
   const headers = new Headers();
   headers.set("Accept", accept);
   if (accessToken) {
@@ -37,7 +56,8 @@ async function downloadReportFile(organizationId, assessmentId, accessToken, { e
 
   const blob = await response.blob();
   const disposition = response.headers?.get?.("Content-Disposition");
-  const match = typeof disposition === "string" ? disposition.match(/filename="?([^";]+)"?/i) : null;
+  const match =
+    typeof disposition === "string" ? disposition.match(/filename="?([^";]+)"?/i) : null;
   const filename = match ? match[1] : `agentic-grc-report-${assessmentId}.${extension}`;
 
   return { blob, filename };

@@ -1,75 +1,174 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getReportPreview } from "./api.js";
+import { getAssessmentComparison, getComparisonCandidates } from "./api.js";
 import AssessmentComparison from "./AssessmentComparison.jsx";
 
-vi.mock("./api.js", () => ({ getReportPreview: vi.fn() }));
+vi.mock("./api.js", () => ({
+  getAssessmentComparison: vi.fn(),
+  getComparisonCandidates: vi.fn(),
+}));
 
-const assessments = [
-  { id: "current", title: "November", created_at: "2026-11-19T12:00:00Z" },
-  { id: "old", title: "October", created_at: "2026-10-19T12:00:00Z" },
-  { id: "older", title: "September", created_at: "2026-09-19T12:00:00Z" },
-  { id: "future", title: "December", created_at: "2026-12-19T12:00:00Z" },
+const candidates = [
+  { id: "old", title: "October", completed_at: "2026-10-20T12:00:00Z" },
+  { id: "older", title: "September", completed_at: "2026-09-20T12:00:00Z" },
 ];
 
-const current = {
-  scope: [{ code: "PR.AA-01", title: "Identity management" }, { code: "PR.AA-02", title: "Access control" }, { code: "PR.AA-03", title: "New control" }],
-  results: [{ code: "PR.AA-01", status_label: "Implemented", control_status: "implemented" }],
-  pending: [{ code: "PR.AA-02", reason_label: "Awaiting expert review" }],
-  exclusions: [],
-  summary: { coverage_pct: 33.3 },
-};
-
-const old = {
-  scope: [{ code: "PR.AA-01", title: "Identity management" }, { code: "PR.AA-02", title: "Access control" }, { code: "PR.AA-04", title: "Retired control" }],
-  results: [
-    { code: "PR.AA-01", status_label: "Not implemented", control_status: "not_implemented" },
-    { code: "PR.AA-02", status_label: "Partially implemented", control_status: "partially_implemented" },
+const comparison = {
+  current: { id: "current", compliance: { available: true, value_pct: 75 } },
+  previous: { id: "old", compliance: { available: true, value_pct: 62.5 } },
+  compliance_change_pct: 12.5,
+  warnings: [
+    { code: "framework_differs", message: "The assessments use different frameworks." },
+    { code: "kb_version_differs", message: "The knowledge base versions differ." },
+    { code: "scope_differs", message: "The scope differs." },
   ],
-  pending: [], exclusions: [], summary: { coverage_pct: 66.7 },
+  scope: { added: ["PR.AA-05"], removed: ["PR.AA-04"], common: 2 },
+  controls: [
+    {
+      code: "PR.AA-01",
+      title: "Identity management",
+      previous_status: "not_implemented",
+      current_status: "implemented",
+      change: "improved",
+    },
+    {
+      code: "PR.AA-02",
+      title: "Access control",
+      previous_status: "partially_implemented",
+      current_status: "pending",
+      change: "not_comparable",
+    },
+  ],
 };
 
 function view(props = {}) {
-  return render(<AssessmentComparison organizationId="org-1" currentAssessmentId="current" assessments={assessments} current={current} accessToken="token-a" {...props} />);
+  return render(
+    <AssessmentComparison
+      organizationId="org-1"
+      currentAssessmentId="current"
+      current={{ assessment: { status: "completed" } }}
+      accessToken="token-a"
+      {...props}
+    />,
+  );
 }
 
 describe("Assessment comparison", () => {
-  beforeEach(() => { getReportPreview.mockReset(); getReportPreview.mockResolvedValue(old); });
+  beforeEach(() => {
+    getComparisonCandidates.mockReset();
+    getAssessmentComparison.mockReset();
+    getComparisonCandidates.mockResolvedValue(candidates);
+    getAssessmentComparison.mockResolvedValue(comparison);
+  });
 
-  it("compares finalized statuses on shared controls without grading pending or changed scope", async () => {
+  it("uses the server's completed candidates and comparison, including compliance and version warnings", async () => {
     view();
-    const select = screen.getByRole("combobox", { name: "Previous assessment" });
+    const select = await screen.findByRole("combobox", { name: "Previous assessment" });
     expect(within(select).getByRole("option", { name: "Select an assessment" })).toBeDisabled();
     expect(within(select).queryByRole("option", { name: "December" })).not.toBeInTheDocument();
-    fireEvent.change(select, { target: { value: "old" } });
+    expect(getComparisonCandidates).toHaveBeenCalledWith("org-1", "current", "token-a");
+    expect(getAssessmentComparison).not.toHaveBeenCalled();
 
+    fireEvent.change(select, { target: { value: "old" } });
     const table = await screen.findByRole("table", { name: "Control status comparison" });
+    expect(getAssessmentComparison).toHaveBeenCalledWith("org-1", "current", "old", "token-a");
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("Not implementedImplementedImproved");
-    expect(rows[1]).toHaveTextContent("Partially implementedAwaiting expert reviewNot comparable");
-    expect(screen.getByText(/2 shared controls · 1 new in this scope · 1 only in the previous scope/)).toBeInTheDocument();
-    expect(screen.getByText(/66.7% previously → 33.3% now/)).toBeInTheDocument();
-    expect(getReportPreview).toHaveBeenCalledWith("org-1", "old", "token-a");
+    expect(rows[1]).toHaveTextContent("Partially implementedPending reviewNot comparable");
+    expect(
+      screen.getByText(/2 shared controls · 1 new in this scope · 1 only in the previous scope/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Compliance: 62.5% previously → 75.0% now. Change: \+12.5 percentage points./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("The assessments use different frameworks.")).toBeInTheDocument();
+    expect(screen.getByText("The knowledge base versions differ.")).toBeInTheDocument();
+    expect(screen.queryByText(/Review coverage:/)).not.toBeInTheDocument();
   });
 
-  it("ignores a late response after choosing another previous assessment", async () => {
+  it("warns that a current assessment still in progress can change", async () => {
+    view({ current: { assessment: { status: "in_progress" } } });
+    expect(screen.getByText(/This assessment is not completed yet/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("combobox", { name: "Previous assessment" }),
+    ).toBeInTheDocument();
+  });
+
+  it("ignores a late comparison from another previous assessment", async () => {
     let resolveFirst;
-    getReportPreview.mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }));
+    getAssessmentComparison
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        ...comparison,
+        previous: { ...comparison.previous, id: "older" },
+      });
     view();
-    const select = screen.getByRole("combobox", { name: "Previous assessment" });
+    const select = await screen.findByRole("combobox", { name: "Previous assessment" });
     fireEvent.change(select, { target: { value: "old" } });
     fireEvent.change(select, { target: { value: "older" } });
-    await screen.findByRole("table", { name: "Control status comparison" });
-    await act(async () => { resolveFirst({ ...old, summary: { coverage_pct: 5 } }); });
+    expect(await screen.findByText(/Compliance: 62.5% previously/)).toBeInTheDocument();
+    await act(async () => {
+      resolveFirst({
+        ...comparison,
+        previous: { ...comparison.previous, compliance: { available: true, value_pct: 5 } },
+      });
+    });
+    await waitFor(() =>
+      expect(getAssessmentComparison).toHaveBeenLastCalledWith(
+        "org-1",
+        "current",
+        "older",
+        "token-a",
+      ),
+    );
     expect(screen.queryByText(/5.0% previously/)).not.toBeInTheDocument();
-    await waitFor(() => expect(getReportPreview).toHaveBeenLastCalledWith("org-1", "older", "token-a"));
   });
 
-  it("explains when there is no earlier assessment", () => {
-    view({ assessments: [assessments[0]] });
-    expect(screen.getByText("No earlier assessments are available for this organization.")).toBeInTheDocument();
-    expect(getReportPreview).not.toHaveBeenCalled();
+  it("shows an empty state only when the server returns no completed candidates", async () => {
+    getComparisonCandidates.mockResolvedValueOnce([]);
+    view();
+    expect(
+      await screen.findByText(
+        "No earlier completed assessments are available for this organization.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Previous assessment" })).not.toBeInTheDocument();
+  });
+
+  it("lets the user retry a failed candidate request", async () => {
+    getComparisonCandidates.mockRejectedValueOnce(new Error("Network error"));
+    view();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Network error");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(
+      await screen.findByRole("combobox", { name: "Previous assessment" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows unavailable compliance without inventing a change", async () => {
+    getAssessmentComparison.mockResolvedValueOnce({
+      ...comparison,
+      current: { id: "current", compliance: { available: false, value_pct: null } },
+      compliance_change_pct: null,
+      warnings: [
+        { code: "compliance_unavailable", message: "The compliance figure is unavailable." },
+      ],
+    });
+    view();
+    fireEvent.change(await screen.findByRole("combobox", { name: "Previous assessment" }), {
+      target: { value: "old" },
+    });
+    expect(
+      await screen.findByText(/Compliance: 62.5% previously → Unavailable now./),
+    ).toBeInTheDocument();
+    expect(screen.getByText("The compliance figure is unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText(/percentage points/)).not.toBeInTheDocument();
   });
 });

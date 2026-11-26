@@ -537,7 +537,6 @@ export default function ReportWorkspace({
             key={`${sessionId}:${selectedOrgId}:${selectedAssessmentId}`}
             organizationId={selectedOrgId}
             currentAssessmentId={selectedAssessmentId}
-            assessments={assessments}
             current={preview}
             accessToken={accessToken}
           />
