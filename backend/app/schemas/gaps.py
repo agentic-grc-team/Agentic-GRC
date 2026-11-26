@@ -19,6 +19,25 @@ class GapRisk(BaseModel):
     severity: str
 
 
+class GapRemediation(BaseModel):
+    """HU-18: what to do about the gap and why, from the provisional template of its control."""
+
+    # The issue (consequence of the gap) and the requirement (target state) are a matched pair.
+    statement: str
+    issue: str
+    requirement: str
+    task: str
+    task_description: str
+    # Ordered steps. A partially implemented control gets steps that start from what exists.
+    how_to: list[str]
+    dependency: str  # People, Process or Technology
+    time_horizon: str  # Short term, Mid term or Long term
+    # The proof that will show the gap is closed (the KB evidence examples of the control's question).
+    evidence_to_close: list[str]
+    # Cites the status, the KB question, the recommended task and the HU-17 priority reason.
+    justification: str
+
+
 class Gap(BaseModel):
     control_code: str
     control_title: str
@@ -39,6 +58,9 @@ class Gap(BaseModel):
     evidence: list[EvidenceReference] = []
     linked_evidence: list[LinkedEvidenceFile] = []
     evidence_absent: bool
+    # HU-18: null when the gap is not classified or its control has no remediation template, so no
+    # recommendation is invented. The recommendation never changes the status, priority or risks.
+    remediation: GapRemediation | None = None
 
 
 class GapList(BaseModel):
@@ -48,6 +70,11 @@ class GapList(BaseModel):
     rules_id: str
     rules_version: str
     rules_provisional: bool
+    # HU-18: the remediation templates the recommendations come from. Every recommendation is
+    # preliminary until a consultant reviews it, and provisional until Aligo confirms the templates.
+    remediation_rules_id: str
+    remediation_rules_version: str
+    remediation_rules_provisional: bool
     gaps: list[Gap]
     # Controls without a final result yet (no result, awaiting review, or rejected or modified and
     # waiting for a new version). They are not gaps until a consultant has confirmed them.

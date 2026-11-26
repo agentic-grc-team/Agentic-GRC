@@ -1,4 +1,7 @@
-"""Remediation recommendations for assessment gaps (HU-18), part 1.
+"""Remediation recommendations for assessment gaps (HU-18).
+
+The gap list (app/services/gaps.py) attaches the recommendation to each classified gap, so it
+is shown with the gap in GET .../gaps and in the report preview.
 
 HU-18: recommend remediation with justification, so that the organization knows what to do
 about each gap and why.
