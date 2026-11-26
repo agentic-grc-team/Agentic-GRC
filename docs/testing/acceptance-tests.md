@@ -139,6 +139,46 @@ Recorded runs:
 | --- | --- | --- |
 | 2026-11-15 | CI (Backend tests job), PostgreSQL 16, all migrations | 5 passed |
 
+## HU-18 — Recommend remediation with justification
+
+Story: as a security officer at the assessed organization, I want a remediation recommendation for each gap, with the reason behind it, so that I know what to do about the gap and why.
+
+Jira: AGRC-96 · Task: AGRC-143 · Implementation: remediation rules (#56, `backend/app/services/remediation.py`) and the recommendation on each gap of the HU-17 gap list (`backend/app/services/gaps.py`) · Test file: `backend/tests/acceptance/test_hu18_remediation_recommendations.py` · Unit tests: `backend/tests/test_remediation.py`, `backend/tests/test_gaps.py`
+
+Each classified gap gets one recommendation, shaped like a finding in Aligo's finding data model: the issue and the target state as a matched pair, a task with ordered steps, the kind of change it needs (People, Process or Technology), a time horizon (Short, Mid or Long term), the evidence that will show the gap is closed, and a justification. The recommendation is a deterministic template per control, so the same gap always gets the same recommendation and no model call is made. The templates for PR.AA-01, PR.AA-03 and PR.AA-05 are provisional: the PO set them for the Beta, and they stay marked as provisional until Aligo confirms them. Access is the same as for the gap list.
+
+The acceptance criteria were written by the PO from the story, Aligo's finding data model and Risk Remediation Plan, and the review of #56.
+
+| AC | Given / When / Then | Test | Result |
+| --- | --- | --- | --- |
+| 1 | **Given** a classified gap, **when** the security officer views the gaps, **then** the gap shows a recommended task with ordered steps, the kind of change it needs (People, Process or Technology), when to do it (Short, Mid or Long term) and the evidence that will show the gap is closed. | `test_hu18_ac1_each_gap_gets_a_task_with_steps_kind_of_change_horizon_and_closing_evidence` | Pass |
+| 2 | **Given** a gap that a consultant has confirmed, **when** the security officer views its recommendation, **then** it states the consequence of the gap and the target state, and a justification that cites the assessed status, the question it is based on and the reason for the priority. | `test_hu18_ac2_the_recommendation_explains_why` | Pass |
+| 3 | **Given** one control that is partially implemented and one that is not implemented, **when** the security officer views their recommendations, **then** the partially implemented control gets steps that start from what is already in place, and the other gets the full steps. | `test_hu18_ac3_a_partially_implemented_control_starts_from_what_is_in_place` | Pass |
+| 4 | **Given** a gap whose control has no remediation template, **when** the gaps are listed, **then** that gap is shown without a recommendation, rather than an invented one, and the other gaps keep their recommendations and their order. | `test_hu18_ac4_a_gap_without_a_template_gets_no_invented_recommendation` | Pass |
+| 5 | **Given** the gaps with their recommendations, **when** they are listed, **then** the recommendations are marked as provisional while the templates are provisional, and the status, priority, risks and order of the gaps are the same as without them (HU-17). | `test_hu18_ac5_recommendations_are_provisional_and_change_nothing_else` | Pass |
+| 6 | **Given** a user without access to the organization or assessment, **when** they request the gaps, **then** access is denied and no recommendation is disclosed. | `test_hu18_ac6_users_without_access_get_no_recommendations` | Pass |
+
+What each test checks:
+
+1. With all three demo controls not implemented, every gap carries its template's task, full steps, dependency, time horizon and the KB evidence examples as the evidence that closes it; PR.AA-03 is Technology and PR.AA-05 is Mid term.
+2. Through the whole flow (interview answer, agent draft, consultant acceptance), the gap's recommendation carries the template's issue and requirement, and the justification starts with the assessed status and the KB question, names the recommended task and ends with the HU-17 priority and its reason.
+3. PR.AA-03 partially implemented gets the shorter steps that start from what exists and a description that says so; PR.AA-05 not implemented gets the full steps.
+4. With the template for PR.AA-01 removed, its gap is still classified and listed in its HU-17 place, with `remediation: null`; the other two keep theirs.
+5. The response names `rule:remediation` and marks it provisional, and the order, statuses, priorities and risks are those of the HU-17 rules.
+6. A consultant of another organization and a suspended consultant get 404, and the response contains no recommendation text.
+
+Not covered yet:
+
+- The gap list is computed live from the final results, so no recommendation is written to the decision trace. `build_remediation_trace` records one as `finding_generated` with `rule:remediation` once the HU-16 findings are stored.
+- `estimated_effort_hours` and `improvement_score` are not given, because Aligo's materials have no values for these controls.
+- The recommendations are shown on the Report page under "Remediation recommendations" (`GapList.jsx`, tests in `GapList.test.jsx`). The PDF and JSON exports do not include them, like the gap list.
+
+Recorded runs:
+
+| Date | Where | Result |
+| --- | --- | --- |
+| 2026-11-26 | Local, PostgreSQL 16, all migrations | 6 passed |
+
 ## HU-25 — Inspect reasoning traces and source references
 
 Jira: AGRC-82 · Task: AGRC-65 · Implementation: AGRC-60 (trace view), AGRC-72 (persisted trace references) · Test file: `backend/tests/acceptance/test_hu25_inspect_reasoning_trace.py`

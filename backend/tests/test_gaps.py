@@ -12,6 +12,8 @@ from app.schemas.report import (
     ResultVersion,
 )
 from app.services.gaps import build_gap_list
+from app.services.remediation import REMEDIATION_TEMPLATES
+from app.services.remediation import RULE_ID as REMEDIATION_RULE_ID
 from app.services.reports.builder import build_report_view
 from app.services.risk_classification import (
     CONTROL_RULES,
@@ -297,3 +299,56 @@ def test_a_file_linked_after_the_review_is_listed_but_does_not_count_as_evidence
     assert [f.file_name for f in gap.linked_evidence] == ["late.pdf"]
     assert gap.linked_evidence[0].added_after_review is True
     assert gap.evidence_absent is True
+
+
+# --- HU-18: remediation recommendation on each gap ------------------------------------------
+
+
+def test_each_classified_gap_carries_its_remediation_recommendation():
+    data = report_input(
+        **{
+            "PR.AA-03": [consultant_version("not_implemented")],
+            "PR.AA-05": [consultant_version("partially_implemented")],
+        }
+    )
+
+    gap_list = build_gap_list(data, NOW)
+
+    assert gap_list.remediation_rules_id == REMEDIATION_RULE_ID
+    assert gap_list.remediation_rules_provisional is True
+    by_code = {gap.control_code: gap for gap in gap_list.gaps}
+    mfa = by_code["PR.AA-03"].remediation
+    review = by_code["PR.AA-05"].remediation
+    assert mfa.task == REMEDIATION_TEMPLATES["PR.AA-03"].task
+    assert mfa.how_to == list(REMEDIATION_TEMPLATES["PR.AA-03"].how_to)
+    assert mfa.dependency == "Technology"
+    assert mfa.time_horizon == "Short term"
+    assert mfa.evidence_to_close == list(REMEDIATION_TEMPLATES["PR.AA-03"].evidence_to_close)
+    assert mfa.justification.startswith("PR.AA-03 was assessed as not implemented (question IAM-01).")
+    # A partially implemented control gets the steps that start from what already exists.
+    assert review.how_to == list(REMEDIATION_TEMPLATES["PR.AA-05"].partial_how_to)
+    # The recommendation does not change the classification or the order.
+    assert codes(gap_list) == ["PR.AA-03", "PR.AA-05"]
+    assert by_code["PR.AA-03"].priority == CONTROL_RULES["PR.AA-03"].priority
+
+
+def test_a_gap_without_a_template_or_a_classification_has_no_recommendation(monkeypatch):
+    monkeypatch.delitem(REMEDIATION_TEMPLATES, "PR.AA-05")
+    monkeypatch.delitem(CONTROL_RULES, "PR.AA-01")
+    data = report_input(
+        **{
+            "PR.AA-01": [consultant_version("not_implemented")],
+            "PR.AA-03": [consultant_version("not_implemented")],
+            "PR.AA-05": [consultant_version("not_implemented")],
+        }
+    )
+
+    gap_list = build_gap_list(data, NOW)
+
+    by_code = {gap.control_code: gap for gap in gap_list.gaps}
+    assert by_code["PR.AA-03"].remediation is not None
+    assert by_code["PR.AA-05"].classified is True
+    assert by_code["PR.AA-05"].remediation is None
+    assert by_code["PR.AA-01"].classified is False
+    assert by_code["PR.AA-01"].remediation is None
+    assert len(gap_list.gaps) == 3

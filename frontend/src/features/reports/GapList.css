@@ -81,3 +81,55 @@
   color: var(--muted);
   font: 10px var(--mono);
 }
+
+.gap-remediation-plan {
+  margin-top: 18px;
+}
+
+.gap-remediation-plan > ol {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.gap-remediation summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.gap-remediation-meta {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.gap-remediation dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 10px 0;
+}
+
+.gap-remediation dt {
+  color: var(--muted);
+}
+
+.gap-remediation dd {
+  margin: 0;
+}
+
+.gap-remediation ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.gap-remediation-evidence,
+.gap-remediation-why,
+.gap-remediation-none {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+}

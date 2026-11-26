@@ -8,12 +8,17 @@ is not a gap yet.
 Each gap gets its priority and risks from the rule in risk_classification.py. A control without
 a rule is listed as not classified instead of failing the whole list or getting an invented
 priority. When the HU-16 gap findings exist, they can replace the control results as the input.
+
+HU-18: each classified gap also gets its remediation recommendation from remediation.py. A gap
+that is not classified, or whose control has no template, is listed without one.
 """
 
 from datetime import datetime
 
-from app.schemas.gaps import Gap, GapList, GapRisk
+from app.schemas.gaps import Gap, GapList, GapRemediation, GapRisk
 from app.schemas.report import FinalResult, ReportInput, ReportView
+from app.services import remediation
+from app.services.remediation import RemediationRecommendation, recommend_for_gaps
 from app.services.reports.builder import build_report_view
 from app.services.risk_classification import (
     GAP_STATUS_ORDER,
@@ -21,8 +26,24 @@ from app.services.risk_classification import (
     RULE_VERSION,
     RULES_PROVISIONAL,
     classify_gap,
-    order_gaps,
 )
+
+
+def _remediation(recommendation: RemediationRecommendation | None) -> GapRemediation | None:
+    if recommendation is None:
+        return None
+    return GapRemediation(
+        statement=recommendation.statement,
+        issue=recommendation.issue,
+        requirement=recommendation.requirement,
+        task=recommendation.task,
+        task_description=recommendation.task_description,
+        how_to=list(recommendation.how_to),
+        dependency=recommendation.dependency,
+        time_horizon=recommendation.time_horizon,
+        evidence_to_close=list(recommendation.evidence_to_close),
+        justification=recommendation.justification,
+    )
 
 
 def build_gap_list(
@@ -73,6 +94,7 @@ def build_gap_list(
             **classification_fields,
         )
 
+    # recommend_for_gaps keeps the HU-17 order and pairs each gap with its recommendation or None.
     gaps = [
         gap(
             by_code[classification.control_code],
@@ -80,8 +102,9 @@ def build_gap_list(
             priority=classification.priority,
             risks=[GapRisk(name=name, severity=severity) for name, severity in classification.risks],
             reason=classification.reason,
+            remediation=_remediation(recommendation),
         )
-        for classification in order_gaps(classified)
+        for classification, recommendation in recommend_for_gaps(classified)
     ]
     gaps += [gap(result, classified=False) for result in sorted(unclassified, key=lambda item: item.code)]
 
@@ -92,6 +115,9 @@ def build_gap_list(
         rules_id=RULE_ID,
         rules_version=RULE_VERSION,
         rules_provisional=RULES_PROVISIONAL,
+        remediation_rules_id=remediation.RULE_ID,
+        remediation_rules_version=remediation.RULE_VERSION,
+        remediation_rules_provisional=remediation.RULES_PROVISIONAL,
         gaps=gaps,
         pending_controls=view.summary.pending,
     )
