@@ -90,6 +90,7 @@ def refresh_assessment_status(db: Session, organization_id: UUID, assessment_id:
     )
     new_status = derive_status(len(rows), with_result, final)
 
+    was_completed = assessment.status == "completed"
     if new_status != assessment.status:
         assessment.status = new_status
     if new_status == "completed":
@@ -98,4 +99,10 @@ def refresh_assessment_status(db: Session, organization_id: UUID, assessment_id:
     elif assessment.completed_at is not None:
         assessment.completed_at = None
     db.flush()
+    if new_status == "completed" and not was_completed:
+        # Closing the assessment creates one immutable diagnosis. Re-reading an already completed
+        # assessment must never create another run.
+        from app.services.gap_analysis_runs import record_gap_analysis_run
+
+        record_gap_analysis_run(db, organization_id, assessment_id, trigger="completion")
     return assessment
