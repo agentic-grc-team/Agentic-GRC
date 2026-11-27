@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import {
-  listPendingReviews,
-  submitReviewDecision,
-} from "./api.js";
+import { listPendingReviews, submitReviewDecision } from "./api.js";
 
 import ReviewEvidence from "./ReviewEvidence.jsx";
 import ReviewTrace from "./ReviewTrace.jsx";
@@ -11,7 +8,6 @@ import ReviewTrace from "./ReviewTrace.jsx";
 function formatValue(value) {
   return value.replaceAll("_", " ");
 }
-
 
 const outcomeLabels = {
   accepted: "accepted",
@@ -22,7 +18,6 @@ const outcomeLabels = {
 const DECISION_COOLDOWN_MS = 1000;
 const NOTICE_DURATION_MS = 3000;
 const NOTICE_EXIT_MS = 250;
-
 
 export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrganizationChange }) {
   const [reviews, setReviews] = useState([]);
@@ -102,18 +97,14 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
     async function loadReviews() {
       try {
-        const pendingReviews = await listPendingReviews(
-          accessTokenRef.current,
-        );
+        const pendingReviews = await listPendingReviews(accessTokenRef.current);
 
         if (isActive) {
           setReviews(pendingReviews);
         }
       } catch (requestError) {
         if (isActive) {
-          setError(
-            requestError.message || "Unable to load pending reviews.",
-          );
+          setError(requestError.message || "Unable to load pending reviews.");
         }
       } finally {
         if (isActive) {
@@ -136,7 +127,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
   const review = completedAssessment
     ? null
-    : reviews.find((item) => item.result_id === selectedResultId) ?? reviews[0];
+    : (reviews.find((item) => item.result_id === selectedResultId) ?? reviews[0]);
   const reviewOrganizationId = (review ?? completedAssessment)?.organization_id || "";
 
   useEffect(() => {
@@ -189,13 +180,8 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
     setError("");
     clearNotice();
 
-    if (
-      (outcome === "modified" || outcome === "rejected") &&
-      trimmedComment === ""
-    ) {
-      setError(
-        "A review comment is required when modifying or rejecting a result.",
-      );
+    if ((outcome === "modified" || outcome === "rejected") && trimmedComment === "") {
+      setError("A review comment is required when modifying or rejecting a result.");
       return;
     }
 
@@ -213,18 +199,12 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
         return;
       }
 
-      if (
-        editedStatus === "not_applicable" &&
-        justification.trim() === ""
-      ) {
+      if (editedStatus === "not_applicable" && justification.trim() === "") {
         setError("A justification is required for not applicable.");
         return;
       }
 
-      if (
-        editedStatus === "not_assessed" &&
-        notAssessedReason.trim() === ""
-      ) {
+      if (editedStatus === "not_assessed" && notAssessedReason.trim() === "") {
         setError("A reason is required for not assessed.");
         return;
       }
@@ -270,9 +250,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
         return;
       }
 
-      setNotice(
-        `The result was successfully ${outcomeLabels[response.outcome]}.`,
-      );
+      setNotice(`The result was successfully ${outcomeLabels[response.outcome]}.`);
       setNoticeExiting(false);
       setIsCoolingDown(true);
       cooldownTimerRef.current = setTimeout(() => setIsCoolingDown(false), DECISION_COOLDOWN_MS);
@@ -281,26 +259,26 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
         noticeExitTimerRef.current = setTimeout(() => setNotice(""), NOTICE_EXIT_MS);
       }, NOTICE_DURATION_MS);
 
-      setReviews((currentReviews) =>
-        currentReviews.filter((item) => item.result_id !== resultId),
-      );
+      setReviews((currentReviews) => currentReviews.filter((item) => item.result_id !== resultId));
 
       const nextInAssessment = reviews.find(
         (item) => item.assessment_id === review.assessment_id && item.result_id !== resultId,
       );
-      setCompletedAssessment(nextInAssessment ? null : {
-        assessment_id: review.assessment_id,
-        assessment_title: review.assessment_title,
-        organization_id: review.organization_id,
-      });
+      setCompletedAssessment(
+        nextInAssessment
+          ? null
+          : {
+              assessment_id: review.assessment_id,
+              assessment_title: review.assessment_title,
+              organization_id: review.organization_id,
+            },
+      );
       setSelectedResultId(nextInAssessment?.result_id ?? "");
       setComment("");
       resetEditor();
     } catch (requestError) {
       if (sessionRef.current === session) {
-        setError(
-          requestError.message || "Unable to submit review.",
-        );
+        setError(requestError.message || "Unable to submit review.");
       }
     } finally {
       if (sessionRef.current === session) {
@@ -324,14 +302,15 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
         <p className="eyebrow">EXPERT REVIEW</p>
         <h1>Review queue complete</h1>
 
-        {notice && <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>{notice}</p>}
+        {notice && (
+          <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>
+            {notice}
+          </p>
+        )}
 
         <div className="review-section">
           <h3>No pending results</h3>
-          <p>
-            There are currently no AI-generated results waiting for
-            expert review.
-          </p>
+          <p>There are currently no AI-generated results waiting for expert review.</p>
         </div>
       </section>
     );
@@ -343,13 +322,15 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
         <p className="eyebrow">EXPERT REVIEW</p>
         <p className="review-context-label">Assessment</p>
         <h1>{completedAssessment.assessment_title || completedAssessment.assessment_id}</h1>
-        {notice && <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>{notice}</p>}
+        {notice && (
+          <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>
+            {notice}
+          </p>
+        )}
         <div className="review-section">
           <h3>Assessment review complete</h3>
           <p>There are no more pending results in this assessment.</p>
-          {reviews.length === 0 && (
-            <p>No other assessments have pending results.</p>
-          )}
+          {reviews.length === 0 && <p>No other assessments have pending results.</p>}
         </div>
         {reviews.length > 0 && (
           <button
@@ -380,16 +361,26 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
   return (
     <section className="expert-review-workspace" ref={headingRef}>
       <p className="eyebrow">EXPERT REVIEW</p>
-      {notice && <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>{notice}</p>}
+      {notice && (
+        <p role="status" className={`review-notice ${noticeExiting ? "is-exiting" : ""}`}>
+          {notice}
+        </p>
+      )}
       <div className="review-context">
         <span className="review-context-label">Assessment</span>
         <strong>{review.assessment_title || review.assessment_id}</strong>
         <span className="review-context-label">Current control</span>
-        <strong>{review.control_code} · {review.control_title}</strong>
+        <strong>
+          {review.control_code} · {review.control_title}
+        </strong>
       </div>
       <label className="review-comment">
         Pending result
-        <select value={review.result_id} onChange={selectResult} disabled={isSubmitting || isCoolingDown}>
+        <select
+          value={review.result_id}
+          onChange={selectResult}
+          disabled={isSubmitting || isCoolingDown}
+        >
           {Array.from(reviewsByAssessment, ([assessmentId, items]) => (
             <optgroup key={assessmentId} label={items[0].assessment_title || assessmentId}>
               {items.map((item) => (
@@ -409,20 +400,16 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
       <div className="review-summary">
         <p>
-          <strong>Proposed status:</strong>{" "}
-          {formatValue(review.control_status)}
+          <strong>Proposed status:</strong> {formatValue(review.control_status)}
         </p>
 
         <p>
-          <strong>Current maturity:</strong>{" "}
-          {review.maturity_current ?? "Not available"}
+          <strong>Current maturity:</strong> {review.maturity_current ?? "Not available"}
         </p>
 
         <p>
           <strong>AI confidence:</strong>{" "}
-          {review.confidence == null
-            ? "Not available"
-            : `${Math.round(review.confidence * 100)}%`}
+          {review.confidence == null ? "Not available" : `${Math.round(review.confidence * 100)}%`}
         </p>
       </div>
 
@@ -433,23 +420,19 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
 
       <div className="review-section">
         <h3>Evidence summary</h3>
-        <p>
-          {review.evidence_summary?.trim() ||
-            "No evidence summary available."}
-        </p>
+        <p>{review.evidence_summary?.trim() || "No evidence summary available."}</p>
       </div>
 
       <ReviewEvidence
         resultId={review.result_id}
+        organizationId={review.organization_id}
+        assessmentId={review.assessment_id}
+        controlCode={review.control_code}
         accessToken={accessToken}
         sessionId={sessionKey}
       />
 
-      <ReviewTrace
-        resultId={review.result_id}
-        accessToken={accessToken}
-        sessionId={sessionKey}
-      />
+      <ReviewTrace resultId={review.result_id} accessToken={accessToken} sessionId={sessionKey} />
 
       {isEditing && (
         <div className="review-section">
@@ -463,9 +446,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
               disabled={isSubmitting}
             >
               <option value="implemented">Implemented</option>
-              <option value="partially_implemented">
-                Partially implemented
-              </option>
+              <option value="partially_implemented">Partially implemented</option>
               <option value="not_implemented">Not implemented</option>
               <option value="not_applicable">Not applicable</option>
               <option value="not_assessed">Not assessed</option>
@@ -476,9 +457,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
             Modified explanation
             <textarea
               value={editedExplanation}
-              onChange={(event) =>
-                setEditedExplanation(event.target.value)
-              }
+              onChange={(event) => setEditedExplanation(event.target.value)}
               disabled={isSubmitting}
               rows="5"
             />
@@ -489,9 +468,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
               Justification for not applicable
               <textarea
                 value={justification}
-                onChange={(event) =>
-                  setJustification(event.target.value)
-                }
+                onChange={(event) => setJustification(event.target.value)}
                 disabled={isSubmitting}
                 rows="3"
               />
@@ -503,9 +480,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
               Reason for not assessed
               <textarea
                 value={notAssessedReason}
-                onChange={(event) =>
-                  setNotAssessedReason(event.target.value)
-                }
+                onChange={(event) => setNotAssessedReason(event.target.value)}
                 disabled={isSubmitting}
                 rows="3"
               />
@@ -538,11 +513,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
               Accept
             </button>
 
-            <button
-              type="button"
-              disabled={isSubmitting || isCoolingDown}
-              onClick={startEditing}
-            >
+            <button type="button" disabled={isSubmitting || isCoolingDown} onClick={startEditing}>
               Edit result
             </button>
 
@@ -566,11 +537,7 @@ export default function ExpertReviewWorkspace({ accessToken, sessionId, onOrgani
               Submit modified result
             </button>
 
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={cancelEditing}
-            >
+            <button type="button" disabled={isSubmitting} onClick={cancelEditing}>
               Cancel editing
             </button>
           </>

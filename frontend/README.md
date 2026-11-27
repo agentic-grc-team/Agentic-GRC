@@ -52,4 +52,4 @@ VITE_BASE_PATH=/agentic-grc/ npm run build
 - Evidence uploads require active organization membership, including for platform administrators. The evidence page requests `GET /organizations?active_memberships_only=true` and preserves an eligible workspace through `/evidence?organization_id=<id>`.
 - Opening evidence without workspace context requires selecting an organization before uploading. The target organization is displayed beside the upload area; switching organizations clears previous results and cancels the previous client request. Canceling a client request does not undo an upload already processed by the server.
 
-Run frontend checks with `npm test` and `npm run build`.
+Run frontend checks with `npm run lint`, `npm run format:check`, `npm test`, and `npm run build`. The formatting check covers changed frontend files relative to `origin/main` locally, or the PR base/previous commit in CI. To format a file before committing, run `npm run format -- src/path/to/file.jsx`. Existing files are formatted when they are edited; the check does not require a one-time reformat of the entire frontend. See [coding standards](../docs/coding-standards.md).

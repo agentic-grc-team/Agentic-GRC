@@ -23,6 +23,12 @@ export function getAssessmentScope(organizationId, assessmentId, accessToken) {
   );
 }
 
+export function getPassageMatches(organizationId, assessmentId, accessToken) {
+  return apiRequest(
+    `${assessmentsPath(organizationId)}/${encodeURIComponent(assessmentId)}/passage-matches`,
+    { accessToken },
+  );
+}
 export function listAssessmentControls(organizationId, assessmentId, accessToken) {
   return apiRequest(
     `${assessmentsPath(organizationId)}/${encodeURIComponent(assessmentId)}/controls`,
@@ -39,7 +45,9 @@ export function listAssessmentEvidence(organizationId, assessmentId, accessToken
 }
 
 export function listEvidenceLinks(organizationId, assessmentId, accessToken) {
-  return apiRequest(`/evidence/links?${evidenceQuery(organizationId, assessmentId)}`, { accessToken });
+  return apiRequest(`/evidence/links?${evidenceQuery(organizationId, assessmentId)}`, {
+    accessToken,
+  });
 }
 
 export function linkEvidence(organizationId, evidenceId, assessmentControlId, accessToken) {
@@ -55,8 +63,8 @@ export function linkEvidence(organizationId, evidenceId, assessmentControlId, ac
 
 export function unlinkEvidence(organizationId, evidenceId, assessmentControlId, accessToken) {
   return apiRequest(
-    `/evidence/${encodeURIComponent(evidenceId)}/controls/${encodeURIComponent(assessmentControlId)}`
-      + `?organization_id=${encodeURIComponent(organizationId)}`,
+    `/evidence/${encodeURIComponent(evidenceId)}/controls/${encodeURIComponent(assessmentControlId)}` +
+      `?organization_id=${encodeURIComponent(organizationId)}`,
     { method: "DELETE", accessToken },
   );
 }
