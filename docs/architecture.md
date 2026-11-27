@@ -13,8 +13,9 @@ isolation and roles work. Details that already have their own document are linke
 | Install on the university VMs | [`deployment-vm.md`](deployment-vm.md) |
 | Operate the VMs: logs, restarts, backups, recovery | [`runbook-vm.md`](runbook-vm.md) |
 | Decisions: framework scope, agent and LLM, data governance | [`decisions/`](decisions/) |
-| Reasoning trace schema, agent–backend contract | [`design/`](design/) |
+| Reasoning trace schema, agent–backend contract, passage matching | [`design/`](design/) |
 | Acceptance tests traced to user stories | [`testing/acceptance-tests.md`](testing/acceptance-tests.md) |
+| Code style and formatting rules | [`coding-standards.md`](coding-standards.md) |
 
 ## 1. System overview
 
@@ -91,6 +92,7 @@ On the Beta the request path is: university proxy → nginx `:80` → API `127.0
   | Expert review | `/expert-reviews/pending`, `/expert-reviews/{result}/trace`, `.../evidence`, `.../decision` |
   | Reasoning traces | `.../{assessment}/traces`, `.../traces/export` |
   | Report and gaps | `.../{assessment}/report`, `.../report.pdf`, `.../report.json`, `.../gaps` |
+  | Document passages | `.../{assessment}/passage-matches` |
   | Other | `/health`, `/reference-data/industry-sectors`, `/reference-data/organization-sizes` |
 
   The interactive API documentation is at `/docs` when the backend runs.
@@ -117,6 +119,11 @@ On the Beta the request path is: university proxy → nginx `:80` → API `127.0
 - **Evidence files:** stored on the backend host's disk (on the Beta in
   `/var/lib/agentic-grc/uploaded_evidence`); the database keeps their metadata and their links to
   controls. Allowed types: PDF, TXT, DOCX, CSV, XLSX.
+- **Document passages:** the text of each file is extracted on upload (PDF pages are kept apart).
+  When a consultant opens Expert review, the passages that mention an in-scope control are proposed
+  next to it, with the file, page or section and the matched terms. Matching is lexical, computed when
+  it is read and never stored; a proposed passage is always marked `not_verified`
+  ([design](design/hu12-passage-matching.md)).
 - **Data allowed:** `INTERVIEW_DATA_MODE` is `synthetic` by default. Real organizational data is
   blocked until the approvals in [ADR 0003](decisions/0003-interview-data-governance.md) are in
   place.
@@ -165,10 +172,12 @@ A membership is `active` or `suspended`; a suspended membership counts as no mem
 | Expert review: queue, decision, review evidence | Yes | No (403, not in the queue) | No (404, not in the queue) |
 | Reasoning traces and trace export | Yes | No (403) | No (404) |
 | Report (preview, PDF, JSON) and gap list | Yes | Yes | No (404) |
+| Proposed document passages | Yes | Yes | No (404) |
 | Invite members, edit the organization | Administrator only | No | No |
 
-A platform administrator passes these checks without a membership, with one exception: uploading
-and listing evidence needs an active membership, as for everyone else.
+A platform administrator passes these checks without a membership, with two exceptions: uploading
+and listing evidence, and reading proposed passages, need an active membership, as for everyone
+else.
 
 ### How isolation is enforced
 
@@ -202,3 +211,78 @@ Public URL: <https://gita.udea.edu.co/agentic-grc/>. Installation is in
 [`deployment-vm.md`](deployment-vm.md); operation, backups and recovery are in
 [`runbook-vm.md`](runbook-vm.md). Secrets stay in `/etc/agentic-grc/backend.env` on the app VM and
 are never committed.
+
+## 7. Tests and CI
+
+### Running the tests
+
+| Suite | Where | Command | Needs |
+|---|---|---|---|
+| Backend: unit, integration, acceptance | `backend/` | `python -m pytest` | Python venv; PostgreSQL for the database tests |
+| Backend lint | `backend/` | `ruff check .` | – |
+| Models match migrations | `backend/` | `alembic check` | PostgreSQL with all migrations applied |
+| Frontend tests | `frontend/` | `npm test` | `npm ci` |
+| Frontend lint and formatting | `frontend/` | `npm run lint`, `npm run format:check` | `npm ci` |
+| Frontend build | `frontend/` | `npm run build` | `npm ci` |
+| Model accuracy and latency (not in CI) | `backend/` | `python scripts/benchmark_models.py llama3.1:8b --repeat 3 --machine "<name>"` | Ollama with the model ([`ollama-setup.md`](ollama-setup.md)) |
+
+Without a PostgreSQL test database the database tests, including every acceptance test, are
+**skipped**, not failed; the result line shows how many. To run them locally, point the `DB_*`
+variables of [`backend/README.md`](../backend/README.md) at a throwaway database, load
+`backend/tests/sql/supabase_auth_stub.sql`, run `alembic upgrade head`, and set
+`AGRC_COMMITTING_DB_TESTS=1` so the one test that commits data runs too. Never point the tests at
+the shared Supabase project or the Beta database.
+
+### What CI checks
+
+GitHub Actions (`.github/workflows/ci.yml`) runs two jobs on every pull request and on every push
+to `main`. Both are required to merge: `main` is protected, needs one approving review, and the
+branch must be up to date with `main`.
+
+| Job | Steps |
+|---|---|
+| Backend tests | PostgreSQL 16 service, Ruff, Supabase auth stub, `alembic upgrade head`, `alembic check`, all tests with coverage; the job fails below 85% coverage of `app/` (`backend/.coveragerc`) |
+| Frontend tests and build | `npm ci`, ESLint, Prettier check of the changed files, Vitest, production build |
+
+### What the suites cover
+
+Counts from `main` on 28 November 2026, together with the HU-12 acceptance tests (#92).
+
+| Suite | Tests | Covers |
+|---|---|---|
+| Backend | 719, coverage 90% | API routes, services and the database: assessments, interview, evidence and links, expert review, reports, gaps, risk classification, remediation, passage matching, traces, organizations and login |
+| of which agent | 80 (`tests/agent/`) | Graph steps, decision rules, the interview flow with a fake model, model settings; the rules are also checked against the labelled answers in `evals/interpret_cases.yaml` |
+| of which acceptance | 23 (`tests/acceptance/`) | HU-02/HU-03, HU-04, HU-12, HU-17 and HU-25, one test per acceptance criterion ([list](testing/acceptance-tests.md)) |
+| Frontend | 288 in 29 files | The screens and their API calls: assessments, interview, evidence upload, expert review (trace, evidence, proposed passages), report and gaps, organizations, login and invitations, navigation by role |
+
+Least covered backend modules: `app/cli.py` 47% (command line for platform profiles), the organizations API 51%
+(invitations and membership changes), the interviews API 70%, Supabase verification 74%. The
+agent, review, report, gap, remediation and passage-matching code is at 94–100%.
+
+The frontend has no coverage gate. The real model is never called in CI: the agent tests use a fake
+model, and the model's accuracy and latency are measured separately with the benchmark script.
+
+## 8. Known limitations and unfinished functionality
+
+- **Response time.** The non-functional requirement is at most 10 s per interview turn. On the Beta
+  VM (Tesla M10) a turn takes about 40 s when the model is warm, and over 60 s when a call hits the
+  timeout ([`deployment-vm.md`](deployment-vm.md)). The proxy and nginx allow 120 s per request.
+- **Knowledge base.** The demo knowledge base has 3 questions, mapped to PR.AA-01, PR.AA-03 and
+  PR.AA-05 (`backend/app/agent/data/kb_demo.yaml`). Aligo asked for 20–25 subcategories across all
+  six CSF functions.
+- **Provisional rules.** The risk priorities and severities (HU-17) and the remediation templates
+  (HU-18) are marked provisional (`RULES_PROVISIONAL = True`) until Aligo confirms them.
+- **Passage matching.** Lexical only, and only the three demo controls have terms. Text inside DOCX
+  tables is not extracted, and files without page breaks (DOCX, TXT, CSV, XLSX, older PDFs) have no
+  page, only a section and a character range.
+- **No tenant connector.** There is no Microsoft 365 or Entra ID connector: evidence comes from
+  interview answers and uploaded files only.
+- **Report exports.** The gap list is in the report preview, not in the PDF or JSON export.
+- **Synthetic data only.** Real organizational data stays blocked until the approvals in
+  [ADR 0003](decisions/0003-interview-data-governance.md) are in place.
+- **Backups.** The nightly dump covers the database, not the evidence files on the app VM; they are
+  backed up by hand ([`runbook-vm.md`](runbook-vm.md#evidence-files)).
+- **Deployment is manual.** CI does not deploy; changes reach the Beta by following the redeploy
+  steps in [`deployment-vm.md`](deployment-vm.md).
+- **Login depends on Supabase.** Sign-in needs the Supabase project to be reachable, through the
+  nginx proxy on the Beta.
