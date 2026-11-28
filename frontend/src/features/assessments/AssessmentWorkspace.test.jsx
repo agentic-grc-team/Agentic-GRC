@@ -88,8 +88,21 @@ describe("AssessmentWorkspace", () => {
     getReportPreview.mockReset();
     getReportPreview.mockResolvedValue({
       summary: {
+        controls_in_scope: 2,
         coverage_pct: 50,
         pending: 1,
+        compliance: {
+          available: true,
+          value_pct: 100,
+          denominator: 1,
+          implemented: 1,
+          partially_implemented: 0,
+          not_implemented: 0,
+          excluded_not_applicable: 0,
+          not_assessed: 0,
+          pending: 1,
+          definition: "Server-defined compliance calculation over final reviewed results only.",
+        },
         status_counts: {
           implemented: 1,
           partially_implemented: 0,
@@ -129,10 +142,114 @@ describe("AssessmentWorkspace", () => {
     renderWorkspace();
 
     const summary = await screen.findByRole("heading", { name: "Compliance summary" });
-    expect(summary.closest("section")).toHaveTextContent("50.0%");
+    expect(summary.closest("section")).toHaveTextContent("Assessment: Q3 baseline");
+    expect(summary.closest("section")).toHaveTextContent("100.0%compliance figure");
+    expect(summary.closest("section")).toHaveTextContent("Review coverage: 50.0%");
+    expect(summary.closest("section")).toHaveTextContent("Based on 1 of 2 controls");
+    expect(summary.closest("section")).toHaveTextContent("Server-defined compliance calculation");
     expect(summary.closest("section")).toHaveTextContent("1 awaiting a final result");
     expect(summary.closest("section")).toHaveTextContent("not a compliance score");
     expect(getReportPreview).toHaveBeenCalledWith("org-1", "assess-1", "token-a");
+  });
+
+  it("shows an unavailable compliance figure when the server has no eligible final results", async () => {
+    getReportPreview.mockResolvedValueOnce({
+      summary: {
+        controls_in_scope: 1,
+        coverage_pct: 0,
+        pending: 1,
+        status_counts: {},
+        compliance: {
+          available: false,
+          value_pct: null,
+          denominator: 0,
+          excluded_not_applicable: 0,
+          not_assessed: 0,
+          pending: 1,
+          definition: "Server-defined compliance calculation over final reviewed results only.",
+        },
+      },
+      exclusions: [],
+    });
+    renderWorkspace();
+
+    const summary = (await screen.findByRole("heading", { name: "Compliance summary" })).closest(
+      "section",
+    );
+    expect(summary).toHaveTextContent("Unavailable");
+    expect(summary).toHaveTextContent("Based on 0 of 1 controls");
+    expect(summary).not.toHaveTextContent("0.0%compliance figure");
+  });
+
+  it("shows a genuine zero compliance figure when reviewed controls are not implemented", async () => {
+    getReportPreview.mockResolvedValueOnce({
+      summary: {
+        controls_in_scope: 1,
+        coverage_pct: 100,
+        pending: 0,
+        status_counts: { not_implemented: 1 },
+        compliance: {
+          available: true,
+          value_pct: 0,
+          denominator: 1,
+          excluded_not_applicable: 0,
+          not_assessed: 0,
+          pending: 0,
+          definition: "Server-defined compliance calculation over final reviewed results only.",
+        },
+      },
+      exclusions: [],
+    });
+    renderWorkspace();
+
+    const summary = (await screen.findByRole("heading", { name: "Compliance summary" })).closest(
+      "section",
+    );
+    expect(summary).toHaveTextContent("0.0%compliance figure");
+    expect(summary).toHaveTextContent("Review coverage: 100.0%");
+  });
+
+  it("loads the updated backend figure when returning after a consultant changes a final result", async () => {
+    const firstVisit = renderWorkspace();
+    expect(
+      await screen.findByText("100.0%", { selector: ".compliance-summary-figure strong" }),
+    ).toBeInTheDocument();
+    firstVisit.unmount();
+
+    getReportPreview.mockResolvedValueOnce({
+      summary: {
+        controls_in_scope: 2,
+        coverage_pct: 50,
+        pending: 1,
+        status_counts: { partially_implemented: 1 },
+        compliance: {
+          available: true,
+          value_pct: 50,
+          denominator: 1,
+          excluded_not_applicable: 0,
+          not_assessed: 0,
+          pending: 1,
+          definition: "Server-defined compliance calculation over final reviewed results only.",
+        },
+      },
+      exclusions: [],
+    });
+    renderWorkspace();
+
+    expect(
+      await screen.findByText("50.0%", { selector: ".compliance-summary-figure strong" }),
+    ).toBeInTheDocument();
+    expect(getReportPreview).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the report preview error instead of a compliance figure", async () => {
+    getReportPreview.mockRejectedValueOnce(new Error("Report preview unavailable"));
+    renderWorkspace();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load compliance summary: Report preview unavailable",
+    );
+    expect(screen.queryByRole("heading", { name: "Compliance summary" })).not.toBeInTheDocument();
   });
 
   it("does not show a late compliance summary from another assessment", async () => {

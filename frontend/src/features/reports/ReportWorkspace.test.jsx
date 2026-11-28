@@ -149,6 +149,19 @@ const mockReportView = {
     pending: 3,
     coverage_pct: 50.0,
     final_with_evidence_pending: 0,
+    compliance: {
+      available: true,
+      value_pct: 75.0,
+      numerator: 1.5,
+      denominator: 2,
+      implemented: 1,
+      partially_implemented: 1,
+      not_implemented: 0,
+      excluded_not_applicable: 1,
+      not_assessed: 0,
+      pending: 3,
+      definition: "Server-defined compliance calculation over final reviewed results only.",
+    },
     status_counts: {
       implemented: 1,
       partially_implemented: 1,
@@ -261,7 +274,35 @@ describe("ReportWorkspace", () => {
       .closest("section");
     expect(compliance).toHaveTextContent("Implemented1");
     expect(compliance).toHaveTextContent("Partially implemented1");
+    expect(compliance).toHaveTextContent("75.0%compliance figure");
+    expect(compliance).toHaveTextContent("Review coverage: 50.0%");
+    expect(compliance).toHaveTextContent("Assessment: Identity and access — demo assessment");
+    expect(compliance).toHaveTextContent("Based on 2 of 6 controls · 1 not applicable");
     expect(compliance).toHaveTextContent("3 awaiting a final result · 1 approved exclusions");
+  });
+
+  it("shows the server's unavailable compliance state instead of treating zero coverage as the figure", async () => {
+    getReportPreview.mockResolvedValueOnce({
+      ...mockReportView,
+      summary: {
+        ...mockReportView.summary,
+        coverage_pct: 0,
+        compliance: {
+          ...mockReportView.summary.compliance,
+          available: false,
+          value_pct: null,
+          denominator: 0,
+        },
+      },
+    });
+    render(<ReportWorkspace accessToken="test-token" />);
+
+    const summary = (await screen.findByRole("heading", { name: "Compliance summary" })).closest(
+      "section",
+    );
+    expect(summary).toHaveTextContent("Unavailable");
+    expect(summary).toHaveTextContent("Review coverage: 0.0%");
+    expect(summary).not.toHaveTextContent("0.0%compliance figure");
   });
 
   it("shows the gap list that comes with the preview, without a separate request", async () => {

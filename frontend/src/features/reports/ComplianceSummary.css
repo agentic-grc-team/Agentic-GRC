@@ -19,7 +19,7 @@
   font: 600 18px var(--display);
 }
 
-.compliance-summary-coverage {
+.compliance-summary-figure {
   display: grid;
   justify-items: end;
   gap: 3px;
@@ -27,13 +27,15 @@
   white-space: nowrap;
 }
 
-.compliance-summary-coverage strong {
+.compliance-summary-figure strong {
   color: var(--mint);
-  font: 600 22px var(--display);
+  font: 600 26px var(--display);
 }
 
-.compliance-summary-coverage span,
+.compliance-summary-figure span,
+.compliance-summary-assessment,
 .compliance-summary-caption,
+.compliance-summary-basis,
 .compliance-summary-footnote {
   color: #aeb8c0;
   font-size: 11px;
@@ -42,6 +44,14 @@
 
 .compliance-summary-caption {
   margin: 12px 0 16px;
+}
+
+.compliance-summary-assessment {
+  margin: 8px 0 0;
+}
+
+.compliance-summary-basis {
+  margin: 0 0 16px;
 }
 
 .compliance-summary-counts {
@@ -77,6 +87,14 @@
 }
 
 @media (max-width: 600px) {
+  .compliance-summary-header {
+    flex-wrap: wrap;
+  }
+
+  .compliance-summary-figure {
+    justify-items: start;
+  }
+
   .compliance-summary-counts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

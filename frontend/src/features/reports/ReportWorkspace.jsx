@@ -529,6 +529,7 @@ export default function ReportWorkspace({
 
           <ComplianceSummary
             summary={preview.summary}
+            assessmentTitle={preview.assessment?.title}
             exclusionCount={preview.exclusions?.length ?? 0}
           />
 

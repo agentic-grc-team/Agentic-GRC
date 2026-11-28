@@ -345,6 +345,7 @@ export default function AssessmentWorkspace({
       {selectedOrganization && visibleScope && compliancePreview && (
         <ComplianceSummary
           summary={compliancePreview.summary}
+          assessmentTitle={selectedAssessment?.title}
           exclusionCount={compliancePreview.exclusions?.length ?? 0}
         />
       )}
