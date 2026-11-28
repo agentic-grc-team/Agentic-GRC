@@ -5,6 +5,8 @@ import {
   DEMO_ASSESSMENT_ID,
   downloadReportJson,
   downloadReportPdf,
+  getAssessmentComparison,
+  getComparisonCandidates,
   getReportPreview,
 } from "./api.js";
 
@@ -27,11 +29,29 @@ describe("reports api", () => {
       expect.objectContaining({
         credentials: "omit",
         headers: expect.any(Headers),
-      })
+      }),
     );
     const [, options] = fetch.mock.calls[0];
     expect(options.headers.get("Authorization")).toBe("Bearer test-token");
     expect(options.headers.get("Accept")).toBe("application/json");
+  });
+
+  it("requests eligible candidates and the selected comparison with the assessment token", async () => {
+    fetch.mockResolvedValueOnce({ status: 200, ok: true, json: async () => [] });
+    fetch.mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({ controls: [] }) });
+
+    await getComparisonCandidates("org-1", "assessment/1", "test-token");
+    await getAssessmentComparison("org-1", "assessment/1", "previous/id", "test-token");
+
+    expect(fetch.mock.calls[0][0]).toBe(
+      "/api/v1/organizations/org-1/assessments/assessment%2F1/comparison/candidates",
+    );
+    expect(fetch.mock.calls[1][0]).toBe(
+      "/api/v1/organizations/org-1/assessments/assessment%2F1/comparison?previous=previous%2Fid",
+    );
+    for (const [, options] of fetch.mock.calls) {
+      expect(options.headers.get("Authorization")).toBe("Bearer test-token");
+    }
   });
 
   it("calls downloadReportPdf with pdf url, headers, and returns blob with parsed filename", async () => {
@@ -55,7 +75,7 @@ describe("reports api", () => {
         method: "GET",
         credentials: "omit",
         headers: expect.any(Headers),
-      })
+      }),
     );
     const [, options] = fetch.mock.calls[0];
     expect(options.headers.get("Authorization")).toBe("Bearer token-xyz");
@@ -93,7 +113,7 @@ describe("reports api", () => {
     fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     await expect(downloadReportPdf("org-1", "assess-1", "token")).rejects.toThrow(
-      "Could not reach the API. Check that the backend is running."
+      "Could not reach the API. Check that the backend is running.",
     );
   });
 
@@ -120,7 +140,7 @@ describe("reports api", () => {
         method: "GET",
         credentials: "omit",
         headers: expect.any(Headers),
-      })
+      }),
     );
     const [, options] = fetch.mock.calls[0];
     expect(options.headers.get("Authorization")).toBe("Bearer token-xyz");
