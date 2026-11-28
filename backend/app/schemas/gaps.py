@@ -54,6 +54,17 @@ class GapList(BaseModel):
     pending_controls: int
 
 
+class GapAnalysisRunRead(BaseModel):
+    id: UUID
+    organization_id: UUID
+    assessment_id: UUID
+    trigger: str
+    requested_by_user_id: UUID | None
+    created_at: datetime
+    gap_count: int
+    gap_list: GapList
+
+
 class ReportPreview(ReportView):
     """The report page's data: the report view plus the gap list built from that same view.
 

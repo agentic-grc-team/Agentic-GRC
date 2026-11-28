@@ -507,6 +507,36 @@ class Assessment(Base):
     )
 
 
+class GapAnalysisRun(Base):
+    """Immutable gap diagnosis produced on completion or an explicit regeneration (HU-16)."""
+
+    __tablename__ = "gap_analysis_runs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_gap_analysis_runs_assessment_same_org",
+        ),
+        CheckConstraint("trigger IN ('completion', 'regeneration')", name="trigger"),
+        CheckConstraint("gap_count >= 0", name="gap_count_non_negative"),
+        Index("ix_gap_analysis_runs_assessment_created", "assessment_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+    gap_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Includes result versions, evidence and the rule version as they were at this run.
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
 class Framework(Base):
     __tablename__ = "frameworks"
 
