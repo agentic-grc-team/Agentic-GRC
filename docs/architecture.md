@@ -362,7 +362,7 @@ branch must be up to date with `main`.
 
 ### What the suites cover
 
-Counts from `main` on 28 November 2026, together with the HU-12 acceptance tests (#92).
+Counts from `main` on 28 November 2026, after the HU-12 acceptance tests (#92) were merged.
 
 | Suite | Tests | Covers |
 |---|---|---|
@@ -380,9 +380,10 @@ model, and the model's accuracy and latency are measured separately with the ben
 
 ## 11. Known limitations and unfinished functionality
 
-- **Response time.** The non-functional requirement is at most 10 s per interview turn. On the Beta
-  VM (Tesla M10) a turn takes about 40 s when the model is warm, and over 60 s when a call hits the
-  timeout ([`deployment-vm.md`](deployment-vm.md)). The proxy and nginx allow 120 s per request.
+- **Response time.** The non-functional requirement is at most 10 s per interview turn. In the
+  interview test on the Beta VM (Tesla M10) on 14 November 2026, a turn took about 40 s when the
+  model was warm, and over 60 s when a call hit the timeout ([`deployment-vm.md`](deployment-vm.md)).
+  The 10 s target is still not met. The proxy and nginx allow 120 s per request.
 - **Knowledge base.** The demo knowledge base has 3 questions, mapped to PR.AA-01, PR.AA-03 and
   PR.AA-05 (`backend/app/agent/data/kb_demo.yaml`). Aligo asked for 20–25 subcategories across all
   six CSF functions.
