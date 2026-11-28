@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import InterviewAvatar from "./InterviewAvatar.jsx";
 import { getInterview, submitInterviewTurn } from "./api.js";
+import { loadInterviewDraft, saveInterviewDraft } from "./draftStorage.js";
 import { describeInterviewError, isRetryableInterviewError } from "./errors.js";
 import EvidenceUpload from "../organizations/EvidenceUpload.jsx";
 
@@ -16,11 +17,15 @@ const TURN_TYPE_LABELS = {
 };
 
 const EVIDENCE_EXAMPLES = {
-  "PR.AA-01": "A copy of your offboarding procedure or a redacted record showing when a former employee’s access was disabled.",
-  "PR.AA-03": "A redacted screenshot or export of the policy requiring MFA for administrator accounts.",
-  "PR.AA-05": "A redacted record of the last access review showing when it took place and who approved it.",
+  "PR.AA-01":
+    "A copy of your offboarding procedure or a redacted record showing when a former employee’s access was disabled.",
+  "PR.AA-03":
+    "A redacted screenshot or export of the policy requiring MFA for administrator accounts.",
+  "PR.AA-05":
+    "A redacted record of the last access review showing when it took place and who approved it.",
 };
-const GENERAL_EVIDENCE_EXAMPLE = "A redacted policy, screenshot, or dated record showing how your organization handles the practice described above.";
+const GENERAL_EVIDENCE_EXAMPLE =
+  "A redacted policy, screenshot, or dated record showing how your organization handles the practice described above.";
 
 function newRequestId() {
   if (globalThis.crypto?.randomUUID) {
@@ -36,12 +41,24 @@ function mergeTurns(current, incoming) {
 }
 
 export default function InterviewConversation({
-  organizationId, assessmentId, interview, accessToken, onSessionClosed, participantName,
+  organizationId,
+  assessmentId,
+  interview,
+  accessToken,
+  onSessionClosed,
+  participantName,
 }) {
   const session = interview.session;
+  const [savedDraft] = useState(() => {
+    if (session?.closed) return null;
+    const draft = loadInterviewDraft(session.id);
+    const openTurn = mergeTurns([], interview.turns || []).at(-1);
+    // Only restore a draft written for the question that is still open.
+    return draft && openTurn?.speaker === "agent" && draft.turnId === openTurn.id ? draft : null;
+  });
   const [turns, setTurns] = useState(() => mergeTurns([], interview.turns || []));
   const [closed, setClosed] = useState(Boolean(session?.closed));
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(savedDraft?.content ?? "");
   const [isTyping, setIsTyping] = useState(false);
   const typingTimerRef = useRef(null);
   const [isSending, setIsSending] = useState(false);
@@ -49,7 +66,7 @@ export default function InterviewConversation({
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const accessTokenRef = useRef(accessToken);
-  const pendingRequestRef = useRef(null);
+  const pendingRequestRef = useRef(savedDraft?.pending ?? null);
   const sendingRef = useRef(false);
   const activeRef = useRef(true);
   const endRef = useRef(null);
@@ -74,8 +91,7 @@ export default function InterviewConversation({
   const latestTurn = turns[turns.length - 1];
   const latestAgentTurn = [...turns].reverse().find((turn) => turn.speaker === "agent");
   const awaitingAnswer = !closed && latestTurn?.speaker === "agent";
-  const showEvidenceUpload =
-    awaitingAnswer && latestTurn?.turn_type === "evidence_request";
+  const showEvidenceUpload = awaitingAnswer && latestTurn?.turn_type === "evidence_request";
   // Model turns take ~20–40 s on the Beta GPU: show how long the current one has been running.
   useEffect(() => {
     if (!isSending) {
@@ -83,7 +99,10 @@ export default function InterviewConversation({
       return undefined;
     }
     const startedAt = Date.now();
-    const timer = setInterval(() => setWaitSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    const timer = setInterval(
+      () => setWaitSeconds(Math.floor((Date.now() - startedAt) / 1000)),
+      1000,
+    );
     return () => clearInterval(timer);
   }, [isSending]);
 
@@ -93,9 +112,19 @@ export default function InterviewConversation({
     }
   }, [awaitingAnswer, isSending, turns.length]);
 
+  function storeDraft(content) {
+    const pending =
+      pendingRequestRef.current?.content === content.trim() ? pendingRequestRef.current : null;
+    saveInterviewDraft(
+      session.id,
+      content.trim() && latestAgentTurn ? { content, pending, turnId: latestAgentTurn.id } : null,
+    );
+  }
+
   function updateAnswer(event) {
     const value = event.target.value;
     setAnswer(value);
+    storeDraft(value);
     setIsTyping(Boolean(value.trim()));
     clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => setIsTyping(false), 1800);
@@ -119,10 +148,12 @@ export default function InterviewConversation({
     setError("");
     setCanRetry(false);
 
-    const pending = pendingRequestRef.current?.content === content
-      ? pendingRequestRef.current
-      : { content, id: newRequestId() };
+    const pending =
+      pendingRequestRef.current?.content === content
+        ? pendingRequestRef.current
+        : { content, id: newRequestId() };
     pendingRequestRef.current = pending;
+    storeDraft(answer);
 
     try {
       const receipt = await submitInterviewTurn(
@@ -142,10 +173,16 @@ export default function InterviewConversation({
       }
       pendingRequestRef.current = null;
       setAnswer("");
+      saveInterviewDraft(session.id, null);
 
       if (receipt.idempotent_replay) {
         try {
-          const refreshed = await getInterview(organizationId, assessmentId, session.id, accessTokenRef.current);
+          const refreshed = await getInterview(
+            organizationId,
+            assessmentId,
+            session.id,
+            accessTokenRef.current,
+          );
           if (!activeRef.current) {
             return;
           }
@@ -157,7 +194,9 @@ export default function InterviewConversation({
             return;
           }
           setTurns((current) => mergeTurns(current, [receipt.turn]));
-          setError("Your answer was saved, but the conversation could not be refreshed. Reopen the interview to continue.");
+          setError(
+            "Your answer was saved, but the conversation could not be refreshed. Reopen the interview to continue.",
+          );
         }
       } else {
         setTurns((current) => mergeTurns(current, [receipt.turn, ...(receipt.agent_turns || [])]));
@@ -186,10 +225,14 @@ export default function InterviewConversation({
         <div>
           <p className="eyebrow">INTERVIEW</p>
           <h2>{interview.assessment_title || "Assessment interview"}</h2>
-          {interview.organization_name && <p className="interview-organization">{interview.organization_name}</p>}
+          {interview.organization_name && (
+            <p className="interview-organization">{interview.organization_name}</p>
+          )}
         </div>
         {typeof scopeCount === "number" && (
-          <span className="interview-scope">{scopeCount} {scopeCount === 1 ? "control" : "controls"} in scope</span>
+          <span className="interview-scope">
+            {scopeCount} {scopeCount === 1 ? "control" : "controls"} in scope
+          </span>
         )}
       </header>
 
@@ -200,88 +243,107 @@ export default function InterviewConversation({
           />
         </div>
         <div className="interview-chat-panel">
-
-      <ol className="interview-turns" role="log" aria-label="Interview conversation" aria-live="polite">
-        {turns.map((turn) => (
-          <li key={turn.id} className={`interview-turn is-${turn.speaker === "agent" ? "agent" : "participant"}`}>
-            <div className="interview-turn-meta">
-              <span className="interview-speaker">
-                {turn.speaker === "agent"
-                  ? "Agentic GRC Assistant"
-                  : turn.participant_id && turn.participant_id === interview.participant_id
-                    ? participantName || "You"
-                    : "Participant"}
-              </span>
-              {turn.speaker === "agent" && TURN_TYPE_LABELS[turn.turn_type] && (
-                <span className="interview-turn-type">{TURN_TYPE_LABELS[turn.turn_type]}</span>
-              )}
-            </div>
-            <p>{turn.content}</p>
-          </li>
-        ))}
-        <li ref={endRef} className="interview-end" aria-hidden="true" />
-      </ol>
-      {showEvidenceUpload && (
-        <EvidenceUpload
-          key={latestTurn.id}
-          organizationId={organizationId}
-          assessmentId={assessmentId}
-          accessToken={accessToken}
-          interviewContext={{
-            sessionId: session.id,
-            requestTurnId: latestTurn.id,
-          }}
-          example={EVIDENCE_EXAMPLES[latestTurn.evidence_control_code] ?? GENERAL_EVIDENCE_EXAMPLE}
-          title={
-            latestTurn.evidence_control_code
-              ? `Upload evidence for ${latestTurn.evidence_control_code}`
-              : "Upload evidence"
-          }
-        />
-      )}
-      {isSending && (
-        <p className="interview-status" role="status">
-          Thinking… The assistant is reviewing your answer.
-          <span className="interview-status-hint" aria-hidden="true">
-            {" "}{waitSeconds}s · this usually takes 20–40 seconds
-          </span>
-        </p>
-      )}
-      {error && <p className="inline-error" role="alert">{error}</p>}
-
-      {closed ? (
-        <p className="interview-complete" role="status">
-          The interview is complete. Your answers were saved and will go to an expert for review.
-        </p>
-      ) : (
-        <form className="interview-form" onSubmit={submit}>
-          <label htmlFor="interview-answer">Your answer</label>
-          <textarea
-            id="interview-answer"
-            ref={answerRef}
-            value={answer}
-            onChange={updateAnswer}
-            onBlur={stopTyping}
-            maxLength={MAX_ANSWER_LENGTH}
-            rows={3}
-            disabled={isSending || !awaitingAnswer}
-            placeholder={awaitingAnswer ? "Describe how this works in your organization." : ""}
-          />
-          <div className="interview-form-footer">
-            <span>{answer.length} / {MAX_ANSWER_LENGTH}</span>
-            <button
-              className="primary-button"
-              type="submit"
-              disabled={isSending || !awaitingAnswer || !answer.trim()}
-            >
-              {isSending ? "Sending…" : canRetry ? "Retry sending" : "Send answer"}
-            </button>
-          </div>
-          {!awaitingAnswer && (
-            <p className="interview-hint">There is no open question. Reopen the interview to continue.</p>
+          <ol
+            className="interview-turns"
+            role="log"
+            aria-label="Interview conversation"
+            aria-live="polite"
+          >
+            {turns.map((turn) => (
+              <li
+                key={turn.id}
+                className={`interview-turn is-${turn.speaker === "agent" ? "agent" : "participant"}`}
+              >
+                <div className="interview-turn-meta">
+                  <span className="interview-speaker">
+                    {turn.speaker === "agent"
+                      ? "Agentic GRC Assistant"
+                      : turn.participant_id && turn.participant_id === interview.participant_id
+                        ? participantName || "You"
+                        : "Participant"}
+                  </span>
+                  {turn.speaker === "agent" && TURN_TYPE_LABELS[turn.turn_type] && (
+                    <span className="interview-turn-type">{TURN_TYPE_LABELS[turn.turn_type]}</span>
+                  )}
+                </div>
+                <p>{turn.content}</p>
+              </li>
+            ))}
+            <li ref={endRef} className="interview-end" aria-hidden="true" />
+          </ol>
+          {showEvidenceUpload && (
+            <EvidenceUpload
+              key={latestTurn.id}
+              organizationId={organizationId}
+              assessmentId={assessmentId}
+              accessToken={accessToken}
+              interviewContext={{
+                sessionId: session.id,
+                requestTurnId: latestTurn.id,
+              }}
+              example={
+                EVIDENCE_EXAMPLES[latestTurn.evidence_control_code] ?? GENERAL_EVIDENCE_EXAMPLE
+              }
+              title={
+                latestTurn.evidence_control_code
+                  ? `Upload evidence for ${latestTurn.evidence_control_code}`
+                  : "Upload evidence"
+              }
+            />
           )}
-        </form>
-      )}
+          {isSending && (
+            <p className="interview-status" role="status">
+              Thinking… The assistant is reviewing your answer.
+              <span className="interview-status-hint" aria-hidden="true">
+                {" "}
+                {waitSeconds}s · this usually takes 20–40 seconds
+              </span>
+            </p>
+          )}
+          {error && (
+            <p className="inline-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          {closed ? (
+            <p className="interview-complete" role="status">
+              The interview is complete. Your answers were saved and will go to an expert for
+              review.
+            </p>
+          ) : (
+            <form className="interview-form" onSubmit={submit}>
+              <label htmlFor="interview-answer">Your answer</label>
+              <textarea
+                id="interview-answer"
+                ref={answerRef}
+                value={answer}
+                onChange={updateAnswer}
+                onBlur={stopTyping}
+                maxLength={MAX_ANSWER_LENGTH}
+                rows={3}
+                disabled={isSending || !awaitingAnswer}
+                placeholder={awaitingAnswer ? "Describe how this works in your organization." : ""}
+              />
+              <div className="interview-form-footer">
+                <span>
+                  {answer.length} / {MAX_ANSWER_LENGTH}
+                </span>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={isSending || !awaitingAnswer || !answer.trim()}
+                >
+                  {isSending ? "Sending…" : canRetry ? "Retry sending" : "Send answer"}
+                </button>
+              </div>
+              {!awaitingAnswer && (
+                <p className="interview-hint">
+                  There is no open question. Reopen the interview to continue.
+                </p>
+              )}
+            </form>
+          )}
         </div>
       </div>
     </section>

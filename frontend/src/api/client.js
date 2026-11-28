@@ -12,7 +12,48 @@ export class ApiError extends Error {
   }
 }
 
+let accessTokenRefresher = null;
+
+// The auth layer registers how to obtain a renewed access token. Supabase only refreshes the
+// token on a timer while the tab is visible, so a request can still carry a token that expired
+// while the tab was in the background; on a 401 the request is retried once with a renewed token.
+export function setAccessTokenRefresher(refresher) {
+  accessTokenRefresher = refresher;
+  return () => {
+    if (accessTokenRefresher === refresher) {
+      accessTokenRefresher = null;
+    }
+  };
+}
+
+async function renewedAccessToken(staleToken) {
+  if (!accessTokenRefresher) {
+    return null;
+  }
+  try {
+    const token = await accessTokenRefresher(staleToken);
+    return token && token !== staleToken ? token : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiRequest(path, { accessToken, ...options } = {}) {
+  try {
+    return await sendRequest(path, accessToken, options);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401 || !accessToken) {
+      throw error;
+    }
+    const renewed = await renewedAccessToken(accessToken);
+    if (!renewed) {
+      throw error;
+    }
+    return sendRequest(path, renewed, options);
+  }
+}
+
+async function sendRequest(path, accessToken, options) {
   const headers = new Headers(options.headers || {});
   headers.set("Accept", "application/json");
 

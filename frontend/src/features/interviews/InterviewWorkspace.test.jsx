@@ -18,7 +18,12 @@ vi.mock("../organizations/api.js", () => ({ listOrganizations: vi.fn() }));
 
 const organizations = [{ id: "org-1", name: "Acme Corp" }];
 const assessments = [
-  { id: "assessment-1", title: "NIST CSF baseline", status: "in_progress", accepts_interviews: true },
+  {
+    id: "assessment-1",
+    title: "NIST CSF baseline",
+    status: "in_progress",
+    accepts_interviews: true,
+  },
   { id: "assessment-2", title: "Old assessment", status: "completed", accepts_interviews: false },
 ];
 
@@ -83,7 +88,9 @@ function receipt(overrides = {}) {
 }
 
 async function openSelectedInterview() {
-  const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });
+  const button = await screen.findByRole("button", {
+    name: /^(Start|Resume|View|Open) interview$/,
+  });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
   return screen.findByRole("log", { name: "Interview conversation" });
@@ -105,6 +112,7 @@ function renderWorkspace(props = {}) {
 describe("InterviewWorkspace", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    window.sessionStorage.clear();
     listOrganizations.mockResolvedValue(organizations);
     listAssessments.mockResolvedValue(assessments);
     openInterview.mockResolvedValue(interview());
@@ -127,13 +135,33 @@ describe("InterviewWorkspace", () => {
   });
 
   it("labels the participant's own turns and gives an example for the active evidence request", async () => {
-    openInterview.mockResolvedValue(interview({
-      turns: [
-        turn({ speaker: "participant", participant_id: "participant-other", turn_type: "answer", content: "Earlier answer" }),
-        turn({ id: "turn-2", sequence_no: 2, speaker: "participant", participant_id: "participant-1", turn_type: "answer", content: "We use MFA." }),
-        turn({ id: "turn-3", sequence_no: 3, turn_type: "evidence_request", evidence_control_code: "PR.AA-03", content: "Please upload supporting evidence." }),
-      ],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        turns: [
+          turn({
+            speaker: "participant",
+            participant_id: "participant-other",
+            turn_type: "answer",
+            content: "Earlier answer",
+          }),
+          turn({
+            id: "turn-2",
+            sequence_no: 2,
+            speaker: "participant",
+            participant_id: "participant-1",
+            turn_type: "answer",
+            content: "We use MFA.",
+          }),
+          turn({
+            id: "turn-3",
+            sequence_no: 3,
+            turn_type: "evidence_request",
+            evidence_control_code: "PR.AA-03",
+            content: "Please upload supporting evidence.",
+          }),
+        ],
+      }),
+    );
     renderWorkspace({ initialAssessmentId: "assessment-1", participantName: "Alex Example" });
 
     const log = await openSelectedInterview();
@@ -151,7 +179,9 @@ describe("InterviewWorkspace", () => {
     fireEvent.change(assessmentSelect, { target: { value: "assessment-2" } });
 
     expect(await screen.findByRole("button", { name: "Start interview" })).toBeDisabled();
-    expect(screen.getByText(/completed and no longer accepts interview answers/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/completed and no longer accepts interview answers/),
+    ).toBeInTheDocument();
   });
 
   it("saves an answer with the question it replies to and shows the follow-up", async () => {
@@ -190,19 +220,27 @@ describe("InterviewWorkspace", () => {
       question_id: "question-2",
       replies_to_turn_id: "turn-3",
     });
-    expect(submitInterviewTurn.mock.calls[1][2].client_request_id)
-      .not.toBe(submitInterviewTurn.mock.calls[0][2].client_request_id);
+    expect(submitInterviewTurn.mock.calls[1][2].client_request_id).not.toBe(
+      submitInterviewTurn.mock.calls[0][2].client_request_id,
+    );
   });
 
   it("uses the shared assessment status label for assessments awaiting review", async () => {
     listAssessments.mockResolvedValue([
-      { id: "review-1", title: "Review assessment", status: "awaiting_review", accepts_interviews: true },
+      {
+        id: "review-1",
+        title: "Review assessment",
+        status: "awaiting_review",
+        accepts_interviews: true,
+      },
     ]);
     renderWorkspace();
 
-    expect(await screen.findByRole("option", {
-      name: "Review assessment · Awaiting review",
-    })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", {
+        name: "Review assessment · Awaiting review",
+      }),
+    ).toBeInTheDocument();
     // A second participant can still answer while results await review.
     expect(screen.queryByText(/no longer accepts interview answers/)).not.toBeInTheDocument();
   });
@@ -219,7 +257,11 @@ describe("InterviewWorkspace", () => {
 
   it("sends one request when the answer is submitted twice while saving", async () => {
     let resolveTurn;
-    submitInterviewTurn.mockReturnValue(new Promise((resolve) => { resolveTurn = resolve; }));
+    submitInterviewTurn.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTurn = resolve;
+      }),
+    );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
 
@@ -251,8 +293,9 @@ describe("InterviewWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry sending" }));
 
     await screen.findByText("Who reviews access rights?");
-    expect(submitInterviewTurn.mock.calls[1][2].client_request_id)
-      .toBe(submitInterviewTurn.mock.calls[0][2].client_request_id);
+    expect(submitInterviewTurn.mock.calls[1][2].client_request_id).toBe(
+      submitInterviewTurn.mock.calls[0][2].client_request_id,
+    );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -268,8 +311,9 @@ describe("InterviewWorkspace", () => {
     sendAnswer("We use Okta with MFA.");
 
     await screen.findByText("Who reviews access rights?");
-    expect(submitInterviewTurn.mock.calls[1][2].client_request_id)
-      .not.toBe(submitInterviewTurn.mock.calls[0][2].client_request_id);
+    expect(submitInterviewTurn.mock.calls[1][2].client_request_id).not.toBe(
+      submitInterviewTurn.mock.calls[0][2].client_request_id,
+    );
   });
 
   it("shows the API message when the answer is rejected", async () => {
@@ -281,15 +325,19 @@ describe("InterviewWorkspace", () => {
 
     sendAnswer("We use Okta with MFA.");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("This question already has a result.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This question already has a result.",
+    );
     expect(screen.getByRole("button", { name: "Send answer" })).toBeEnabled();
   });
 
   it("reloads the transcript when the answer was already recorded", async () => {
     submitInterviewTurn.mockResolvedValue(receipt({ agent_turns: [], idempotent_replay: true }));
-    getInterview.mockResolvedValue(interview({
-      turns: [turn(), receipt().turn, receipt().agent_turns[0]],
-    }));
+    getInterview.mockResolvedValue(
+      interview({
+        turns: [turn(), receipt().turn, receipt().agent_turns[0]],
+      }),
+    );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
 
@@ -314,10 +362,12 @@ describe("InterviewWorkspace", () => {
 
   it("resumes a conversation in progress with the earlier answers", async () => {
     getKickoffStatus.mockResolvedValue(interview().session);
-    openInterview.mockResolvedValue(interview({
-      resumed: true,
-      turns: [turn(), receipt().turn, receipt().agent_turns[0]],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        resumed: true,
+        turns: [turn(), receipt().turn, receipt().agent_turns[0]],
+      }),
+    );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
 
     const button = await screen.findByRole("button", { name: "Resume interview" });
@@ -355,10 +405,12 @@ describe("InterviewWorkspace", () => {
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
     expect(screen.queryByText("Who reviews access rights?")).not.toBeInTheDocument();
-    openInterview.mockResolvedValue(interview({
-      resumed: true,
-      turns: [turn(), receipt().turn, receipt().agent_turns[0]],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        resumed: true,
+        turns: [turn(), receipt().turn, receipt().agent_turns[0]],
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }));
@@ -371,11 +423,13 @@ describe("InterviewWorkspace", () => {
   it("applies a closed session when the interview is opened again", async () => {
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
-    openInterview.mockResolvedValue(interview({
-      resumed: true,
-      session: { id: "session-1", closed: true },
-      turns: [turn(), receipt().turn],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        resumed: true,
+        session: { id: "session-1", closed: true },
+        turns: [turn(), receipt().turn],
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }));
@@ -392,10 +446,12 @@ describe("InterviewWorkspace", () => {
     sendAnswer("We use Okta with MFA.");
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be refreshed");
     expect(screen.queryByText("Who reviews access rights?")).not.toBeInTheDocument();
-    openInterview.mockResolvedValue(interview({
-      resumed: true,
-      turns: [turn(), receipt().turn, receipt().agent_turns[0]],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        resumed: true,
+        turns: [turn(), receipt().turn, receipt().agent_turns[0]],
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
     fireEvent.click(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }));
@@ -405,10 +461,12 @@ describe("InterviewWorkspace", () => {
   });
 
   it("opens a finished interview read-only", async () => {
-    openInterview.mockResolvedValue(interview({
-      session: { id: "session-1", closed: true },
-      turns: [turn(), receipt().turn],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        session: { id: "session-1", closed: true },
+        turns: [turn(), receipt().turn],
+      }),
+    );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
 
     await openSelectedInterview();
@@ -418,9 +476,18 @@ describe("InterviewWorkspace", () => {
   });
 
   it("never shows draft results", async () => {
-    openInterview.mockResolvedValue(interview({
-      draft_results: [{ id: "result-1", control_code: "PR.AA-03", status: "not_implemented", explanation: "Secret draft" }],
-    }));
+    openInterview.mockResolvedValue(
+      interview({
+        draft_results: [
+          {
+            id: "result-1",
+            control_code: "PR.AA-03",
+            status: "not_implemented",
+            explanation: "Secret draft",
+          },
+        ],
+      }),
+    );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
 
     await openSelectedInterview();
@@ -434,31 +501,50 @@ describe("InterviewWorkspace", () => {
       new ApiError(409, { detail: "This assessment has no in-scope controls." }),
     );
     renderWorkspace({ initialAssessmentId: "assessment-1" });
-    const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });
+    const button = await screen.findByRole("button", {
+      name: /^(Start|Resume|View|Open) interview$/,
+    });
     await waitFor(() => expect(button).toBeEnabled());
 
     fireEvent.click(button);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("This assessment has no in-scope controls.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This assessment has no in-scope controls.",
+    );
     expect(screen.queryByRole("log")).not.toBeInTheDocument();
   });
 
   it("ignores an interview that finishes opening after another assessment was chosen", async () => {
     let resolveOpen;
-    openInterview.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve; }));
+    openInterview.mockReturnValue(
+      new Promise((resolve) => {
+        resolveOpen = resolve;
+      }),
+    );
     listAssessments.mockResolvedValue([
       assessments[0],
-      { id: "assessment-3", title: "Second assessment", status: "in_progress", accepts_interviews: true },
+      {
+        id: "assessment-3",
+        title: "Second assessment",
+        status: "in_progress",
+        accepts_interviews: true,
+      },
     ]);
     renderWorkspace({ initialAssessmentId: "assessment-1" });
-    const button = await screen.findByRole("button", { name: /^(Start|Resume|View|Open) interview$/ });
+    const button = await screen.findByRole("button", {
+      name: /^(Start|Resume|View|Open) interview$/,
+    });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
 
     fireEvent.change(screen.getByLabelText("Assessment"), { target: { value: "assessment-3" } });
     resolveOpen(interview());
 
-    await waitFor(() => expect(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeEnabled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }),
+      ).toBeEnabled(),
+    );
     expect(screen.queryByRole("log")).not.toBeInTheDocument();
   });
 
@@ -491,7 +577,11 @@ describe("InterviewWorkspace", () => {
   });
   it("connects avatar attention to typing, blur, sending and a real response", async () => {
     let resolveTurn;
-    submitInterviewTurn.mockReturnValue(new Promise((resolve) => { resolveTurn = resolve; }));
+    submitInterviewTurn.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTurn = resolve;
+      }),
+    );
     const { container } = renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
     const avatar = () => container.querySelector(".interview-avatar-figure");
@@ -502,7 +592,9 @@ describe("InterviewWorkspace", () => {
     expect(avatar()).toHaveClass("interview-avatar-idle");
     sendAnswer("We use MFA.");
     expect(avatar()).toHaveClass("interview-avatar-processing");
-    await act(async () => { resolveTurn(receipt()); });
+    await act(async () => {
+      resolveTurn(receipt());
+    });
     expect(avatar()).toHaveClass("interview-avatar-idle");
     expect(screen.getByRole("log")).toHaveTextContent("Who reviews access rights?");
   });
@@ -513,11 +605,20 @@ describe("InterviewWorkspace", () => {
     vi.useFakeTimers();
     try {
       fireEvent.change(answerBox(), { target: { value: "MFA" } });
-      act(() => { vi.advanceTimersByTime(1200); });
+      act(() => {
+        vi.advanceTimersByTime(1200);
+      });
       expect(container.querySelector(".interview-avatar-typing")).not.toBeNull();
-      act(() => { vi.advanceTimersByTime(600); });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
       expect(container.querySelector(".interview-avatar-idle")).not.toBeNull();
       fireEvent.change(answerBox(), { target: { value: "MFA enforced" } });
+      // jsdom dispatches the draft's storage event on a 0 ms timer; only the typing timer may remain.
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      expect(vi.getTimerCount()).toBe(1);
       unmount();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -537,14 +638,82 @@ describe("InterviewWorkspace", () => {
   it("collapses selection on start and retains the answer when selection is toggled", async () => {
     renderWorkspace({ initialAssessmentId: "assessment-1" });
     await openSelectedInterview();
-    expect(screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }),
+    ).toBeNull();
     fireEvent.change(answerBox(), { target: { value: "Draft answer" } });
     fireEvent.click(screen.getByRole("button", { name: "Change assessment" }));
-    expect(screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }),
+    ).toBeEnabled();
     expect(answerBox()).toHaveValue("Draft answer");
     fireEvent.click(screen.getByRole("button", { name: "Hide selection" }));
     expect(answerBox()).toHaveValue("Draft answer");
-    expect(screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^(Start|Resume|View|Open) interview$/ }),
+    ).toBeNull();
   });
 
+  describe("when the session expires mid-interview", () => {
+    it("keeps the unsent answer and resends it with the same request id after signing in again", async () => {
+      submitInterviewTurn.mockRejectedValueOnce(
+        new ApiError(401, { detail: "A valid Supabase session is required." }),
+      );
+      const first = renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      sendAnswer("We use Okta with MFA.");
+      expect(await screen.findByRole("alert")).toHaveTextContent("session has expired");
+      const firstRequestId = submitInterviewTurn.mock.calls[0][2].client_request_id;
+
+      // Signing in again unmounts the workspace and mounts a new one.
+      first.unmount();
+      getKickoffStatus.mockResolvedValue({ id: "session-1", closed: false });
+      renderWorkspace({ accessToken: "token-b", initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+
+      expect(answerBox()).toHaveValue("We use Okta with MFA.");
+      fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+      await screen.findByText("Who reviews access rights?");
+      const retry = submitInterviewTurn.mock.calls[1];
+      expect(retry[2]).toMatchObject({
+        client_request_id: firstRequestId,
+        replies_to_turn_id: "turn-1",
+      });
+      expect(retry[3]).toBe("token-b");
+      expect(window.sessionStorage.getItem("agrc.interview-draft:session-1")).toBeNull();
+    });
+
+    it("does not restore a draft written for a question that is no longer open", async () => {
+      const first = renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      fireEvent.change(answerBox(), { target: { value: "Answer to the old question" } });
+      first.unmount();
+
+      const answered = interview({
+        turns: [turn(), receipt().turn, ...receipt().agent_turns],
+      });
+      openInterview.mockResolvedValue(answered);
+      renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+
+      expect(answerBox()).toHaveValue("");
+    });
+
+    it("starts a new request id when the restored answer is edited", async () => {
+      submitInterviewTurn.mockRejectedValueOnce(new ApiError(401, {}));
+      const first = renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      sendAnswer("We use MFA.");
+      await screen.findByRole("alert");
+      const firstRequestId = submitInterviewTurn.mock.calls[0][2].client_request_id;
+      first.unmount();
+
+      renderWorkspace({ initialAssessmentId: "assessment-1" });
+      await openSelectedInterview();
+      sendAnswer("We use MFA for every administrator.");
+      await screen.findByText("Who reviews access rights?");
+
+      expect(submitInterviewTurn.mock.calls[1][2].client_request_id).not.toBe(firstRequestId);
+    });
+  });
 });

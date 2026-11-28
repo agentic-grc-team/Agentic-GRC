@@ -1,7 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { ApiError } from "../api/client.js";
+import { ApiError, setAccessTokenRefresher } from "../api/client.js";
 import { toBrowserPath } from "../basePath.js";
+import { clearInterviewDrafts } from "../features/interviews/draftStorage.js";
 import { getCurrentAccount } from "./api.js";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase.js";
 
@@ -27,14 +36,22 @@ function getAccountOnce(accessToken, requestRef) {
   return request;
 }
 
+export const SESSION_EXPIRED_MESSAGE =
+  "Your session has expired. Sign in again to continue where you left off.";
+
+function isSessionRejected(error) {
+  return error?.status >= 400 && error?.status < 500;
+}
+
 function accountFromSession(account, session) {
   const expirySeconds = session.expires_at || Math.floor(Date.now() / 1000) + 3600;
   const { display_name, full_name, name } = session.user?.user_metadata ?? {};
   return {
     ...account,
-    displayName: [display_name, full_name, name].find(
-      (value) => typeof value === "string" && value.trim(),
-    )?.trim() || "",
+    displayName:
+      [display_name, full_name, name]
+        .find((value) => typeof value === "string" && value.trim())
+        ?.trim() || "",
     accessToken: session.access_token,
     expiresAt: new Date(expirySeconds * 1000).toISOString(),
   };
@@ -58,7 +75,9 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
-      setAuthError("Supabase Auth is not configured. Add the frontend environment values and restart Vite.");
+      setAuthError(
+        "Supabase Auth is not configured. Add the frontend environment values and restart Vite.",
+      );
       setIsLoading(false);
       return undefined;
     }
@@ -66,10 +85,50 @@ export function AuthProvider({ children }) {
     const supabase = getSupabaseClient();
     let isMounted = true;
     let latestRequest = 0;
+    let loadedUserId = null;
+
+    function endExpiredSession() {
+      if (isMounted) {
+        setAuthError(SESSION_EXPIRED_MESSAGE);
+      }
+      void supabase.auth.signOut({ scope: "local" });
+    }
+
+    // Called by the API client after a 401. getSession() renews a token that is about to expire;
+    // if it still returns the rejected token, force a refresh. When the session cannot be renewed,
+    // sign out locally so the user gets the login screen instead of a dead workspace.
+    // getSession() also refreshes an already-expired token itself, so either call can fail for a
+    // network reason or a 5xx. Only a 4xx means Supabase rejected the session; anything else keeps
+    // the user signed in and lets the request fail as it is, so it can be retried.
+    async function refreshAccessToken(staleToken) {
+      const { data, error } = await supabase.auth.getSession();
+      if (error && !isSessionRejected(error)) {
+        return null;
+      }
+      let session = error ? null : data.session;
+      if (session?.access_token === staleToken) {
+        const refreshed = await supabase.auth.refreshSession();
+        if (refreshed.error) {
+          if (!isSessionRejected(refreshed.error)) {
+            return null;
+          }
+          session = null;
+        } else {
+          session = refreshed.data.session;
+        }
+      }
+      if (!session?.access_token) {
+        endExpiredSession();
+        return null;
+      }
+      return session.access_token;
+    }
+    const unregisterRefresher = setAccessTokenRefresher(refreshAccessToken);
 
     async function loadSession(session) {
       const requestId = ++latestRequest;
       if (!session?.access_token) {
+        loadedUserId = null;
         accountRequestRef.current = null;
         if (isMounted) {
           setUser(null);
@@ -81,6 +140,7 @@ export function AuthProvider({ children }) {
       try {
         const account = await getAccountOnce(session.access_token, accountRequestRef);
         if (isMounted && requestId === latestRequest) {
+          loadedUserId = session.user?.id ?? account.id;
           setUser(accountFromSession(account, session));
           setAuthError("");
         }
@@ -100,7 +160,21 @@ export function AuthProvider({ children }) {
       }
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // A refreshed token belongs to the account already loaded: swap the token in place rather
+      // than looking the account up again, so a failed lookup cannot leave the old token in use.
+      if (
+        event === "TOKEN_REFRESHED" &&
+        session?.access_token &&
+        loadedUserId &&
+        session.user?.id === loadedUserId
+      ) {
+        ++latestRequest;
+        setUser((current) => (current ? accountFromSession(current, session) : current));
+        return;
+      }
       queueMicrotask(() => void loadSession(session));
     });
 
@@ -109,7 +183,8 @@ export function AuthProvider({ children }) {
       setAuthError("Google sign-in could not be completed. Please try again.");
     }
 
-    void supabase.auth.getSession()
+    void supabase.auth
+      .getSession()
       .then(({ data, error }) => {
         if (!isMounted) {
           return;
@@ -130,6 +205,7 @@ export function AuthProvider({ children }) {
 
     return () => {
       isMounted = false;
+      unregisterRefresher();
       subscription.unsubscribe();
     };
   }, []);
@@ -178,6 +254,7 @@ export function AuthProvider({ children }) {
     setAuthError("");
     accountRequestRef.current = null;
     setUser(null);
+    clearInterviewDrafts();
     if (isSupabaseConfigured()) {
       await getSupabaseClient().auth.signOut();
     }
