@@ -57,6 +57,7 @@ Recorded runs:
 | Date | Where | Result |
 | --- | --- | --- |
 | 2026-11-19 | Local, PostgreSQL 16, all migrations | 5 passed |
+| 2026-11-19 | CI (Backend tests job), PostgreSQL 16, all migrations (main after #72) | 5 passed |
 
 Checks on the deployed Beta (https://gita.udea.edu.co/agentic-grc/), done in the browser with a consultant and a representative of one organization and a user of a second organization:
 
@@ -94,6 +95,38 @@ Recorded runs:
 | 2026-10-24 | Local, PostgreSQL 16, all migrations | 4 passed |
 | 2026-11-01 | Local, PostgreSQL 16, all migrations | 4 passed |
 | 2026-11-09 | CI (Backend tests job), PostgreSQL 16, all migrations (Sprint 5 main) | 4 passed |
+
+## HU-12 — Identify document passages relevant to controls
+
+Story: as an Aligo consultant, I want the agent to identify which parts of an uploaded document relate to which controls, so that I can review the supporting passages without reading the entire document.
+
+Jira: AGRC-122 · Task: AGRC-128 · Implementation: passage matching (#81, `backend/app/services/passage_matching.py`, `GET .../assessments/{id}/passage-matches`) · Test file: `backend/tests/acceptance/test_hu12_passage_matching.py` · Unit and API tests: `backend/tests/test_passage_matching.py`, `backend/tests/test_passage_matching_api.py`
+
+In every test a consultant creates the assessment through the API, so its controls (PR.AA-01, PR.AA-03, PR.AA-05) come from the knowledge base, and the documents are uploaded through the evidence endpoint. The policy is a real two-page PDF: a cover page, then a "3. PRIVILEGED ACCESS" section that requires multi-factor authentication and a "4. FACILITIES" section about the cafeteria and the visitor log. A plain-text note about the cafeteria is uploaded next to it. Matches are computed when they are read; nothing is stored.
+
+| AC | Given / When / Then | Test | Result |
+| --- | --- | --- | --- |
+| 1 | **Given** an uploaded PDF whose second page has a section on multi-factor authentication, **when** the consultant asks for the assessment's passage matches, **then** that passage is matched to PR.AA-03 with the file, the page and the section, and the location points at exactly that passage in the extracted text. | `test_hu12_ac1_relevant_passage_matched_to_control_with_file_and_page` | Pass |
+| 2 | **Given** the same PDF with a facilities section, and an uploaded note about the cafeteria, **when** the consultant asks for the passage matches, **then** no passage of the facilities section and nothing from the note is proposed for any control, even though the facilities section uses the word "administrator". | `test_hu12_ac2_unrelated_passage_is_not_supporting_evidence` | Pass |
+| 3 | **Given** organization A with the policy in one assessment and a copy shared by the whole organization, a second assessment of A, and an organization B, **when** a member of B, or the second assessment of A, asks for matches of A's documents, **then** B gets nothing, and A's second assessment does not reuse the first assessment's file; it only gets the shared copy. | `test_hu12_ac3_matches_stay_in_their_organization_and_assessment` | Pass |
+| 4 | **Given** the uploaded documents, **when** the matches are requested again, for the whole assessment and for the policy file alone, **then** every request returns the same single match, with no duplicate passage, and nothing is written. | `test_hu12_ac4_reprocessing_creates_no_duplicates` | Pass |
+| 5 | **Given** a proposed match of the policy to PR.AA-03, **when** it is read, and again after the consultant links the file to PR.AA-03, **then** the match is marked not verified both times, only `linked` changes, and the control still has no result. | `test_hu12_ac5_proposed_matches_remain_unverified` | Pass |
+
+What each test checks:
+
+1. The single match of the PDF is PR.AA-03 on `access-policy.pdf`, page 2, section "3. PRIVILEGED ACCESS", reference `document_span:<file id>#page=2`, with the MFA sentence as the excerpt and "multi factor authentication" among the matched terms. The character range of the locator, cut from the stored extracted text, is that sentence.
+2. Two files are checked, and the only match is the MFA passage: nothing from the note, nothing from the "4. FACILITIES" section, and no excerpt with "cafeteria" or "visitor log". The facilities sentence has "administrator", a supporting term of PR.AA-03, but a supporting term alone never makes a match.
+3. A member of B gets 404 for A's matches through A's path and through B's path with A's assessment id. B's own assessment checks no file, also when A's assessment file or A's shared file is asked for by id. A's second assessment gets no match for the first assessment's file, and gets the shared copy with its own file id. A's representative reads both matches of the first assessment.
+4. Two reads of the whole assessment and one read for the policy file alone return the same list, with one match and no repeated (file, control, passage) entry. The organization still has no evidence link and no control result.
+5. The match is `not_verified` and not linked. After the consultant links the file to PR.AA-03 (201), it is still `not_verified`, `linked` is true, every other field is the same, and PR.AA-03 still has no control result.
+
+Each test was also checked against a deliberately broken implementation (files read without the organization filter, files read without the assessment filter, a supporting term alone making a match, the page dropped from the reference, the endpoint without the membership check, a match listed twice); the matching test failed every time.
+
+Recorded runs:
+
+| Date | Where | Result |
+| --- | --- | --- |
+| 2026-11-28 | Local, PostgreSQL 16, all migrations | 5 passed |
 
 ## HU-17 — See the gaps ordered by criticality
 
