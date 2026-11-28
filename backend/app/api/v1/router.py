@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     passage_matches,
     reference_data,
     reports,
+    tenant_snapshots,
     traces,
 )
 
@@ -34,3 +35,4 @@ api_router.include_router(expert_reviews.router)
 api_router.include_router(reports.router)
 api_router.include_router(gaps.router)
 api_router.include_router(passage_matches.router)
+api_router.include_router(tenant_snapshots.router)

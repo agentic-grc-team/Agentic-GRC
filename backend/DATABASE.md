@@ -51,6 +51,12 @@ Checkpoint threads use the assessment session UUID. Graph state must be JSON-com
 
 The backend defaults `INTERVIEW_DATA_MODE` to `synthetic`. `approved_anonymized` requires `INTERVIEW_ANONYMIZED_DATA_APPROVED=true`. `real` fails settings validation unless transfer, retention, deletion, redaction, storage, and topology gates are each explicitly enabled. These switches record deployment approvals; they do not replace the required written approval in [ADR 0003](../docs/decisions/0003-interview-data-governance.md).
 
+## Microsoft 365 configuration snapshots
+
+`20261128_0012_tenant_configuration_snapshots` adds `public.tenant_configuration_snapshots` (AGRC-161). Each row is one dated read of an organization's Microsoft 365 tenant for one assessment: the composite foreign key keeps the assessment in the same organization, `collected_by_user_id` records the consultant, and `data` (JSONB) holds every collected section with its status (`collected`, or `not_available` when the tenant licence lacks the feature). Rows are only added after the whole read succeeds and are never edited; a new collection adds a new row. Decision traces cite them as `tenant_configuration:<snapshot_id>/<path>`.
+
+The snapshot lists the tenant's users and administrators, so the API only shows it to administrators and consultants of the organization. `MS365_DATA_MODE` is `disabled` by default; `sample` reads bundled synthetic data, and `graph` reads the tenant of `MS365_ORGANIZATION_ID` with read-only application permissions.
+
 ## Self-hosted PostgreSQL (Beta VM)
 
 On a plain PostgreSQL, `auth.users` is only the stub from `tests/sql/supabase_auth_stub.sql`; it keeps

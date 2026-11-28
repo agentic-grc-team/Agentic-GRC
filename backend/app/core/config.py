@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -65,6 +66,15 @@ class Settings(BaseSettings):
     allow_demo_report: bool = False
     # Self-hosted PostgreSQL only: mirror Supabase-verified users into the local auth.users stub.
     auth_mirror_local_identities: bool = False
+    # Microsoft 365 configuration evidence (AGRC-161). "disabled" turns collection off, "sample" reads
+    # bundled sample data instead of a tenant, "graph" reads the tenant below through Microsoft Graph.
+    ms365_data_mode: Literal["disabled", "sample", "graph"] = "disabled"
+    ms365_tenant_id: str | None = None
+    ms365_client_id: str | None = None
+    ms365_client_secret: SecretStr | None = None
+    # The one app registration belongs to one client's tenant, so only this organization may read it.
+    ms365_organization_id: UUID | None = None
+    ms365_timeout_seconds: float = Field(default=20, gt=0, le=120)
 
     @field_validator("supabase_url")
     @classmethod
@@ -134,6 +144,24 @@ class Settings(BaseSettings):
                     "A remote interview model requires AGRC_OLLAMA_API_KEY "
                     "(Ollama itself has no authentication)."
                 )
+
+        if self.ms365_data_mode == "graph":
+            missing_ms365 = [
+                name
+                for name, value in (
+                    ("MS365_TENANT_ID", self.ms365_tenant_id),
+                    ("MS365_CLIENT_ID", self.ms365_client_id),
+                    ("MS365_CLIENT_SECRET", self.ms365_client_secret),
+                    ("MS365_ORGANIZATION_ID", self.ms365_organization_id),
+                )
+                if not value
+            ]
+            if missing_ms365:
+                raise ValueError(
+                    "MS365_DATA_MODE=graph requires " + ", ".join(missing_ms365) + "."
+                )
+        if self.app_environment == "production" and self.ms365_data_mode == "sample":
+            raise ValueError("MS365_DATA_MODE=sample is not allowed in production.")
 
         if bool(self.smtp_username) != (self.smtp_password is not None):
             raise ValueError("Set both SMTP_USERNAME and SMTP_PASSWORD, or leave both unset.")

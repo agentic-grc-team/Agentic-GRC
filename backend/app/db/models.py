@@ -1028,3 +1028,48 @@ class EvidenceControlLink(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+
+
+class TenantConfigurationSnapshot(Base):
+    """One dated read of an organization's Microsoft 365 configuration for an assessment (0012).
+
+    `data` holds every collected section. A snapshot is only stored when the whole collection
+    succeeded, and it is never edited: a new collection adds a new snapshot.
+    """
+
+    __tablename__ = "tenant_configuration_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "assessment_id"],
+            ["assessments.organization_id", "assessments.id"],
+            name="fk_tenant_configuration_snapshots_assessment_same_org",
+        ),
+        CheckConstraint("source IN ('microsoft_graph', 'sample')", name="source"),
+        CheckConstraint("length(btrim(tenant_id)) > 0", name="tenant_id_not_blank"),
+        CheckConstraint("jsonb_typeof(data) = 'object'", name="data_is_object"),
+        UniqueConstraint("organization_id", "id", name="uq_tenant_configuration_snapshots_org_id"),
+        Index(
+            "ix_tenant_configuration_snapshots_org_assessment_collected",
+            "organization_id",
+            "assessment_id",
+            "collected_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False
+    )
+    assessment_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    collected_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
