@@ -2,7 +2,8 @@
 
 How the Agentic GRC prototype is built after the Beta, for a developer who joins the project. It
 explains the parts of the system, how a request flows through them, and how login, organization
-isolation and roles work. Details that already have their own document are linked, not repeated.
+isolation and roles work, what the data model and the JSON export look like, and how to add a
+framework or knowledge-base version. Details that already have their own document are linked, not repeated.
 
 | Topic | Document |
 |---|---|
@@ -48,7 +49,7 @@ flowchart LR
 ```
 
 On the Beta the request path is: university proxy → nginx `:80` → API `127.0.0.1:8000` → Ollama
-`127.0.0.1:11434` on the same VM, and PostgreSQL on the database VM. Section 6 has the deployment.
+`127.0.0.1:11434` on the same VM, and PostgreSQL on the database VM. Section 9 has the deployment.
 
 ## 2. Frontend
 
@@ -61,7 +62,7 @@ On the Beta the request path is: university proxy → nginx `:80` → API `127.0
   optionally Google) and keeps the session in the browser tab. Every API call sends the Supabase
   access token as a bearer token.
 - **Navigation by role:** the rail hides Client onboarding and Expert reviews for a representative.
-  This is only for usability; the backend enforces the rules (section 5).
+  This is only for usability; the backend enforces the rules (section 8).
 - **Base path:** built with `VITE_BASE_PATH=/agentic-grc/` for the Beta, so assets, routes and the
   API base follow the sub-path ([`frontend/README.md`](../frontend/README.md)).
 
@@ -128,7 +129,122 @@ On the Beta the request path is: university proxy → nginx `:80` → API `127.0
   blocked until the approvals in [ADR 0003](decisions/0003-interview-data-governance.md) are in
   place.
 
-## 5. Authentication, organization isolation and roles
+## 5. Data model
+
+All tables are defined in `backend/app/db/models.py` (24 tables) and created by the Alembic
+migrations in `backend/migrations/versions/`. Every table that holds an organization's data (all except
+`users`, the reference lists and the knowledge-base tables) has an `organization_id` column, which is what the isolation checks in section 8 filter on.
+
+| Group | Tables | What they hold |
+|---|---|---|
+| Users and organizations | `users`, `organizations`, `organization_memberships`, `organization_invitations`, `industry_sectors`, `organization_sizes` | Local user rows (the `id` is the Supabase account id), organizations, one membership (role and status) per user and organization, invitations, and the reference lists for sector and size |
+| Knowledge base | `frameworks`, `framework_versions`, `kb_versions`, `interview_blocks`, `assessment_modules`, `questions` | Questions grouped into modules and blocks, under a KB version of a framework version. A KB version is `draft`, `published` or `retired`; only a published one is used for interviews |
+| Interview | `assessments`, `assessment_participants`, `assessment_sessions`, `session_participants`, `interview_turns` | An assessment (framework, framework version and KB version are stored on it), who takes part, interview sessions and each question–answer turn |
+| Results | `assessment_controls`, `control_results`, `control_result_reviews` | The controls in scope of an assessment; versioned results per control (`version_no`, `based_on_result_id`, `author_actor` = `agent` or `aligo_consultant`, status, explanation, evidence references); review outcomes (`accepted`, `modified`, `rejected`) |
+| Evidence | `evidence_files`, `evidence_control_links` | Metadata and extracted text of uploaded files (the file itself is on disk), and which file is linked to which control |
+| Traces | `decision_traces`, `decision_trace_sources` | The reasoning trace of each agent decision and each review, and the sources it used |
+
+A result is never edited. The agent writes a result; a consultant's modification is a new version
+that points to the one it replaces (`based_on_result_id`), and the review row records which version
+the review produced (`resulting_result_id`). In the report, the version with the highest
+`version_no` decides the state of each control. The tables
+`control_results`, `control_result_reviews`, `decision_traces` and `decision_trace_sources` are
+append-only (section 4).
+
+The LangGraph checkpoints of paused interviews are not in these tables. The checkpointer keeps them
+in its own tables in the `agentic_grc_private` schema.
+
+## 6. Report and JSON export format
+
+The report has three endpoints under `/api/v1/organizations/{organization}/assessments/{assessment}`:
+
+| Endpoint | Returns |
+|---|---|
+| `GET .../report` | The report preview shown in the app: the report plus the gap list |
+| `GET .../report.pdf` | The PDF, as `agentic-grc-report-{assessment_id}.pdf` |
+| `GET .../report.json` | The structured export, as `agentic-grc-report-{assessment_id}.json` |
+
+The PDF and the JSON have the same content as the preview, without the gap list. The JSON schema is
+defined by the Pydantic models in `backend/app/schemas/report.py`:
+
+```text
+ReportExport
+├─ export_format: "agentic-grc.assessment-report"
+├─ export_version: "1.1"            (1.1 added results[].linked_evidence)
+└─ report: ReportView
+   ├─ organization: id, name, sector, size
+   ├─ assessment: id, title, framework ("NIST CSF 2.0"), kb_version, status,
+   │              started_at, completed_at
+   ├─ generated_at, is_demo_data
+   ├─ scope[]: code, title                         (sorted by code)
+   ├─ results[]: FinalResult                       (sorted by code)
+   │   code, title, control_status, status_label, basis, reviewed_by, reviewed_at,
+   │   explanation, not_assessed_reason, evidence_pending,
+   │   evidence[]: source_type, reference, excerpt, nature
+   │   linked_evidence[]: id, file_name, file_type, size_bytes, sha256, uploaded_at, linked_at
+   ├─ pending[]: code, title, reason, reason_label (sorted by code)
+   ├─ exclusions[]: code, title, justification, reviewed_by, reviewed_at
+   └─ summary: controls_in_scope, finalized, pending, final_with_evidence_pending,
+               coverage_pct, status_counts
+```
+
+Allowed values:
+
+- `control_status`: `implemented`, `partially_implemented`, `not_implemented`, `not_assessed`,
+  `not_applicable`. A control marked `not_applicable` in review is listed under `exclusions`, not
+  `results`.
+- `basis`: `accepted_agent_result` (the consultant accepted the agent's result) or
+  `consultant_version` (the consultant wrote a new version).
+- `pending[].reason`: `awaiting_review`, `rejected_awaiting_new_version`,
+  `modified_awaiting_consultant_version`, `no_result`.
+- `evidence[].source_type`: `interview_turn`, `document_span`, `tenant_configuration`,
+  `prior_phase_evidence`; `evidence[].nature`: `intent`, `implementation`, `attestation`.
+- `summary.coverage_pct` is finalized controls divided by controls in scope, times 100, rounded to
+  one decimal. `summary.status_counts` always has the keys `implemented`, `partially_implemented`,
+  `not_implemented` and `not_assessed`.
+
+Only reviewed results reach the report; drafts never do. Linked files appear with their metadata
+and SHA-256 hash, never with their extracted text. Version 1.1 added `results[].linked_evidence`; a change that removes or renames a field should
+raise `export_version` again.
+
+## 7. Adding a framework or a knowledge-base version
+
+The database can hold several frameworks and KB versions (section 5), but today the application
+supports one: NIST CSF 2.0 with the demo KB version `demo-0.2`. Adding a new one is a code change,
+not only a data change. These are the places to touch:
+
+1. **Questions.** Write the KB file in the format of `backend/app/agent/data/kb_demo.yaml`:
+   `kb_version`, `language_code`, and per question a `code`, `module`, `text`, `intent`,
+   `detail_needed`, `clarification`, `evidence_examples` and `mappings` (`node_code`, `justification`,
+   `confidence`). The agent reads one file, set by `AGRC_KB_PATH`, and refuses an interview whose
+   `kb_version` differs from the file's, or whose language is not `en`.
+2. **Questions in the database.** If the KB version exists in `kb_versions` with its modules and
+   questions, the interview uses those rows, matched to the YAML by question `code`. The repository
+   has no script that loads a KB into these tables; they have to be filled by hand or by a new
+   script. Without rows, the interview falls back to the YAML questions, which is allowed only in
+   `synthetic` data mode.
+3. **Controls in scope.** Add the version and its control codes to `KB_SCOPES` in
+   `backend/app/services/assessment_scope.py`, and any missing code to `CSF_SUBCATEGORY_TITLES`,
+   `CSF_CATEGORIES` or `CSF_FUNCTIONS` there. `KB_SCOPES` also decides which values of `kb_version`
+   the API accepts when an assessment is started. `DEFAULT_KB_VERSION` is in
+   `backend/app/schemas/assessments.py`.
+4. **Per-control tables.** Each control needs an entry in three tables keyed by control code:
+   `CONTROL_TERMS` in `services/passage_matching.py` (passage matching, HU-12),
+   `CONTROL_RULES` in `services/risk_classification.py` (risk priority, HU-17) and
+   `REMEDIATION_TEMPLATES` in `services/remediation.py` (recommendations, HU-18). A control without
+   an entry still works in the interview and the report, but it gets no proposed passages, its gaps
+   are listed as unclassified, and it gets no recommendation.
+5. **A framework other than NIST CSF 2.0.** `start_assessment` in `services/assessments.py` stores
+   `framework_code="NIST-CSF"` and `framework_version="2.0"` for every assessment, and the report
+   model has `"NIST CSF 2.0"` as the framework name. Both have to change, together with the
+   function and category titles in `assessment_scope.py`.
+6. **Tests.** Add tests for the new scope and rules next to the existing ones in `backend/tests/`,
+   and run the full suite (section 10).
+
+The real knowledge base (backlog item E0-03) is expected to replace the demo KB; moving the
+per-control tables and the framework name into the database would turn steps 3–5 into data changes.
+
+## 8. Authentication, organization isolation and roles
 
 ### Login
 
@@ -198,7 +314,7 @@ The rules are verified by `backend/tests/test_cross_organization_api.py` and the
 acceptance tests, listed with their results in
 [`testing/acceptance-tests.md`](testing/acceptance-tests.md#hu-02--hu-03--organization-isolation-and-role-permissions).
 
-## 6. Deployment
+## 9. Deployment
 
 The Beta runs on two university VMs, reached through a bastion:
 
@@ -212,7 +328,7 @@ Public URL: <https://gita.udea.edu.co/agentic-grc/>. Installation is in
 [`runbook-vm.md`](runbook-vm.md). Secrets stay in `/etc/agentic-grc/backend.env` on the app VM and
 are never committed.
 
-## 7. Tests and CI
+## 10. Tests and CI
 
 ### Running the tests
 
@@ -262,7 +378,7 @@ agent, review, report, gap, remediation and passage-matching code is at 94–100
 The frontend has no coverage gate. The real model is never called in CI: the agent tests use a fake
 model, and the model's accuracy and latency are measured separately with the benchmark script.
 
-## 8. Known limitations and unfinished functionality
+## 11. Known limitations and unfinished functionality
 
 - **Response time.** The non-functional requirement is at most 10 s per interview turn. On the Beta
   VM (Tesla M10) a turn takes about 40 s when the model is warm, and over 60 s when a call hits the
